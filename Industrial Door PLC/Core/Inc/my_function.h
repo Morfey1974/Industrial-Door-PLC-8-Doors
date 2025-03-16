@@ -9,9 +9,11 @@
 #ifndef INC_MY_FUNCTION_H_
 #define INC_MY_FUNCTION_H_
 
-	void Green();
-	void Red();
-	void Yellow();
+	void Close_Door1();
+	void Close_Door2();
+	void Open_Door1();
+	void Open_Door2();
+	void LED_Yllow();
 
 
 

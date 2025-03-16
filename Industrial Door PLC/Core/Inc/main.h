@@ -59,6 +59,12 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define CPUKeySensorDoor1_Pin GPIO_PIN_3
 #define CPUKeySensorDoor1_GPIO_Port GPIOE
+#define Output_Relay1_Pin GPIO_PIN_4
+#define Output_Relay1_GPIO_Port GPIOE
+#define Output_Relay2_Pin GPIO_PIN_5
+#define Output_Relay2_GPIO_Port GPIOE
+#define CPUKeySensorDoor2_Pin GPIO_PIN_6
+#define CPUKeySensorDoor2_GPIO_Port GPIOE
 #define USER_BUTTON_Pin GPIO_PIN_13
 #define USER_BUTTON_GPIO_Port GPIOC
 #define LED_GREEN_LD1_Pin GPIO_PIN_0

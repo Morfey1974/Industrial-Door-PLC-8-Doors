@@ -95,13 +95,11 @@ static void MX_USART1_UART_Init(void);
 
 //Декларация Моих Функций
 //=============================================================================================================
-/*void Green();
-void Red();
-void Yellow();
+
 
 //Декларация Моих Функций
 //=============================================================================================================
-*/
+
 
 
 /* USER CODE END PFP */
@@ -154,18 +152,48 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  //=================================================================================Программа===================
   while (1)
   {
-	  if(HAL_GPIO_ReadPin(CPUKeySensorDoor1_GPIO_Port, CPUKeySensorDoor1_Pin)==0)
+	  if((HAL_GPIO_ReadPin(CPUKeySensorDoor1_GPIO_Port, CPUKeySensorDoor1_Pin)==0) && (HAL_GPIO_ReadPin(CPUKeySensorDoor2_GPIO_Port, CPUKeySensorDoor2_Pin)==0))
 	  {
-
-		  	  Green();
+		  Open_Door1();
+		  Open_Door2();
 	  }
-	  else{
-		  	  Red();
-		  	  Yellow();
+	  else if(HAL_GPIO_ReadPin(CPUKeySensorDoor1_GPIO_Port, CPUKeySensorDoor1_Pin)!=0){
 
-	  }
+			  Close_Door2();
+		  }
+		  else {
+
+
+				  Close_Door1();
+			  }
+
+
+
+/*
+
+
+
+
+
+	 if(HAL_GPIO_ReadPin(CPUKeySensorDoor2_GPIO_Port, CPUKeySensorDoor2_Pin)==0)
+	  	  {
+
+		 Close_Door2();
+	  	  }
+	  	  else{
+	  		Open_Door2();
+
+
+	  	  }
+*/
+	  //=================================================================================Программа===============
+
+
+
+
 
 
 
@@ -506,16 +534,26 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, Output_Relay1_Pin|Output_Relay2_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED_GREEN_LD1_Pin|Led_Red3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_Yellow_LD2_GPIO_Port, LED_Yellow_LD2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : CPUKeySensorDoor1_Pin */
-  GPIO_InitStruct.Pin = CPUKeySensorDoor1_Pin;
+  /*Configure GPIO pins : CPUKeySensorDoor1_Pin CPUKeySensorDoor2_Pin */
+  GPIO_InitStruct.Pin = CPUKeySensorDoor1_Pin|CPUKeySensorDoor2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(CPUKeySensorDoor1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : Output_Relay1_Pin Output_Relay2_Pin LED_Yellow_LD2_Pin */
+  GPIO_InitStruct.Pin = Output_Relay1_Pin|Output_Relay2_Pin|LED_Yellow_LD2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USER_BUTTON_Pin */
   GPIO_InitStruct.Pin = USER_BUTTON_Pin;
@@ -529,13 +567,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LED_Yellow_LD2_Pin */
-  GPIO_InitStruct.Pin = LED_Yellow_LD2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LED_Yellow_LD2_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
