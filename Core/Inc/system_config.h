@@ -24,7 +24,7 @@ typedef struct
 
     // Закладка под CAN-конфигурацию
     uint8_t  canNodeId;       // CAN ID узла (может совпадать с blockId)
-    uint32_t canBitrate;      // Скорость шины, например 250000
+    uint32_t canBitrate;      // Скорость шины, например 500000
 
     // Закладка под будущие вещи (Ethernet, RS-485, и т.п.)
     // uint32_t ipAddress;

@@ -1,6 +1,6 @@
 #include "doors.h"
 #include "main.h"
-
+#include "cmsis_os.h"
 #include <string.h>
 #include "door_logic.h"
 #include "system_config.h"
@@ -86,6 +86,15 @@ void StartDoorsTask(void *argument)
 
         osDelay(20);
     }
+}
+#include "doors.h"
+
+void Doors_Init(void)
+{
+    // Сначала всё в безопасное состояние
+    Door1_Open();
+    // При желании можно сразу погасить остальные двери или тоже закрыть
+    // Door2_Close(); и т.д.
 }
 
 

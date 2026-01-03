@@ -31,6 +31,7 @@
 #include "system_config.h"
 #include "doors.h"
 #include "door_logic.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -115,13 +116,9 @@ int main(void)
   MX_FDCAN1_Init();
   MX_ETH_Init();
   /* USER CODE BEGIN 2 */
-  SystemConfig_InitDefaults();    // <-- добавляем
-    SystemConfig_RecalcForNode();   // пока работает с дефолтами (мастер, 8 дверей)
-
-
-
-
-
+  	  SystemConfig_InitDefaults();    // <-- добавляем
+  	  SystemConfig_RecalcForNode();   // пока работает с дефолтами (мастер, 8 дверей)
+  	  Doors_Init();           // <-- добавляем ИНИЦИАЛИЗАЦИЮ ДВЕРЕЙ
 
   /* USER CODE END 2 */
 

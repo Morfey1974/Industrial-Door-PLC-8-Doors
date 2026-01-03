@@ -10,6 +10,9 @@
 
 #include "main.h"
 
+void Doors_Init(void);
+
+
 #define DOOR_COUNT 8   // сейчас 8 дверей
 
 //Определяем пременные двери №1

@@ -12,7 +12,7 @@ void SystemConfig_InitDefaults(void)
     g_sysCfg.localDoorCount = 8;             // мастер не может иметь <2, тут 8 точно ок
 
     g_sysCfg.canNodeId      = 0;             // CAN ID мастера
-    g_sysCfg.canBitrate     = 250000;        // 250 кбит/с, например
+    g_sysCfg.canBitrate     = 500000;        // 500 кбит/с, например
 }
 
 // После загрузки totalDoors и blockId из конфигурации (WEB/FLASH)
