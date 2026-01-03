@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 /Debug/
 =======
 # Created by https://www.toptal.com/developers/gitignore/api/windows
@@ -32,3 +33,6 @@ $RECYCLE.BIN/
 
 # End of https://www.toptal.com/developers/gitignore/api/windows
 >>>>>>> branch 'main' of https://github.com/Morfey1974/Industrial-Door-PLC
+=======
+/Debug/
+>>>>>>> b47521e (Fix project structure: move CubeIDE project to repo root)

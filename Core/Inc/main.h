@@ -7,7 +7,11 @@
   ******************************************************************************
   * @attention
   *
+<<<<<<< HEAD
   * Copyright (c) 2022 STMicroelectronics.
+=======
+  * Copyright (c) 2025 STMicroelectronics.
+>>>>>>> b47521e (Fix project structure: move CubeIDE project to repo root)
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -53,6 +57,7 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+<<<<<<< HEAD
 void CloseDoor1(void);
 void OpenDoor1(void);
 void CloseDoor2(void);
@@ -194,6 +199,28 @@ void OpenDoor3(void);
 #define RMII_TX_EN_GPIO_Port GPIOG
 #define RMII_TXD0_Pin GPIO_PIN_13
 #define RMII_TXD0_GPIO_Port GPIOG
+=======
+
+/* USER CODE END EFP */
+
+/* Private defines -----------------------------------------------------------*/
+#define CPUKeySensorDoor1_Pin GPIO_PIN_3
+#define CPUKeySensorDoor1_GPIO_Port GPIOE
+#define Output_Relay1_Pin GPIO_PIN_4
+#define Output_Relay1_GPIO_Port GPIOE
+#define Output_Relay2_Pin GPIO_PIN_5
+#define Output_Relay2_GPIO_Port GPIOE
+#define CPUKeySensorDoor2_Pin GPIO_PIN_6
+#define CPUKeySensorDoor2_GPIO_Port GPIOE
+#define USER_BUTTON_Pin GPIO_PIN_13
+#define USER_BUTTON_GPIO_Port GPIOC
+#define LED_GREEN_LD1_Pin GPIO_PIN_0
+#define LED_GREEN_LD1_GPIO_Port GPIOB
+#define Led_Red3_Pin GPIO_PIN_14
+#define Led_Red3_GPIO_Port GPIOB
+#define LED_Yellow_LD2_Pin GPIO_PIN_1
+#define LED_Yellow_LD2_GPIO_Port GPIOE
+>>>>>>> b47521e (Fix project structure: move CubeIDE project to repo root)
 
 /* USER CODE BEGIN Private defines */
 
