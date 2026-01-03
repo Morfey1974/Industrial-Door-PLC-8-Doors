@@ -58,7 +58,6 @@
 
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
-osThreadId rs485TaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -134,7 +133,6 @@ static void Debug_PrintCurrentTaskStackUsage(const char *taskName,
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void const * argument);
-void StartRS485Task(void const * argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -184,12 +182,8 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
-
-  /* definition and creation of rs485Task */
-  osThreadDef(rs485Task, StartRS485Task, osPriorityBelowNormal, 0, 256);
-  rs485TaskHandle = osThreadCreate(osThread(rs485Task), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, . */
@@ -230,37 +224,6 @@ void StartDefaultTask(void const * argument)
   }
 
   /* USER CODE END StartDefaultTask */
-}
-
-
-/* USER CODE BEGIN Header_StartRS485Task */
-/**
-* @brief Function implementing the rs485Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartRS485Task */
-void StartRS485Task(void const * argument)
-{
-  /* USER CODE BEGIN StartRS485Task */
-
-  // ВЫБОР РОЛИ ЭТОЙ ПЛАТЫ ДЛЯ RS-485:
-  // Если эта плата должна ШЛЮТЬ HELLO:
-  //MB_RS485_Test_Init(MB_MODE_MASTER);
-
-  // Если эта плата должна ПРИНИМАТЬ HELLO и печатать S< FULL: HELLO:
-   MB_RS485_Test_Init(MB_MODE_SLAVE);
-
-  for(;;)
-  {
-    // Один шаг RS-485 теста (HELLO + парсинг на другой стороне)
-    MB_RS485_Test_Task();
-
-    // Частые, но лёгкие опросы RS-485
-    osDelay(10);
-  }
-
-  /* USER CODE END StartRS485Task */
 }
 
 /* Private application code --------------------------------------------------*/

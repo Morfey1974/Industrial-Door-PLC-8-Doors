@@ -5,12 +5,12 @@
 
 static inline void RS485_SetTx(void)
 {
-    HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_SET);   // DE = 1 → передача
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);   // DE = 1 → передача
 }
 
 static inline void RS485_SetRx(void)
 {
-    HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_RESET); // DE = 0 → приём
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET); // DE = 0 → приём
 }
 
 
@@ -67,9 +67,9 @@ void MB_RS485_Test_Task(void)
         uint32_t timeout = HAL_GetTick();
 
         // Сбрасываем буфер если прошло больше 50 мс
-        static uint32_t last_receive = 0;
-        static uint8_t save_buffer[32];
-        static uint8_t save_idx = 0;
+       // static uint32_t last_receive = 0;
+        //static uint8_t save_buffer[32];
+        //static uint8_t save_idx = 0;
 
         // Читаем пока есть данные, но не дольше 20 мс
         while ((HAL_GetTick() - timeout) < 20 && idx < 31)

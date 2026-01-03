@@ -1,38 +1,65 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-/Debug/
-=======
-# Created by https://www.toptal.com/developers/gitignore/api/windows
-# Edit at https://www.toptal.com/developers/gitignore?templates=windows
+# =========================================
+# STM32CubeIDE / Eclipse
+# =========================================
 
-### Windows ###
-# Windows thumbnail cache files
+# Build results
+Debug/
+Release/
+Binaries/
+
+# Eclipse/CubeIDE settings
+.metadata/
+.settings/
+*.launch
+
+# CubeIDE index/cache/logs
+*.idx
+*.log
+
+# Build artifacts
+*.o
+*.a
+*.d
+*.su
+*.elf
+*.map
+*.hex
+*.bin
+*.lst
+
+# Linker/obj folders (иногда встречаются в проектах)
+obj/
+out/
+
+# Do NOT ignore .ioc (нужен для CubeIDE)
+# *.ioc
+
+# =========================================
+# Archives (не хранить в репозитории)
+# =========================================
+*.zip
+*.rar
+*.7z
+
+# =========================================
+# Windows
+# =========================================
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
 ehthumbs_vista.db
-
-# Dump file
 *.stackdump
-
-# Folder config file
 [Dd]esktop.ini
-
-# Recycle Bin used on file shares
 $RECYCLE.BIN/
-
-# Windows Installer files
+*.lnk
 *.cab
 *.msi
 *.msix
 *.msm
 *.msp
 
-# Windows shortcuts
-*.lnk
-
-# End of https://www.toptal.com/developers/gitignore/api/windows
->>>>>>> branch 'main' of https://github.com/Morfey1974/Industrial-Door-PLC
-=======
-/Debug/
->>>>>>> b47521e (Fix project structure: move CubeIDE project to repo root)
+# =========================================
+# Optional editors
+# =========================================
+.vscode/
+.idea/
