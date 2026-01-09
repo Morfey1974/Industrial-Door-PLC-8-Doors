@@ -66,6 +66,8 @@ void OpenDoor3(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define QSPI_IO2_Pin GPIO_PIN_2
+#define QSPI_IO2_GPIO_Port GPIOE
 #define OSC_IN_Pin GPIO_PIN_14
 #define OSC_IN_GPIO_Port GPIOC
 #define OSC_OUT_Pin GPIO_PIN_15
@@ -82,8 +84,16 @@ void OpenDoor3(void);
 #define CPUKeySensorDoor1_GPIO_Port GPIOF
 #define CPUKeyAlarmDoor1_Pin GPIO_PIN_5
 #define CPUKeyAlarmDoor1_GPIO_Port GPIOF
+#define QSPI_IO3_Pin GPIO_PIN_6
+#define QSPI_IO3_GPIO_Port GPIOF
 #define CPULookDoor2_Pin GPIO_PIN_7
 #define CPULookDoor2_GPIO_Port GPIOF
+#define QSPI_IO0_Pin GPIO_PIN_8
+#define QSPI_IO0_GPIO_Port GPIOF
+#define QSPI_IO1_Pin GPIO_PIN_9
+#define QSPI_IO1_GPIO_Port GPIOF
+#define QSPI_CLK_Pin GPIO_PIN_10
+#define QSPI_CLK_GPIO_Port GPIOF
 #define CPUBuzzerDoor2_Pin GPIO_PIN_0
 #define CPUBuzzerDoor2_GPIO_Port GPIOC
 #define RMII_MDC_Pin GPIO_PIN_1
@@ -138,6 +148,8 @@ void OpenDoor3(void);
 #define CPULedGreenDoor5_GPIO_Port GPIOE
 #define CPULedRedDoor5_Pin GPIO_PIN_10
 #define CPULedRedDoor5_GPIO_Port GPIOE
+#define QSPI_NCS_Pin GPIO_PIN_11
+#define QSPI_NCS_GPIO_Port GPIOE
 #define CPUKeySensorDoor5_Pin GPIO_PIN_12
 #define CPUKeySensorDoor5_GPIO_Port GPIOE
 #define CPUKeyAlarmDoor5_Pin GPIO_PIN_13

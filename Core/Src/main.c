@@ -19,8 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "eth.h"
 #include "fdcan.h"
+#include "lwip.h"
+#include "octospi.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -106,7 +107,7 @@ int main(void)
   MX_UART4_Init();
   MX_USART3_UART_Init();
   MX_FDCAN1_Init();
-  MX_ETH_Init();
+  MX_OCTOSPI1_Init();
   /* USER CODE BEGIN 2 */
 
 

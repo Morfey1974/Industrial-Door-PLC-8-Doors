@@ -45,12 +45,12 @@ void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
@@ -85,7 +85,7 @@ void MX_GPIO_Init(void)
                           |CPULookDoor2_Pin|CPULookDoor4_Pin|CPUBuzzerDoor4_Pin|CPULedGreenDoor4_Pin
                           |CPULedRedDoor4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
@@ -98,7 +98,7 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pins : CPUBuzzerDoor2_Pin CPULedGreenDoor2_Pin CPULedRedDoor2_Pin */
   GPIO_InitStruct.Pin = CPUBuzzerDoor2_Pin|CPULedGreenDoor2_Pin|CPULedRedDoor2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
@@ -111,7 +111,7 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pins : CPULookDoor3_Pin CPUBuzzerDoor3_Pin */
   GPIO_InitStruct.Pin = CPULookDoor3_Pin|CPUBuzzerDoor3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -120,7 +120,7 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = CPULedGreenDoor3_Pin|CPULedRedDoor3_Pin|CPULedGreenDoor6_Pin|CPULedRedDoor6_Pin
                           |CPULookDoor7_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -141,7 +141,7 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = CPULookDoor5_Pin|CPUBuzzerDoor5_Pin|CPULedGreenDoor5_Pin|CPULedRedDoor5_Pin
                           |CPULookDoor6_Pin|CPUBuzzerDoor6_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
@@ -154,7 +154,7 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pins : CPUBuzzerDoor7_Pin CPULedGreenDoor7_Pin CPULedRedDoor7_Pin CPULookDoor8_Pin */
   GPIO_InitStruct.Pin = CPUBuzzerDoor7_Pin|CPULedGreenDoor7_Pin|CPULedRedDoor7_Pin|CPULookDoor8_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
@@ -167,7 +167,7 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pins : CPUBuzzerDoor8_Pin CPULedGreenDoor8_Pin CPULedRedDoor8_Pin */
   GPIO_InitStruct.Pin = CPUBuzzerDoor8_Pin|CPULedGreenDoor8_Pin|CPULedRedDoor8_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
