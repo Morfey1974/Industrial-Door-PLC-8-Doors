@@ -24,6 +24,12 @@
 
 /* Our app task */
 #include "doors_task.h"
+
+#include "rs485_bringup.h"
+#include "can_bringup.h"
+#include "qspi_bringup.h"
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -106,6 +112,11 @@ void MX_FREERTOS_Init(void) {
   doorsTaskHandle = osThreadCreate(osThread(doorsTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  RS485_BringUp_Start();
+  CAN_BringUp_Start();
+  QSPI_BringUp_Start();
+
+
   /* USER CODE END RTOS_THREADS */
 
 }

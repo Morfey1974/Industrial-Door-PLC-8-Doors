@@ -8,11 +8,14 @@
  * - KeySensorDoor -> читается и сравнивается с RESET (active-low)
  * - KeyAlarmDoor  -> читается и сравнивается с RESET (active-low)
  */
-#define BSP_ACTIVE_LOW_WRITE(port, pin, on) \
+/* ВЫХОДЫ: active-low (ON = RESET) */
+#define BSP_OUT_WRITE(port, pin, on) \
     HAL_GPIO_WritePin((port), (pin), (on) ? GPIO_PIN_RESET : GPIO_PIN_SET)
 
-#define BSP_ACTIVE_LOW_READ_IS_ON(port, pin) \
+/* ВХОДЫ: оставляем active-low (с PULLUP: нажато/замкнуто = RESET) */
+#define BSP_IN_READ_IS_ON(port, pin) \
     (HAL_GPIO_ReadPin((port), (pin)) == GPIO_PIN_RESET)
+
 
 /* Таблицы соответствий “дверь (1..8) → порт/пин” */
 static GPIO_TypeDef* const s_lockPort[BSP_DOOR_MAX] = {
@@ -91,7 +94,7 @@ bool BSP_DoorIO_ReadClosed(uint8_t localDoor_1based)
     uint8_t i = (uint8_t)(localDoor_1based - 1U);
 
     /* active-low: RESET = “сработал” */
-    bool sensorOn = BSP_ACTIVE_LOW_READ_IS_ON(s_sensorPort[i], s_sensorPin[i]);
+    bool sensorOn = BSP_IN_READ_IS_ON(s_sensorPort[i], s_sensorPin[i]);
 
     /* В твоём старом коде physClosed = (KeySensor == RESET) */
     return sensorOn;
@@ -102,7 +105,7 @@ bool BSP_DoorIO_ReadAlarmPressed(uint8_t localDoor_1based)
     if (!doorIndexOk(localDoor_1based)) return false;
     uint8_t i = (uint8_t)(localDoor_1based - 1U);
 
-    bool alarmOn = BSP_ACTIVE_LOW_READ_IS_ON(s_alarmPort[i], s_alarmPin[i]);
+    bool alarmOn = BSP_IN_READ_IS_ON(s_alarmPort[i], s_alarmPin[i]);
     return alarmOn;
 }
 
@@ -111,7 +114,7 @@ void BSP_DoorIO_SetLocked(uint8_t localDoor_1based, bool locked)
     if (!doorIndexOk(localDoor_1based)) return;
     uint8_t i = (uint8_t)(localDoor_1based - 1U);
 
-    BSP_ACTIVE_LOW_WRITE(s_lockPort[i], s_lockPin[i], locked);
+    BSP_OUT_WRITE(s_lockPort[i], s_lockPin[i], locked);
 }
 
 void BSP_DoorIO_SetLedMode(uint8_t localDoor_1based, bsp_door_led_mode_t mode)
@@ -122,25 +125,25 @@ void BSP_DoorIO_SetLedMode(uint8_t localDoor_1based, bsp_door_led_mode_t mode)
     switch (mode)
     {
         case BSP_DOOR_LED_OFF:
-            BSP_ACTIVE_LOW_WRITE(s_ledRPort[i], s_ledRPin[i], false);
-            BSP_ACTIVE_LOW_WRITE(s_ledGPort[i], s_ledGPin[i], false);
+        	BSP_OUT_WRITE(s_ledRPort[i], s_ledRPin[i], false);
+        	BSP_OUT_WRITE(s_ledGPort[i], s_ledGPin[i], false);
             break;
 
         case BSP_DOOR_LED_GREEN:
-            BSP_ACTIVE_LOW_WRITE(s_ledRPort[i], s_ledRPin[i], false);
-            BSP_ACTIVE_LOW_WRITE(s_ledGPort[i], s_ledGPin[i], true);
+        	BSP_OUT_WRITE(s_ledRPort[i], s_ledRPin[i], false);
+        	BSP_OUT_WRITE(s_ledGPort[i], s_ledGPin[i], true);
             break;
 
         case BSP_DOOR_LED_RED:
-            BSP_ACTIVE_LOW_WRITE(s_ledGPort[i], s_ledGPin[i], false);
-            BSP_ACTIVE_LOW_WRITE(s_ledRPort[i], s_ledRPin[i], true);
+        	BSP_OUT_WRITE(s_ledGPort[i], s_ledGPin[i], false);
+        	BSP_OUT_WRITE(s_ledRPort[i], s_ledRPin[i], true);
             break;
 
         case BSP_DOOR_LED_ALTERNATE_RG:
             /* сам режим мигания реализуется в App (таймером),
                тут просто оставим состояние как OFF и будем дёргать App-ом */
-            BSP_ACTIVE_LOW_WRITE(s_ledRPort[i], s_ledRPin[i], false);
-            BSP_ACTIVE_LOW_WRITE(s_ledGPort[i], s_ledGPin[i], false);
+        	BSP_OUT_WRITE(s_ledRPort[i], s_ledRPin[i], false);
+        	BSP_OUT_WRITE(s_ledGPort[i], s_ledGPin[i], false);
             break;
 
         default:
@@ -153,7 +156,7 @@ void BSP_DoorIO_SetBuzzer(uint8_t localDoor_1based, bool on)
     if (!doorIndexOk(localDoor_1based)) return;
     uint8_t i = (uint8_t)(localDoor_1based - 1U);
 
-    BSP_ACTIVE_LOW_WRITE(s_buzPort[i], s_buzPin[i], on);
+    BSP_OUT_WRITE(s_buzPort[i], s_buzPin[i], on);
 }
 
 void BSP_DoorIO_ApplyLockIndicator(uint8_t localDoor_1based, bool locked)
