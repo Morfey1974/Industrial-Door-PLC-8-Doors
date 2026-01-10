@@ -244,6 +244,24 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 }
 
 /* USER CODE BEGIN 1 */
+
+/*
+ * USART3 printf retarget
+ * ---------------------
+ * Cube-generated syscalls.c implements _write() by calling __io_putchar().
+ * By defining __io_putchar() here, we make plain printf() go to USART3.
+ *
+ * Why here?
+ * - usart.c is already part of the project and is not replaced inside USER CODE.
+ * - avoids touching syscalls.c (Cube may regenerate it).
+ */
+int __io_putchar(int ch)
+{
+    uint8_t c = (uint8_t)ch;
+    (void)HAL_UART_Transmit(&huart3, &c, 1, HAL_MAX_DELAY);
+    return ch;
+}
+
 void Debug_Print(const char *s)
 {
     if (s == NULL) return;
