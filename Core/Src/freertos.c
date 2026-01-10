@@ -4,9 +4,14 @@
   * @file    freertos.c
   * @brief   Code for freertos applications
   *
-  * Clean baseline for Stage 0–1:
-  * - defaultTask: optional LwIP init + idle loop
-  * - doorsTask  : runs StartDoorsTask() from App/doors
+  * Stage 0–2 baseline (clean):
+  *  - defaultTask: optional LwIP init + idle loop
+  *  - doorsTask  : Door I/O logic (Alarm signaling, invariants, etc.)
+  *
+  * NOTE:
+  *  - All "bring-up" demo tasks (RS-485 / CAN / QSPI LED tests) were removed.
+  *  - Protocol drivers remain initialized by CubeMX (MX_UART4_Init, MX_FDCAN1_Init, MX_OCTOSPI1_Init).
+  *  - Higher-level protocol services should be started explicitly from the application when needed.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -24,39 +29,28 @@
 
 /* Our app task */
 #include "doors_task.h"
-
-#include "rs485_bringup.h"
-#include "can_bringup.h"
-#include "qspi_bringup.h"
-
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
 osThreadId doorsTaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void const * argument);
@@ -77,7 +71,6 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackTy
   *ppxIdleTaskTCBBuffer = &xIdleTaskTCBBuffer;
   *ppxIdleTaskStackBuffer = &xIdleStack[0];
   *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
-  /* place for user code */
 }
 /* USER CODE END GET_IDLE_TASK_MEMORY */
 
@@ -86,22 +79,8 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackTy
   * @param  None
   * @retval None
   */
-void MX_FREERTOS_Init(void) {
-  /* USER CODE BEGIN Init */
-  /* USER CODE END Init */
-
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* USER CODE END RTOS_MUTEX */
-
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* USER CODE END RTOS_SEMAPHORES */
-
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* USER CODE END RTOS_TIMERS */
-
-  /* USER CODE BEGIN RTOS_QUEUES */
-  /* USER CODE END RTOS_QUEUES */
-
+void MX_FREERTOS_Init(void)
+{
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
@@ -112,13 +91,9 @@ void MX_FREERTOS_Init(void) {
   doorsTaskHandle = osThreadCreate(osThread(doorsTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  RS485_BringUp_Start();
-  CAN_BringUp_Start();
-  QSPI_BringUp_Start();
-
-
+  /* Bring-up demo tasks were intentionally removed.
+     Start protocol services explicitly from your application when you begin integration. */
   /* USER CODE END RTOS_THREADS */
-
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -132,14 +107,11 @@ void StartDefaultTask(void const * argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
-  /* USER CODE BEGIN StartDefaultTask */
-
 
   for(;;)
   {
     osDelay(250);
   }
-  /* USER CODE END StartDefaultTask */
 }
 
 /* USER CODE BEGIN Header_StartDoorsTask */
@@ -151,9 +123,7 @@ void StartDefaultTask(void const * argument)
 /* USER CODE END Header_StartDoorsTask */
 void StartDoorsTask(void const * argument)
 {
-  /* USER CODE BEGIN StartDoorsTask */
   DoorsTask_Run(argument);
-  /* USER CODE END StartDoorsTask */
 }
 
 /* Private application code --------------------------------------------------*/
