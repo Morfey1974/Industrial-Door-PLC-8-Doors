@@ -148,7 +148,6 @@ void StartNetTask(void const * argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
-
   /* USER CODE BEGIN StartNetTask */
   NetTask_Run(argument);
 
@@ -156,7 +155,6 @@ void StartNetTask(void const * argument)
   configASSERT(0);
   /* USER CODE END StartNetTask */
 }
-
 
 /* USER CODE BEGIN Header_StartCommsTask */
 /**
@@ -192,7 +190,6 @@ void StartDoorsTask(void const * argument)
   /* USER CODE END StartDoorsTask */
 }
 
-
 /* USER CODE BEGIN Header_StartSupervisorTask */
 /**
 * @brief Function implementing the supervisorTask thread.
@@ -209,7 +206,6 @@ void StartSupervisorTask(void const * argument)
   configASSERT(0);
   /* USER CODE END StartSupervisorTask */
 }
-
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */

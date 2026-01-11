@@ -9,8 +9,6 @@ void NetTask_Run(void const *argument)
 {
     (void)argument;
 
-    /* LwIP init должен быть в NetTask (чтобы сеть не мешала остальным) */
-    MX_LWIP_Init();
 
     /* bring-up: UDP alive + link/netif/ip monitor (без создания задач!) */
     LwIP_BringUp_Init();

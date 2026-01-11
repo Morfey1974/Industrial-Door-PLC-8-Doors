@@ -5,14 +5,18 @@
 
 #include "cmsis_os.h"
 #include "main.h"
-#include "bsp_doors_io.h"
+
+#include "door_hal.h"
 
 /* Stage-2 system */
-#include "app_events.h"
-#include "app_health.h"
+#include "system/app_events.h"
+#include "system/app_health.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* ============================================================
-   Doors Task (после bring-up, ЭТАП 2 совместимый)
+   Doors Task (после bring-up, ЭТАП 2/3 совместимый)
    ------------------------------------------------------------
    Сохраняем:
      - дефолт: все двери UNLOCKED, LED GREEN, buzzer OFF
@@ -23,6 +27,9 @@
    Добавлено (ЭТАП 2):
      - Heartbeat для Supervisor
      - Публикация событий в EventBus (DoorOpen/DoorClose/Alarm)
+
+   Добавлено (ЭТАП 3):
+     - Никаких BSP_* вызовов: только DoorHAL_*
    ============================================================ */
 
 static AppDoorState_t s_doors[APP_DOOR_MAX];
@@ -60,17 +67,14 @@ void Doors_TaskInit(void)
     memset(s_lastAlarmEdgeMs, 0, sizeof(s_lastAlarmEdgeMs));
     memset(s_lastBlinkMs, 0, sizeof(s_lastBlinkMs));
     memset(s_blinkPhase, 0, sizeof(s_blinkPhase));
-
-    /* Безопасный дефолт железа */
-    BSP_DoorsIO_Init();
 }
 
 /* Нормальный режим: unlocked + green + buzzer off */
 static void applyNormal(uint8_t door1based)
 {
-    BSP_DoorIO_SetLocked(door1based, false);
-    BSP_DoorIO_SetLedMode(door1based, BSP_DOOR_LED_GREEN);
-    BSP_DoorIO_SetBuzzer(door1based, false);
+    DoorHAL_SetLock(door1based, false);
+    DoorHAL_SetLed(door1based, DOOR_LED_GREEN);
+    DoorHAL_SetBuzzer(door1based, false);
 }
 
 /* Сигнализация:
@@ -89,8 +93,8 @@ static void applySignaling(uint8_t door1based, bool physClosed, uint8_t idx)
 
     bool redPhase = (s_blinkPhase[idx] != 0U);
 
-    BSP_DoorIO_SetLedMode(door1based, redPhase ? BSP_DOOR_LED_RED : BSP_DOOR_LED_GREEN);
-    BSP_DoorIO_SetBuzzer(door1based, redPhase);
+    DoorHAL_SetLed(door1based, redPhase ? DOOR_LED_RED : DOOR_LED_GREEN);
+    DoorHAL_SetBuzzer(door1based, redPhase);
 
     bool wantLock = redPhase;
 
@@ -98,7 +102,7 @@ static void applySignaling(uint8_t door1based, bool physClosed, uint8_t idx)
     if (!physClosed)
         wantLock = false;
 
-    BSP_DoorIO_SetLocked(door1based, wantLock);
+    DoorHAL_SetLock(door1based, wantLock);
     s_doors[idx].locked = (uint8_t)wantLock;
 }
 
@@ -107,8 +111,8 @@ static void updateOneDoor(uint8_t door1based)
     uint8_t  idx = (uint8_t)(door1based - 1U);
     uint32_t now = GetMs();
 
-    bool closed = BSP_DoorIO_ReadClosed(door1based);
-    bool alarm  = BSP_DoorIO_ReadAlarmPressed(door1based);
+    bool closed = DoorHAL_IsClosed(door1based);
+    bool alarm  = DoorHAL_IsAlarmPressed(door1based);
 
     /* Door open/close events */
     if (s_doors[idx].physClosed != (uint8_t)closed)
@@ -146,9 +150,9 @@ static void updateOneDoor(uint8_t door1based)
             {
                 /* exit signaling -> safe defaults */
                 s_doors[idx].locked = 0U;
-                BSP_DoorIO_SetLocked(door1based, false);
-                BSP_DoorIO_SetBuzzer(door1based, false);
-                BSP_DoorIO_SetLedMode(door1based, BSP_DOOR_LED_GREEN);
+                DoorHAL_SetLock(door1based, false);
+                DoorHAL_SetBuzzer(door1based, false);
+                DoorHAL_SetLed(door1based, DOOR_LED_GREEN);
             }
         }
     }
@@ -168,7 +172,7 @@ static void updateOneDoor(uint8_t door1based)
     /* Hard safety invariant: if open -> always unlock */
     if (!closed)
     {
-        BSP_DoorIO_SetLocked(door1based, false);
+        DoorHAL_SetLock(door1based, false);
         s_doors[idx].locked = 0U;
     }
 }
@@ -178,6 +182,9 @@ void DoorsTask_Run(void const *argument)
     (void)argument;
 
     Doors_TaskInit();
+
+    /* ЭТАП 3: аппаратная модель двери */
+    DoorHAL_Init();
 
     for (;;)
     {
