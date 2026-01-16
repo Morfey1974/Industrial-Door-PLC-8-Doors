@@ -1,195 +1,220 @@
-# Industrial Door PLC — Итоговое резюме по Этапам 2–3
+# Industrial Door PLC — Итоговое резюме по проекту (Этапы 0–7)
 
-Этот README составлен по анализу архива `APP_BSP_CORE_DOC.zip` (папки `App/`, `BSP/`, `Core/`, `Documentation/`).
+Этот README — рабочее резюме того, что уже реализовано в прошивке **Industrial Door PLC** согласно тезисному плану разработки.
 
-## Структура проекта (как сейчас)
-- `Core/` — CubeMX/STM32 HAL + FreeRTOS glue (`freertos.c`) + bring-up модули (lwip/can/rs485/qspi).
-- `App/doors/` — логика двери (модель состояния, обработка датчиков/кнопки Alarm, управление индикацией/замком).
-- `App/system/` — системные сервисы и задачи (EventBus, Health/Heartbeat, лог-очередь, RTOS tasks: net/can/rs485/http/logger/watchdog/supervisor/comms).
-- `BSP/` — привязка GPIO к “железу” дверей (active-low выходы/входы).
-
----
-
-# ЭТАП 2 — Базовая RTOS-архитектура прошивки
-
-## 2.1 Выбор и настройка FreeRTOS
-**Сделано (каркас + правила архитектуры):**
-- FreeRTOS используется через CMSIS-OS (CubeMX), все задачи создаются централизованно в одном месте:  
-  `Core/Src/freertos.c`.
-- Добавлена защита от “возврата” из задач: `TaskShouldNeverReturn()` + `configASSERT(0)`.
-- Исправлено предупреждение компилятора о неявном объявлении: `TaskShouldNeverReturn()` объявлен как `static` с прототипом до использования.  
-  Файл: `Core/Src/freertos.c`.
-
-## 2.2 Декомпозиция задач (созданы все задачи по плану)
-**Сделано: задачи есть, заведены в CubeMX и создаются в `freertos.c`:**
-- **DOOR TASK** → `App/doors/doors_task.c` (`DoorsTask_Run`)
-- **LOGIC CORE TASK** (Comms) → `App/system/comms_task.c` (`CommsTask_Run`)
-- **CAN TASK** → `App/system/can_task.c` (`CanTask_Run`)
-- **RS-485 TASK** → `App/system/rs485_task.c` (`Rs485Task_Run`)
-- **ETHERNET/HTTP TASK** (2 задачи: net + http)  
-  - Net: `App/system/net_task.c` (`NetTask_Run`)  
-  - HTTP: `App/system/http_task.c` (`HttpTask_Run`)
-- **LOGGER TASK** → `App/system/logger_task.c` (`LoggerTask_Run`)
-- **WATCHDOG/SUPERVISOR TASK** (2 задачи)  
-  - Supervisor: `App/system/supervisor_task.c` (`SupervisorTask_Run`)  
-  - Watchdog: `App/system/watchdog_task.c` (`WatchdogTask_Run`)
-
-**Приоритеты и стеки (как сейчас в `freertos.c`):**
-- Supervisor: `osPriorityHigh`
-- Doors: `osPriorityAboveNormal`
-- Watchdog: `osPriorityAboveNormal`
-- Comms/CAN/RS485: `osPriorityNormal`
-- HTTP/Logger: `osPriorityBelowNormal`
-- Net: `osPriorityLow`
-- Размеры стеков заданы в `osThreadDef(...)` (CMSIS-OS v1: в *словах*, не в байтах).
-
-**Замечание по зрелости задач:**
-- `net_task`, `can_task` и `rs485_task` уже делают базовый bring-up (инициализация линка/мониторинг).
-- `http_task` и `comms_task` пока каркасные (heartbeat + delay), логика протоколов/маршрутизация будут развиваться в следующих этапах.
-
-## 2.3 Межзадачное взаимодействие (Queues / Events / Mutex)
-**Сделано:**
-- **EventBus (единая очередь событий)** реализован и готов к использованию:
-  - `App/system/app_events.h`
-  - `App/system/app_events.c`
-  - Очередь: `EVENT_QUEUE_LEN = 32`
-  - API: `AppEvents_Publish()`, `AppEvents_Wait()`
-  - Есть типы событий под двери/сеть/команды: `EVT_DOOR_OPEN/CLOSE/ALARM`, `EVT_CMD_LOCK/UNLOCK`, `EVT_NET_LINK_*`, `EVT_SYSTEM_FAULT`.
-
-- **Очередь логов** реализована:
-  - `App/system/app_log.h`
-  - `App/system/app_log.c`
-  - Очередь: `LOG_QUEUE_LEN = 32`
-  - Сообщения фиксированного размера `APP_LOG_MSG_MAX` (по умолчанию 96)
-  - API: `AppLog_Push()`, `AppLog_Pop()`
-  - Вывод вынесен в слабую функцию `AppLog_Output()` (можно переопределить под UART/ITM/UDP).
-
-**Частично (интеграция в бизнес-логику ещё впереди):**
-- EventBus используется для публикации событий дверей (`doors_task.c` публикует `EVT_DOOR_OPEN/CLOSE/ALARM`), но:
-  - `CommsTask` пока не потребляет/маршрутизирует события,
-  - команды `EVT_CMD_LOCK/UNLOCK` пока не заведены в “ядро” управления дверьми.
-
-## 2.4 Базовый watchdog и контроль зависаний
-**Сделано (SW watchdog + supervisor safe-state):**
-- `App/system/app_health.*` — heartbeat мониторинг:
-  - Каждая задача периодически вызывает `AppHealth_Heartbeat(TASK_...)`
-  - `AppHealth_IsAlive()` проверяет таймаут (сейчас `HEARTBEAT_TIMEOUT_MS = 2000`)
-
-- `SupervisorTask` контролирует жизнеспособность набора задач и при проблеме включает safe-state:
-  - `App/system/supervisor_task.c`
-
-- `WatchdogTask`:
-  - публикует `EVT_SYSTEM_FAULT`, если `Supervisor` “мертв”
-  - опционально поддерживает аппаратный IWDG при `#define USE_IWDG`
-  - `App/system/watchdog_task.c`
-
-**Замечание (улучшение архитектуры):**
-- `SupervisorTask` сейчас дергает `BSP_DoorIO_*` напрямую, минуя `DoorHAL`.  
-  Логичнее перейти на `DoorHAL_ApplySafeState()` (в `App/doors/door_hal.c`) — так сохранится правило “BSP только внутри HAL”.
+## Структура проекта (актуально)
+- `Core/` — CubeMX/STM32 HAL + FreeRTOS glue (`freertos.c`) + bring-up (lwip/can/rs485/qspi).
+- `BSP/` — привязка GPIO/периферии к «железу» (active-low входы/выходы дверей).
+- `App/doors/` — модель двери и DoorTask (датчик, замок, индикация, Alarm, таймеры).
+- `App/logic/` — Logic Core и зависимости дверей.
+- `App/system/` — системные сервисы (EventBus, health/heartbeat, лог-очередь) + задачи RTOS (net/can/rs485/http/logger/watchdog/supervisor/comms).
+- `App/config/` — формат конфигурации + хранилище в QSPI + атомарная активация.
+- `App/log/` — журнал событий в QSPI (кольцевой лог).
 
 ---
 
-# ЭТАП 3 — Аппаратная модель двери (FW)
+# Статус по этапам плана
 
-## 3.1 Реализация объекта «ДВЕРЬ»
+## Этап 0 — База проекта
+**Сделано:** базовый проект STM32CubeIDE собирается и запускается, есть фундамент для дальнейшего наращивания логики.
+
+## Этап 1 — Драйверы и bring-up
+**Сделано:** GPIO дверей/индикации/кнопок, таймеры, CAN, RS-485, Ethernet (LwIP), QSPI (OSPI) подняты на уровне bring-up.
+
+## Этап 2 — RTOS-архитектура
+**Сделано (ядро архитектуры):**
+- Центральное создание задач в `Core/Src/freertos.c`.
+- Разведены задачи по плану: `DoorsTask`, `CommsTask` (Logic Core), `CanTask`, `Rs485Task`, `NetTask`, `HttpTask`, `LoggerTask`, `SupervisorTask`, `WatchdogTask`.
+- Базовые сервисы межзадачного взаимодействия:
+  - EventBus: `App/system/app_events.c/.h` (`AppEvents_Publish`, `AppEvents_Wait`).
+  - Log Queue: `App/system/app_log.c/.h` (`AppLog_Push`, `AppLog_Pop`).
+- Health/Heartbeat + Supervisor/Watchdog контур: `App/system/app_health.*`, `supervisor_task.*`, `watchdog_task.*`.
+
+## Этап 3 — Аппаратная модель двери
 **Сделано:**
-- Реализована модель состояния двери `AppDoorState_t`:
-  - `App/doors/doors_task.h`
-  - поля: `physClosed`, `alarmPressed`, `locked`, `alarming`, `lastChangeMs`
-- Доступ к массиву состояний: `Doors_GetStateArray()` (для будущего LogicCore/протоколов).
+- DoorHAL (`App/doors/door_hal.*`) изолирует BSP и реализует безопасные операции (lock/led/buzzer).
+- DoorTask (`App/doors/doors_task.*`) ведёт состояние двери, датчик, управление замком, индикацию.
+- Инварианты безопасности:
+  - запрет блокировки при открытой двери (в HAL + “hard invariant” в DoorTask).
+  - safe-state при ошибках.
+- Alarm как локальный приоритет (включает сигнализацию, принудительно unlock, выход из Alarm восстанавливает lock-state «до Alarm»).
 
-## 3.2 Работа с датчиком двери
+## Этап 4 — Состояния двери и события
 **Сделано:**
-- Датчик двери читается через HAL → BSP:
-  - `DoorHAL_IsClosed()` → `BSP_DoorIO_ReadClosed()`
-- BSP корректно учитывает active-low входы (RESET = “сработал”):
-  - `BSP_IN_READ_IS_ON(...)` в `BSP/bsp_doors_io.c`
+- События OPEN/CLOSE/ALARM формируются и видны в логе.
+- Таймеры двери (open timeout / post-close timeout) заведены в модель и отрабатываются в DoorTask.
+- Сигнализация (мигание/буззер) отделена от “нормальной” индикации и имеет приоритет.
 
-## 3.3 Управление замком-соленоидом
-**Сделано:**
-- Управление замком вынесено в DoorHAL:
-  - `DoorHAL_SetLock()` → `BSP_DoorIO_SetLocked()`
-- BSP реализует active-low управление соленоидом:
-  - `BSP_OUT_WRITE(..., locked)` (RESET = ON) в `BSP/bsp_doors_io.c`
+## Этап 5 — Logic Core (зависимости дверей)
+**Сделано (Standalone):**
+- Есть структура зависимостей (дверь → список блокируемых дверей) и базовая обработка события «дверь открылась».
+- Команды на двери разводятся через EventBus/внутренние API.
 
-## 3.4 Инварианты безопасности
-**Сделано:**
-- **Запрет блокировки при открытой двери** реализован на двух уровнях:
-  - В `DoorHAL_SetLock()` (если lock && дверь открыта → lock=false)
-  - Дополнительно в `doors_task.c` есть принудительный “hard invariant”:
-    - если дверь открыта → всегда unlock
+> Примечание: конкретная «блокировка дверей 2/3 при открытии двери 1» — это уже чистая бизнес-логика этапа 5 и зависит от **конфигурации зависимостей**. Если в активной конфигурации зависимости не заданы/пустые — блокировки не будет.
 
-- **SAFE-STATE при ошибках**:
-  - `DoorHAL_ApplySafeState()` (unlock + buzzer off + green)
-  - `SupervisorTask` применяет safe-state при падении health (пока через BSP напрямую).
-
-## 3.5 Индикация и зуммер (базовая)
-**Сделано:**
-- Нормальный режим:
-  - `GREEN` если unlocked, `RED` если locked
-  - buzzer выключен
-- Alarm режим:
-  - мигание `RED/GREEN` по 1 секунде
-  - buzzer в красной фазе
-  - реализовано в `App/doors/doors_task.c` (`applySignaling()`)
-
-## 3.6 Кнопка ALARM (локальный приоритет)
-**Сделано (ключевой пункт):**
-- Alarm работает как “локальный приоритет”:
-  - нажатие переключает `alarming` (debounce ~50ms)
-  - при входе в Alarm:
-    - запоминается состояние lock до Alarm (`s_lockSavedBeforeAlarm[]`)
-    - дверь принудительно разблокируется
-    - запускается сигнализация
-  - при выходе из Alarm:
-    - восстанавливается lock-state, который был до Alarm
-- В Alarm режиме замок **не “дергается”** от мигания (замок всегда unlock в signaling).
-- Реализовано в: `App/doors/doors_task.c` (`updateOneDoor()`, `applySignaling()`)
+## Этап 6 — CAN master–slave
+**Сделано (каркас и базовая работа):**
+- NodeId/роль master–slave заведены.
+- Есть протоколные заготовки и heartbeat/диагностика.
+- Поддержан Degraded-режим по потере связи.
 
 ---
 
-# Что уже можно считать “готовым” по Этапам 2–3
-- Прошивка организована как система задач (RTOS), а не набор функций.
-- Есть центральные системные сервисы:
-  - EventBus (очередь событий)
-  - Health/Heartbeat (контроль зависаний)
-  - Log queue + LoggerTask
-- Есть базовый supervisor/watchdog контур.
-- Есть аппаратная модель двери:
-  - датчик, замок, индикация, buzzer
-  - безопасные инварианты
-  - Alarm как локальный приоритет с корректным поведением “unlock пока Alarm активен”
+# Этап 7 — Хранение данных и журналирование (FW)
+
+В рамках этапа 7 цель — сделать систему **воспроизводимой и диагностируемой**: конфиг хранится в QSPI, активируется атомарно, события пишутся в журнал с учётом износа.
+
+## 7.1 Формат конфигурации
+**Сделано:**
+- Формат конфигурации описан в `App/config/config_format.h` (структуры, версии, лимиты).
+- Функции:
+  - `Config_Default()` — заполнение дефолтных значений.
+  - `Config_Validate()` — проверка корректности (диапазоны, уникальности, ограничения).
+  - `Config_Finalize()` — финализация (CRC и т.п., если предусмотрено форматом).
+
+Файлы:
+- `App/config/config_format.c`
+- `App/config/config_format.h`
+- `App/config/config_layout.h`
+
+## 7.2 Хранение конфигурации в QSPI Flash
+**Сделано:**
+- Хранилище в QSPI реализовано через модуль `ConfigStorage_*`.
+- Используются слоты (A/B) и служебный заголовок (magic/version/seq/crc и т.п.).
+
+Файлы:
+- `App/config/config_storage_qspi.c`
+- `App/config/config_storage_qspi.h`
+
+## 7.3 Атомарная активация конфигурации
+**Сделано:**
+- Запись организована так, чтобы при внезапном отключении питания:
+  - либо остаётся **старый валидный** конфиг,
+  - либо поднимается **дефолт**,
+  - **никогда** не применяется частично записанный «мусор».
+- На старте сервис конфигурации читает слоты, выбирает активный и выводит диагностику в UART.
+
+Файлы:
+- `App/system/config_service.c`
+- `App/system/config_service.h`
+
+### Подтверждение на стенде (UART)
+На boot появляется строка вида:
+- `CFG: slot A OK (seq=1)`
+
+Это означает: слот найден, прошёл проверку, конфиг принят.
+
+## 7.4 Журнал событий (OPEN/CLOSE/ALARM/ошибки)
+**Сделано:**
+- Реализован журнал событий в QSPI как кольцевой лог.
+- В журнал пишутся события:
+  - открытия/закрытия двери,
+  - Alarm on/off,
+  - системные/сетевые ошибки (например, LINK DOWN),
+  - сервисные события (boot, clear, stats — при наличии).
+- Предусмотрены команды/функции:
+  - dump (просмотр),
+  - clear (очистка),
+  - stats (статистика),
+  - принудительная запись тестовых событий.
+
+Файлы:
+- `App/log/event_journal.c`
+- `App/log/event_journal.h`
+
+**Интеграция с системой событий:**
+- DoorTask публикует события через `App/system/app_events.*`.
+- Журнал/логгер получает события и пишет их в QSPI.
+
+## 7.5 Управление износом памяти
+**Сделано:**
+- Журнал реализован как **кольцевой буфер** поверх области QSPI.
+- Используется «шагающая» запись и по необходимости стирание секторов — чтобы не убивать один сектор постоянной записью.
+- В статистике видны счётчики записи/дропа/erase (для оценки wear-leveling).
 
 ---
 
-# Остатки/следующие шаги (что ещё не закрыто в рамках этапов/плана)
-Ниже — не “ошибки”, а естественные хвосты, которые обычно закрываются следующими этапами:
+# Известные наблюдения со стенда
 
-1) **Logic Core (CommsTask) пока каркас**
-   - нет маршрутизации событий и команд
-   - нет обработки `EVT_CMD_LOCK/UNLOCK` (которые уже описаны в `app_events.h`)
-   - рекомендуется:
-     - принимать события из `AppEvents_Wait()`
-     - переводить команды в изменения `Doors_GetStateArray()[i].locked` (или через отдельный API дверей)
+## 1) «Слипание» строк и перемешивание вывода UART
+Если в одном месте печатается `printf()`, а в другом — вывод из логгера/нескольких задач, строки могут перемешиваться.
+Это не ломает этап 7, но ухудшает читаемость тестов.
 
-2) **HTTP задача пока каркас**
-   - нет поднятого httpd/REST
-   - нет конфигурации через web (по вашей цели)
+Рекомендация (минимальная):
+- всегда заканчивать диагностические строки `\r\n`;
+- по возможности централизовать вывод через один канал (LoggerTask) или защитить UART mutex’ом.
 
-3) **CAN/RS485** пока “bring-up + heartbeat”
-   - протоколы и обмен состояниями будут добавляться дальше
-
-4) **Supervisor → HAL**
-   - перенести safe-state с `BSP_DoorIO_*` на `DoorHAL_ApplySafeState()` (чтобы BSP не дергался напрямую вне HAL).
+## 2) Частый `LINK UP/DOWN` (флап линка)
+Это относится к сетевому bring-up/PHY/кабелю и критично будет уже ближе к этапу 9.
+Для этапа 7 допустимо фиксировать как «известная проблема стенда», если на запись QSPI/журнал не влияет.
 
 ---
 
-# Быстрые ссылки на ключевые файлы
-- RTOS glue: `Core/Src/freertos.c`
-- EventBus: `App/system/app_events.c/.h`
-- Health: `App/system/app_health.c/.h`
-- Logs: `App/system/app_log.c/.h`, `App/system/logger_task.c`
-- Doors logic: `App/doors/doors_task.c/.h`
-- Door HAL: `App/doors/door_hal.c/.h`
-- Door BSP: `BSP/bsp_doors_io.c/.h`
-- Supervisor/Watchdog: `App/system/supervisor_task.c`, `App/system/watchdog_task.c`
+# Ключевые файлы этапа 7 (быстрый список)
+- Конфиг (формат): `App/config/config_format.c/.h`, `App/config/config_layout.h`
+- Конфиг (QSPI storage + атомарность): `App/config/config_storage_qspi.c/.h`
+- Сервис загрузки/применения на boot: `App/system/config_service.c/.h`
+- Журнал событий QSPI: `App/log/event_journal.c/.h`
+- Системные события: `App/system/app_events.c/.h`
+
+
+---
+
+# Как тестировать Этап 7 на стенде
+
+Ниже — короткий практический чек-лист (без “воды”), чтобы быстро подтвердить 7.1–7.5.
+
+## Тест 7.1 / 7.2 — чтение конфигурации из QSPI
+1) Перезагрузить устройство 3–5 раз.
+2) В UART на каждом boot должно быть:
+   - `BOOT: before cfg`
+   - `CFG: slot A OK (seq=...)` или `CFG: slot B OK (seq=...)`
+   - `BOOT: after cfg`
+
+PASS: строка про слот стабильно присутствует и не “прыгает” на default без причины.
+
+## Тест 7.3 — атомарность (power-cut)
+1) Запустить сохранение конфигурации (тем способом, который есть в текущей сборке).
+2) Выключить питание во время записи (несколько попыток).
+3) После включения должно быть:
+   - либо старый валидный слот,
+   - либо default,
+   - но НЕ “битая/частично записанная” конфигурация.
+
+## Тест 7.4 — журнал событий
+1) Сгенерировать события:
+   - Door1 OPEN/CLOSE
+   - Door1 ALARM ON/OFF
+   - Ethernet LINK DOWN/UP (выдернуть/вставить кабель)
+2) Выполнить дамп журнала (если команды заведены в вашей сборке):
+   - `log dump`
+
+PASS: события в дампе присутствуют в ожидаемом порядке.
+
+## Тест 7.5 — wear-leveling
+1) Сгенерировать много событий (5–10k) любым доступным способом.
+2) Посмотреть статистику:
+   - `log stat`
+
+PASS: адрес/сектор записи «ходит» по области журнала, стирания не концентрируются на одном секторе.
+
+---
+
+# Визуальный просмотр содержимого QSPI
+
+## Вариант 1 — STM32CubeIDE Memory Browser
+Адрес `0x9000_0000` становится читаемым **только если включён режим QSPI Memory-Mapped**.
+
+Если QSPI работает в **indirect mode** (через `HAL_QSPI_Command/Receive/Transmit`), то в Memory Browser будут `????????` — это нормально.
+
+## Вариант 2 — STM32CubeProgrammer (дамп во файл)
+Можно считать внешний QSPI во внешний `.bin` (через External Loader/OSPI) и открыть дамп в hex-редакторе.
+Это самый удобный способ “увидеть” QSPI без модификации прошивки.
+
+---
+
+# Примечания по реализации логирования/диагностики
+
+- В проекте есть **очередь логов** (`AppLog_Push/Pop`) и `LoggerTask`, но не во всех сборках есть printf-style функция `AppLog("...")`.
+- Диагностика выбора слота конфигурации (`CFG: slot A OK...`) сделана через `printf()` в `ConfigService_InitOnBoot()`, чтобы вывод работал **в раннем boot** до старта RTOS/LoggerTask.
+
