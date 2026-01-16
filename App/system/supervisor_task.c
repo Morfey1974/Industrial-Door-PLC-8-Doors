@@ -20,8 +20,13 @@ void SupervisorTask_Run(void const *argument)
     {
         uint8_t ok =
             AppHealth_IsAlive(TASK_DOOR) &&
-            AppHealth_IsAlive(TASK_COMMS) &&
-            AppHealth_IsAlive(TASK_NET);
+            AppHealth_IsAlive(TASK_LOGIC_CORE) &&
+            AppHealth_IsAlive(TASK_NET) &&
+            AppHealth_IsAlive(TASK_CAN) &&
+            AppHealth_IsAlive(TASK_RS485) &&
+            AppHealth_IsAlive(TASK_HTTP) &&
+            AppHealth_IsAlive(TASK_LOGGER) &&
+            AppHealth_IsAlive(TASK_WATCHDOG);
 
         if (!ok)
         {

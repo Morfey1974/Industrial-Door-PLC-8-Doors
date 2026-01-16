@@ -6,13 +6,72 @@
 #define APP_DOOR_MAX 8
 #endif
 
+/* =========================================================
+ * ЭТАП 4.5 — Причины сигнализации (по глобальному плану)
+ *
+ * Важно:
+ * - Сигнализация — это не "одна кнопка".
+ * - Сигнализация может включаться по нескольким причинам:
+ *   - manual (кнопка Alarm)
+ *   - open timeout (дверь открыта слишком долго)
+ *   - (на будущее) fault/degraded и т.п.
+ *
+ * Правило:
+ *   сигнализация активна, если mask != 0.
+ *   выключается только когда сняты ВСЕ причины.
+ * ========================================================= */
+typedef enum
+{
+    DOOR_ALARM_NONE          = 0U,
+    DOOR_ALARM_MANUAL        = (1U << 0), /* кнопка ALARM */
+    DOOR_ALARM_OPEN_TIMEOUT  = (1U << 1)  /* открыта слишком долго */
+    /* reserved:
+       DOOR_ALARM_FAULT      = (1U << 2),
+       DOOR_ALARM_DEGRADED   = (1U << 3),
+    */
+} door_alarm_reason_t;
+
 typedef struct
 {
+    /* ---------------------------------------------------------
+     * Базовые состояния двери (Этап 3)
+     * --------------------------------------------------------- */
     uint8_t physClosed;      // 1 = закрыта по датчику
     uint8_t alarmPressed;    // 1 = Alarm нажата (сырое чтение)
     uint8_t locked;          // 1 = замок активирован (фактически выставлено)
-    uint8_t alarming;        // 1 = режим сигнализации (мигание+зуммер)
+    uint8_t alarming;        // 1 = режим сигнализации активен (mask != 0)
+
+    /* ---------------------------------------------------------
+     * ЭТАП 4.5: причины сигнализации
+     * ---------------------------------------------------------
+     * alarmReasons — битовая маска door_alarm_reason_t.
+     * Пример:
+     *   - manual ON: alarmReasons |= DOOR_ALARM_MANUAL
+     *   - open timeout: alarmReasons |= DOOR_ALARM_OPEN_TIMEOUT
+     * Сигнализация включена, если alarmReasons != 0.
+     */
+    uint32_t alarmReasons;
+
+    /* ---------------------------------------------------------
+     * ЭТАП 4.3: тайм-аут открытой двери (общий)
+     * ---------------------------------------------------------
+     * openSinceMs — момент входа в OPEN (для измерения длительности open).
+     */
+    uint32_t openSinceMs;
+
+    /* ---------------------------------------------------------
+     * ЭТАП 4.4: тайм-аут после закрытия (индивидуально на дверь)
+     * --------------------------------------------------------- */
+    uint8_t  postClosePending;   /* 1 = ждём post-close delay */
+    uint8_t  _rsvd8;
+    uint16_t _rsvd16;
+
+    uint32_t postCloseStartMs;
+    uint32_t postCloseTimeoutMs; /* конфиг на дверь */
+
+    /* Временная отметка изменения “чего-то важного” (по месту использования) */
     uint32_t lastChangeMs;
+
 } AppDoorState_t;
 
 void Doors_TaskInit(void);
@@ -23,5 +82,43 @@ void Doors_TaskInit(void);
  */
 void DoorsTask_Run(void const *argument);
 
-/* Для других модулей (Logic Core позже) */
+/* Для других модулей (Logic Core / протоколы) */
 AppDoorState_t* Doors_GetStateArray(void);
+
+/**
+ * Запросить (пере)установку замка для двери.
+ * - door_id: 1..APP_DOOR_MAX
+ * - lock_on: 1 = lock, 0 = unlock
+ * - source: произвольный код источника (обычно app_event_source_t)
+ * - timeout_ms: TTL команды (0 = без TTL). По истечению TTL команда отбрасывается.
+ *
+ * Возвращает 1 если команда принята (поставлена как pending), иначе 0.
+ *
+ * Важно:
+ * - инвариант безопасности “не lock при открытой двери” соблюдается внутри doors_task.
+ * - при активной сигнализации (alarming=1) внешние команды отвергаются (приоритет сигнализации).
+ */
+uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uint32_t timeout_ms);
+
+/**
+ * Получить копию состояния двери.
+ * Возвращает 1 если door_id корректен.
+ */
+uint8_t Doors_GetState(uint8_t door_id, AppDoorState_t *out);
+
+/* =========================================================
+ * ЭТАП 4.3/4.4 — Заготовка конфигурации тайм-аутов
+ *
+ * Сейчас конфигурация будет приходить из WEB-конфигуратора.
+ * Пока здесь “RAM-заготовка” + API, чтобы:
+ *  - можно было подменить значения в тесте;
+ *  - потом подключить WEB без переделки логики door_task.
+ * ========================================================= */
+
+/* Общий open-timeout (для всех дверей), 0 = выключено */
+uint8_t  DoorsCfg_SetOpenTimeoutMs(uint32_t timeout_ms);
+uint32_t DoorsCfg_GetOpenTimeoutMs(void);
+
+/* post-close timeout индивидуальный на дверь, 0 = применить немедленно */
+uint8_t  DoorsCfg_SetPostCloseTimeoutMs(uint8_t door_id, uint32_t timeout_ms);
+uint32_t DoorsCfg_GetPostCloseTimeoutMs(uint8_t door_id);

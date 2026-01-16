@@ -1,8 +1,31 @@
 #include "qspi_bringup.h"
 
 #include "octospi.h"
-#include "cmsis_os.h"
 #include <stdbool.h>
+
+/*
+ * IMPORTANT: This module may be used before the RTOS scheduler starts
+ * (boot-time config load). Do not call osDelay() unconditionally.
+ *
+ * If FreeRTOS is present and running, we yield; otherwise we use HAL_Delay().
+ *
+ **/
+#ifdef FREERTOS
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
+
+static void qspi_delay_ms(uint32_t ms)
+{
+#ifdef FREERTOS
+    if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+    {
+        vTaskDelay(pdMS_TO_TICKS(ms));
+        return;
+    }
+#endif
+}
+
 
 /* OCTOSPI handle from octospi.c */
 extern OSPI_HandleTypeDef hospi1;
@@ -99,7 +122,7 @@ static HAL_StatusTypeDef Flash_WaitReady(uint32_t timeout_ms)
         if ((HAL_GetTick() - t0) > timeout_ms)
             return HAL_TIMEOUT;
 
-        osDelay(5);
+        qspi_delay_ms(5);
     }
 }
 

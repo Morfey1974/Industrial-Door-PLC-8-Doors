@@ -1,5 +1,7 @@
 #include "app_events.h"
 
+#include "log/event_journal.h"
+
 #define EVENT_QUEUE_LEN 32
 
 static QueueHandle_t s_evtQ = NULL;
@@ -13,7 +15,14 @@ void AppEvents_Init(void)
 BaseType_t AppEvents_Publish(const app_event_t *evt, TickType_t ticks_to_wait)
 {
     if (!s_evtQ || !evt) return pdFALSE;
-    return xQueueSendToBack(s_evtQ, evt, ticks_to_wait);
+
+    /* 1) Основная шина событий */
+    BaseType_t ok = xQueueSendToBack(s_evtQ, evt, ticks_to_wait);
+
+    /* 2) ЭТАП 7: попытка залогировать (не блокирует) */
+    (void)EventJournal_EnqueueEvent(evt);
+
+    return ok;
 }
 
 BaseType_t AppEvents_Wait(app_event_t *evt, TickType_t ticks_to_wait)

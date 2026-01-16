@@ -28,6 +28,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <string.h>
+
+#include "system/config_service.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,6 +113,25 @@ int main(void)
   MX_FDCAN1_Init();
   MX_OCTOSPI1_Init();
   /* USER CODE BEGIN 2 */
+
+  /* Early boot markers on UART3 (kept inside USER CODE so CubeMX regen won't wipe) */
+  {
+    const char *s1 = "BOOT: uart3 ok\r\n";
+    HAL_UART_Transmit(&huart3, (uint8_t *)s1, (uint16_t)strlen(s1), 100);
+  }
+  {
+    const char *s2 = "BOOT: before cfg\r\n";
+    HAL_UART_Transmit(&huart3, (uint8_t *)s2, (uint16_t)strlen(s2), 100);
+  }
+
+  /* Stage 7: load config (MASTER only), or keep defaults on SLAVE. */
+  /* Load config (MASTER: from QSPI or defaults; SLAVE: defaults) */
+  ConfigService_InitOnBoot(0);
+
+  {
+    const char *s3 = "BOOT: after cfg\r\n";
+    HAL_UART_Transmit(&huart3, (uint8_t *)s3, (uint16_t)strlen(s3), 100);
+  }
 
 
   /* USER CODE END 2 */
