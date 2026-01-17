@@ -7,14 +7,32 @@
 
 #include "system/app_qspi_lock.h"
 
-/* QSPI driver facade (exists in project Core/Src) */
+/* Фасад драйвера QSPI (реализация в Core/Src проекта). */
 #include "qspi_bringup.h"
 
+#ifdef CFG_TEST_SAVE
+/* HAL_Delay() для тестовых пауз в окнах power-cut. */
+#include "stm32h7xx_hal.h"
+#endif
+
+#ifdef CFG_TEST_SAVE
 /*
- * Storage rules (Stage 7.2/7.3):
- * - Two slots A/B.
- * - Write new config to inactive slot: erase -> write payload -> commit by writing valid header last.
- * - On boot choose newest valid slot by seq.
+ * Слабый хук для печати диагностических сообщений теста 7.3.
+ * По умолчанию молчит, но может быть переопределён в приложении
+ * (например, в main.c) и выводить в UART3.
+ */
+__attribute__((weak)) void CfgTestHook_Print(const char *s)
+{
+    (void)s;
+}
+#endif
+
+/*
+ * Правила хранения (Этап 7.2/7.3):
+ *  - Два слота A/B.
+ *  - Новая конфигурация пишется в НЕактивный слот: erase -> payload -> commit.
+ *  - Commit выполняется записью валидного заголовка ПОСЛЕДНИМ (атомарная активация).
+ *  - На старте выбирается самый новый валидный слот по seq.
  */
 
 static uint32_t slot_base(uint8_t slot)
@@ -137,29 +155,12 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
     if (!cfg || !inout_info)
         return CFGST_ARG;
 
-    /* Validate before writing */
+    /* Валидация перед записью */
     cfg_validate_error_t verr;
-    const uint8_t vres = Config_Validate(cfg, &verr);
-    if (vres != CFG_VALIDATE_OK)
-    {
-        /*
-         * ВАЖНО: структура cfg_validate_error_t может меняться (и в актуальной
-         * версии не обязана содержать поле "code"). Поэтому здесь логируем
-         * только код результата валидатора, не завязываясь на внутренности err.
-         */
-        /*
-         * ВАЖНО:
-         *  - Этот модуль (storage) не должен зависеть от текстового логгера AppLog().
-         *  - На раннем этапе бут‑процесса LoggerTask может быть ещё не запущен,
-         *    а в некоторых сборках AppLog() вообще может отсутствовать.
-         *  - Поэтому здесь не печатаем, а возвращаем статус BAD_FORMAT.
-         * Диагностический вывод по слотам/применению делается уровнем выше
-         * (ConfigService_InitOnBoot), где уже можно использовать printf().
-         */
+    if (Config_Validate(cfg, &verr) != CFG_VALIDATE_OK)
         return CFGST_BAD_FORMAT;
-    }
 
-    /* Choose target slot = opposite of currently used, or A if unknown */
+    /* Выбор целевого слота: противоположный активному (или A, если активный неизвестен) */
     uint8_t current = 0xFFU;
     if (inout_info->used_slot == 1U) current = 0U; /* A */
     else if (inout_info->used_slot == 2U) current = 1U; /* B */
@@ -170,11 +171,11 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
 
     const uint32_t base = slot_base(target);
 
-    /* Erase entire slot */
+    /* Стираем весь слот */
     if (qspi_erase_region_4k(base, (uint32_t)QSPI_CFG_SLOT_SIZE) != 0)
         return CFGST_IO_ERROR;
 
-    /* Write payload in pages */
+    /* Пишем payload постранично */
     const uint8_t *p = (const uint8_t*)cfg;
     uint32_t addr = base + QSPI_CFG_PAYLOAD_OFFSET;
     uint32_t left = (uint32_t)sizeof(project_config_t);
@@ -188,7 +189,18 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
         left -= chunk;
     }
 
-    /* Prepare header */
+#ifdef CFG_TEST_SAVE
+    /*
+     * ОКНО ДЛЯ POWER-CUT (7.3):
+     * payload уже полностью записан, но commit-header ещё НЕ записан.
+     * Если отключить питание в этом окне — при следующем старте должен
+     * подняться СТАРЫЙ слот (commit не успел), но никогда не «мусор».
+     */
+    CfgTestHook_Print("CFG_TEST: window 1 - payload recorded, commit not yet (1500 ms)\r\n");
+    HAL_Delay(1500);
+#endif
+
+    /* Подготовка заголовка */
     cfg_slot_header_t h;
     memset(&h, 0, sizeof(h));
     h.magic = CFG_SLOT_MAGIC;
@@ -198,11 +210,33 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
     h.payloadCrc32 = Config_CalcCrc32(cfg, sizeof(*cfg));
     h.headerCrc32 = header_crc32(&h);
 
-    /* Commit header LAST (atomic activation) */
+    /* Commit заголовка ПОСЛЕДНИМ (атомарная активация) */
+
+#ifdef CFG_TEST_SAVE
+    /*
+     * ОКНО ДЛЯ POWER-CUT (7.3):
+     * Сейчас начнётся запись commit-header (самый «важный» момент).
+     * Если отключить питание тут — должен подняться либо старый слот,
+     * либо новый (если commit уже успел записаться полностью).
+     */
+    CfgTestHook_Print("CFG_TEST: window 2 - before recording commit-header (1000 ms)\r\n");
+    HAL_Delay(1000);
+#endif
+
     if (qspi_write_page(base + QSPI_CFG_HEADER_OFFSET, &h, (uint32_t)sizeof(h)) != 0)
         return CFGST_IO_ERROR;
 
-    /* Update info */
+#ifdef CFG_TEST_SAVE
+    /*
+     * ОКНО ДЛЯ POWER-CUT (7.3):
+     * commit-header уже записан. Если отключить питание сейчас — при старте
+     * должен подняться НОВЫЙ слот (commit валиден).
+     */
+    CfgTestHook_Print("CFG_TEST: Window 3 - commit written (1000 ms)\r\n");
+    HAL_Delay(1000);
+#endif
+
+    /* Обновление информации о выбранном слоте */
     inout_info->status = CFGST_OK;
     inout_info->used_slot = (uint8_t)(target + 1U);
     inout_info->seq = h.seq;
@@ -218,7 +252,7 @@ cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_
     if (st == CFGST_OK)
         return st;
 
-    /* No valid config: create default and persist */
+    /* Валидного конфига нет: создаём дефолтный и сохраняем */
     Config_Default(out_cfg);
     Config_Finalize(out_cfg);
 

@@ -22,6 +22,25 @@
 
 /* USER CODE BEGIN 0 */
 #include <string.h>
+#include <ctype.h>
+
+#include "app_log_uart3.h"
+
+/* ---------------- UART3 CLI (Этап 7: log dump/stat/clear) ----------------
+ * Приём реализован через HAL_UARTEx_ReceiveToIdle_IT, чтобы не заводить отдельную задачу
+ * и не блокировать планировщик.
+ *
+ * ВАЖНО:
+ * - код размещён в USER CODE секциях, чтобы CubeMX-регенерация его не затирала
+ * - обработчик команд вызывается по завершению строки (CR/LF)
+ * ------------------------------------------------------------------------ */
+
+#define UART3_RX_CHUNK  64u
+#define UART3_LINE_MAX  128u
+
+static uint8_t  s_uart3_rx_chunk[UART3_RX_CHUNK];
+static char     s_uart3_line[UART3_LINE_MAX];
+static uint32_t s_uart3_line_len = 0u;
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart4;
@@ -110,7 +129,9 @@ void MX_USART3_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART3_Init 2 */
-
+  /* UART3 CLI: запускаем приём в фоне (idle-line) */
+  (void)HAL_UARTEx_ReceiveToIdle_IT(&huart3, s_uart3_rx_chunk, UART3_RX_CHUNK);
+  /* В варианте без DMA ничего дополнительно отключать не нужно */
   /* USER CODE END USART3_Init 2 */
 
 }
@@ -267,4 +288,69 @@ void Debug_Print(const char *s)
     if (s == NULL) return;
     HAL_UART_Transmit(&huart3, (uint8_t*)s, strlen(s), HAL_MAX_DELAY);
 }
+/* ---------------- UART3 CLI: обработка приёма ----------------
+ * Вызывается HAL-ом при событии IDLE (пауза в приёме).
+ * Сюда приходят куски данных, из которых собирается строка команды.
+ */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+    if (huart == NULL) return;
+
+    if (huart->Instance == USART3)
+    {
+        for (uint16_t i = 0; i < Size; i++)
+        {
+            char c = (char)s_uart3_rx_chunk[i];
+
+            /* Игнорируем NUL */
+            if (c == '\0')
+                continue;
+
+            /* Конец строки: выполняем команду */
+            if (c == '\r' || c == '\n')
+            {
+                if (s_uart3_line_len > 0u)
+                {
+                    s_uart3_line[s_uart3_line_len] = '\0';
+                    AppLog_Uart3_HandleCommand(s_uart3_line);
+                    s_uart3_line_len = 0u;
+                }
+                continue;
+            }
+
+            /* Поддерживаем только печатные ASCII, чтобы не ловить мусор */
+            if ((unsigned char)c < 32u || (unsigned char)c > 126u)
+                continue;
+
+            if (s_uart3_line_len < (UART3_LINE_MAX - 1u))
+            {
+                s_uart3_line[s_uart3_line_len++] = c;
+            }
+            else
+            {
+                /* Переполнение: сбрасываем текущую строку */
+                s_uart3_line_len = 0u;
+            }
+        }
+
+        /* Перезапускаем приём */
+        (void)HAL_UARTEx_ReceiveToIdle_IT(&huart3, s_uart3_rx_chunk, UART3_RX_CHUNK);
+        /* В варианте без DMA ничего дополнительно отключать не нужно */
+
+    }
+}
+
+/* На ошибках UART перезапускаем приём, чтобы CLI не “умирал” */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == NULL) return;
+
+    if (huart->Instance == USART3)
+    {
+        s_uart3_line_len = 0u;
+        (void)HAL_UARTEx_ReceiveToIdle_IT(&huart3, s_uart3_rx_chunk, UART3_RX_CHUNK);
+        /* В варианте без DMA ничего дополнительно отключать не нужно */
+    }
+}
+
 /* USER CODE END 1 */

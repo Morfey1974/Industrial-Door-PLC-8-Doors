@@ -30,7 +30,13 @@
 
 #include <string.h>
 
+#include <stdio.h>
+
 #include "system/config_service.h"
+
+/* Для временного теста сохранения конфигурации (Этап 7.3). */
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* USER CODE END Includes */
 
@@ -65,6 +71,68 @@ void MX_FREERTOS_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* --------------------------------------------------------------------------
+ * Этап 7.3 (тест атомарного сохранения): временный автосейв через CFG_TEST_SAVE
+ *
+ * Что делает:
+ *  - Если в препроцессоре задано CFG_TEST_SAVE=1, то после старта RTOS
+ *    создаётся одноразовая задача, которая через 5 секунд вызывает
+ *    ConfigService_Persist() для текущей активной конфигурации в RAM.
+ *
+ *    Как включить тест (точно по шагам)
+ * 1) Включи define
+ * STM32CubeIDE → Project Properties →
+ * C/C++ Build → Settings → MCU GCC Compiler → Preprocessor → Defined symbols
+ * Добавь:
+ * CFG_TEST_SAVE=1
+ *
+ * Зачем:
+ *  - На текущем этапе ещё нет CLI/WEB-триггера сохранения.
+ *  - Нам нужен детерминированный способ начать цикл persist, чтобы
+ *    выполнить power-cut тест (выключить питание во время записи).
+ *
+ * ВАЖНО:
+ *  - В config_storage_qspi.c под CFG_TEST_SAVE добавлены «окна» (HAL_Delay)
+ *    между payload и commit-header, чтобы человек успел рубануть питание.
+ *  - В релизной сборке просто убери CFG_TEST_SAVE из defines.
+ * -------------------------------------------------------------------------- */
+
+#ifdef CFG_TEST_SAVE
+extern project_config_t g_project_cfg; /* defined in App/system/config_service.c */
+
+static void cfg_test_uart3_print(const char *s)
+{
+  if (!s) return;
+  (void)HAL_UART_Transmit(&huart3, (uint8_t *)s, (uint16_t)strlen(s), 100);
+}
+
+/*
+ * Реализация слабого хука из config_storage_qspi.c.
+ * Держим здесь (USER CODE), чтобы при регенерации CubeMX не потерялось.
+ */
+void CfgTestHook_Print(const char *s)
+{
+  cfg_test_uart3_print(s);
+}
+
+static void CfgTestSaveTask(void *argument)
+{
+  (void)argument;
+
+  cfg_test_uart3_print("CFG_TEST: persist in 5s...\r\n");
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
+  cfg_test_uart3_print("CFG_TEST: persist start\r\n");
+  const cfg_storage_status_t st = ConfigService_Persist(&g_project_cfg);
+
+  char buf[80];
+  (void)snprintf(buf, sizeof(buf), "CFG_TEST: persist done st=%u\r\n", (unsigned)st);
+  cfg_test_uart3_print(buf);
+
+  vTaskDelete(NULL);
+}
+#endif
 
 /* USER CODE END 0 */
 
@@ -132,6 +200,14 @@ int main(void)
     const char *s3 = "BOOT: after cfg\r\n";
     HAL_UART_Transmit(&huart3, (uint8_t *)s3, (uint16_t)strlen(s3), 100);
   }
+
+#ifdef CFG_TEST_SAVE
+  /*
+   * Создаём одноразовую задачу автосейва.
+   * xTaskCreate допустимо вызывать до старта планировщика.
+   */
+  (void)xTaskCreate(CfgTestSaveTask, "CfgTestSave", 256, NULL, tskIDLE_PRIORITY + 1U, NULL);
+#endif
 
 
   /* USER CODE END 2 */
