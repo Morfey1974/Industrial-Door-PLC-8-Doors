@@ -48,6 +48,7 @@
 #include "http_task.h"
 #include "logger_task.h"
 #include "watchdog_task.h"
+#include "system/journal_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,6 +75,7 @@ osThreadId canTaskHandle;
 osThreadId rs485TaskHandle;
 osThreadId loggerTaskHandle;
 osThreadId watchdogTaskHandle;
+osThreadId journalTaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -89,14 +91,13 @@ void StartCanTask(void const * argument);
 void StartRs485Task(void const * argument);
 void StartLoggerTask(void const * argument);
 void StartWatchdogTask(void const * argument);
+void StartJournalTask(void const * argument);
 
 extern void MX_LWIP_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* GetIdleTaskMemory prototype (linked to static allocation support) */
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer,
-                                    StackType_t **ppxIdleTaskStackBuffer,
-                                    uint32_t *pulIdleTaskStackSize );
+void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize );
 
 /* USER CODE BEGIN GET_IDLE_TASK_MEMORY */
 static StaticTask_t xIdleTaskTCBBuffer;
@@ -112,24 +113,12 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
 }
 /* USER CODE END GET_IDLE_TASK_MEMORY */
 
-/* USER CODE BEGIN 0 */
-static void TaskShouldNeverReturn(void)
-{
-  taskDISABLE_INTERRUPTS();
-  for (;;)
-  {
-    /* dead loop */
-  }
-}
-/* USER CODE END 0 */
-
 /**
   * @brief  FreeRTOS initialization
   * @param  None
   * @retval None
   */
-void MX_FREERTOS_Init(void)
-{
+void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
   AppEvents_Init();
   AppHealth_Init();
@@ -153,55 +142,50 @@ void MX_FREERTOS_Init(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-
   /* definition and creation of netTask */
   osThreadDef(netTask, StartNetTask, osPriorityLow, 0, 768);
   netTaskHandle = osThreadCreate(osThread(netTask), NULL);
-  configASSERT(netTaskHandle != NULL);
 
   /* definition and creation of commsTask */
   osThreadDef(commsTask, StartCommsTask, osPriorityNormal, 0, 512);
   commsTaskHandle = osThreadCreate(osThread(commsTask), NULL);
-  configASSERT(commsTaskHandle != NULL);
 
   /* definition and creation of doorsTask */
   osThreadDef(doorsTask, StartDoorsTask, osPriorityAboveNormal, 0, 512);
   doorsTaskHandle = osThreadCreate(osThread(doorsTask), NULL);
-  configASSERT(doorsTaskHandle != NULL);
 
   /* definition and creation of supervisorTask */
   osThreadDef(supervisorTask, StartSupervisorTask, osPriorityHigh, 0, 512);
   supervisorTaskHandle = osThreadCreate(osThread(supervisorTask), NULL);
-  configASSERT(supervisorTaskHandle != NULL);
 
   /* definition and creation of httpTask */
   osThreadDef(httpTask, StartHttpTask, osPriorityBelowNormal, 0, 512);
   httpTaskHandle = osThreadCreate(osThread(httpTask), NULL);
-  configASSERT(httpTaskHandle != NULL);
 
   /* definition and creation of canTask */
   osThreadDef(canTask, StartCanTask, osPriorityNormal, 0, 512);
   canTaskHandle = osThreadCreate(osThread(canTask), NULL);
-  configASSERT(canTaskHandle != NULL);
 
   /* definition and creation of rs485Task */
   osThreadDef(rs485Task, StartRs485Task, osPriorityNormal, 0, 512);
   rs485TaskHandle = osThreadCreate(osThread(rs485Task), NULL);
-  configASSERT(rs485TaskHandle != NULL);
 
   /* definition and creation of loggerTask */
   osThreadDef(loggerTask, StartLoggerTask, osPriorityBelowNormal, 0, 512);
   loggerTaskHandle = osThreadCreate(osThread(loggerTask), NULL);
-  configASSERT(loggerTaskHandle != NULL);
 
   /* definition and creation of watchdogTask */
   osThreadDef(watchdogTask, StartWatchdogTask, osPriorityAboveNormal, 0, 512);
   watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
-  configASSERT(watchdogTaskHandle != NULL);
+
+  /* definition and creation of journalTask */
+  osThreadDef(journalTask, StartJournalTask, osPriorityBelowNormal, 0, 512);
+  journalTaskHandle = osThreadCreate(osThread(journalTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* Все задачи по Этапу 2 созданы здесь */
   /* USER CODE END RTOS_THREADS */
+
 }
 
 /* USER CODE BEGIN Header_StartNetTask */
@@ -215,7 +199,6 @@ void StartNetTask(void const * argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
-
   /* USER CODE BEGIN StartNetTask */
   /* Если хочешь задержку "до" LWIP init — её нельзя ставить здесь,
      потому что MX_LWIP_Init() находится в автогенерируемом блоке выше. */
@@ -362,6 +345,37 @@ void StartWatchdogTask(void const * argument)
   /* USER CODE END StartWatchdogTask */
 }
 
+/* USER CODE BEGIN Header_StartJournalTask */
+/**
+* @brief Function implementing the journalTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartJournalTask */
+void StartJournalTask(void const * argument)
+{
+  /* USER CODE BEGIN StartJournalTask */
+  /* Infinite loop */
+	JournalTask_Run(argument);
+
+	  configASSERT(0);
+	  TaskShouldNeverReturn();
+  /* USER CODE END StartJournalTask */
+}
+
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+/* Эта функция нужна как "предохранитель":
+ * все Start*Task() вызывают реальные Run()-функции задач,
+ * которые никогда не должны возвращаться.
+ * Если вернулись — это фатальная логическая ошибка.
+ */
+static void TaskShouldNeverReturn(void)
+{
+  taskDISABLE_INTERRUPTS();
+  for (;;)
+  {
+    /* dead loop */
+  }
+}
 /* USER CODE END Application */

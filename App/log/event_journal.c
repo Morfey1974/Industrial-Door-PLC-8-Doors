@@ -38,7 +38,7 @@ typedef struct __attribute__((packed)) {
     uint32_t pad;
 } elog_record_t;
 
-_Static_assert(sizeof(elog_record_t) == 32, "elog_record_t must be 32 bytes");
+enum { elog_record_t_must_be_32_bytes = 1 / ((sizeof(elog_record_t) == 32) ? 1 : 0) };
 
 /* ---------------- State ---------------- */
 
@@ -423,6 +423,50 @@ static int find_last_valid_ofs_in_sector(uint32_t sector_index, uint32_t *out_of
     return 1;
 }
 
+/* Человекочитаемые имена для type/source.
+ * Важно: журнал хранит числовые значения, а здесь мы только улучшаем вывод для CLI.
+ */
+static const char* evt_type_to_str(uint16_t t)
+{
+    switch ((app_event_type_t)t)
+    {
+        case EVT_NONE:                 return "NONE";
+
+        case EVT_DOOR_OPEN:            return "DOOR_OPEN";
+        case EVT_DOOR_CLOSE:           return "DOOR_CLOSE";
+        case EVT_DOOR_ALARM:           return "DOOR_ALARM";
+        case EVT_DOOR_OPEN_TIMEOUT:    return "DOOR_OPEN_TIMEOUT";
+        case EVT_DOOR_POST_CLOSE_READY:return "DOOR_POST_CLOSE_READY";
+        case EVT_DOOR_SIGNAL_ON:       return "DOOR_SIGNAL_ON";
+        case EVT_DOOR_SIGNAL_OFF:      return "DOOR_SIGNAL_OFF";
+
+        case EVT_CMD_LOCK:             return "CMD_LOCK";
+        case EVT_CMD_UNLOCK:           return "CMD_UNLOCK";
+
+        case EVT_NET_LINK_UP:          return "NET_LINK_UP";
+        case EVT_NET_LINK_DOWN:        return "NET_LINK_DOWN";
+
+        case EVT_SYSTEM_FAULT:         return "SYSTEM_FAULT";
+
+        default:                       return "UNKNOWN";
+    }
+}
+
+static const char* evt_src_to_str(uint16_t s)
+{
+    switch ((app_event_source_t)s)
+    {
+        case APP_SRC_NONE:        return "NONE";
+        case APP_SRC_DOOR_LOCAL:  return "DOOR_LOCAL";
+        case APP_SRC_SUPERVISOR:  return "SUPERVISOR";
+        case APP_SRC_WATCHDOG:    return "WATCHDOG";
+        case APP_SRC_CAN:         return "CAN";
+        case APP_SRC_RS485:       return "RS485";
+        case APP_SRC_HTTP:        return "HTTP";
+        default:                  return "UNKNOWN";
+    }
+}
+
 void EventJournal_PrintStats(void)
 {
     journal_stats_t st;
@@ -517,13 +561,17 @@ void EventJournal_DumpLast(uint32_t count)
     for (int32_t i = (int32_t)got - 1; i >= 0; i--)
     {
         const elog_record_t *r = &buf[i];
-        AppLog("JLOG #%lu t=%lu type=%u door=%u src=%u arg=0x%08lx",
+        AppLog("JLOG #%lu t=%lu %s(%u) door=%u src=%s(%u) arg=0x%08lx flags=0x%02x",
                (unsigned long)r->recSeq,
                (unsigned long)r->timestamp,
+               evt_type_to_str(r->type),
                (unsigned)r->type,
                (unsigned)r->door_id,
+               evt_src_to_str(r->source),
                (unsigned)r->source,
-               (unsigned long)r->arg);
+               (unsigned long)r->arg,
+               (unsigned)r->flags);
+
     }
 
     vPortFree(buf);
