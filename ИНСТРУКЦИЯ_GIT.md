@@ -30,16 +30,19 @@ git commit -m "Initial commit: Industrial Door PLC project"
 ### Шаг 4: Создание репозитория на GitHub
 
 1. Зайдите на https://github.com
-2. Нажмите "New repository"
+2. Нажмите "New repository" (или "+" → "New repository")
 3. Назовите репозиторий (например, `Industrial-Door-PLC`)
-4. **НЕ** добавляйте README, .gitignore или лицензию (они уже есть)
-5. Нажмите "Create repository"
+4. **НЕ** добавляйте README, .gitignore или лицензию (они уже есть в проекте)
+5. Выберите Public или Private
+6. Нажмите "Create repository"
 
 ### Шаг 5: Добавление remote и выгрузка
 
+После создания репозитория GitHub покажет инструкции. Выполните:
+
 ```bash
-# Замените YOUR_USERNAME на ваш GitHub username
-git remote add origin https://github.com/YOUR_USERNAME/Industrial-Door-PLC.git
+# Замените YOUR_USERNAME на ваш GitHub username и REPO_NAME на имя репозитория
+git remote add origin https://github.com/YOUR_USERNAME/REPO_NAME.git
 
 # Переименуйте ветку в main (если нужно)
 git branch -M main
@@ -48,11 +51,16 @@ git branch -M main
 git push -u origin main
 ```
 
-Если используете SSH:
+**Если используете SSH:**
 ```bash
-git remote add origin git@github.com:YOUR_USERNAME/Industrial-Door-PLC.git
+git remote add origin git@github.com:YOUR_USERNAME/REPO_NAME.git
+git branch -M main
 git push -u origin main
 ```
+
+**Если используете Personal Access Token (рекомендуется для HTTPS):**
+1. Создайте токен: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. При запросе пароля введите токен вместо пароля
 
 ## Важные файлы для коммита
 
