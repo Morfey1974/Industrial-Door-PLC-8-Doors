@@ -1,0 +1,43 @@
+#pragma once
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* A tiny JSON helper for a controlled schema (embedded).
+ *
+ * Supported value types:
+ *  - unsigned integer: 123
+ *  - boolean: true/false
+ *  - string: "..." (no escape handling; stops at next quote)
+ *  - object: { ... } (brace matching)
+ *
+ * Not a full JSON parser. Intended for local/LAN dev tools only.
+ */
+
+typedef struct {
+    const char *ptr;
+    size_t len;
+} json_span_t;
+
+/* Find a top-level key and return a span for its raw value (trimmed).
+ * Example: {"a": 123} -> span="123"
+ */
+uint8_t Json_FindKeyValueSpan(const char *json, const char *key, json_span_t *out_val);
+
+/* Find an object by key and return span for its inside (without outer braces).
+ * Example: {"net":{...}} -> span points to "..." content.
+ */
+uint8_t Json_FindObjectSpan(const char *json, const char *key, json_span_t *out_obj);
+
+uint8_t Json_GetUint32(const char *json, const char *key, uint32_t *out);
+uint8_t Json_GetUint16(const char *json, const char *key, uint16_t *out);
+uint8_t Json_GetBool(const char *json, const char *key, uint8_t *out_bool);
+uint8_t Json_GetString(const char *json, const char *key, char *out, size_t out_cap);
+
+#ifdef __cplusplus
+}
+#endif

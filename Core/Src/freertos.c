@@ -36,6 +36,7 @@
 #include "app_health.h"
 #include "app_log.h"
 
+
 /* App/doors */
 #include "doors_task.h"
 
@@ -49,6 +50,12 @@
 #include "logger_task.h"
 #include "watchdog_task.h"
 #include "system/journal_task.h"
+#include "stdio.h"
+#include <stdint.h>
+extern volatile uint32_t g_eth_irq;
+extern volatile uint32_t g_eth_rx_cb;
+extern volatile uint32_t g_eth_tx_cb;
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -66,52 +73,95 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 /* USER CODE END Variables */
-osThreadId netTaskHandle;
-osThreadId commsTaskHandle;
-osThreadId doorsTaskHandle;
-osThreadId supervisorTaskHandle;
-osThreadId httpTaskHandle;
-osThreadId canTaskHandle;
-osThreadId rs485TaskHandle;
-osThreadId loggerTaskHandle;
-osThreadId watchdogTaskHandle;
-osThreadId journalTaskHandle;
+/* Definitions for netTask */
+osThreadId_t netTaskHandle;
+const osThreadAttr_t netTask_attributes = {
+  .name = "netTask",
+  .stack_size = 768 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for commsTask */
+osThreadId_t commsTaskHandle;
+const osThreadAttr_t commsTask_attributes = {
+  .name = "commsTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for doorsTask */
+osThreadId_t doorsTaskHandle;
+const osThreadAttr_t doorsTask_attributes = {
+  .name = "doorsTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for supervisorTask */
+osThreadId_t supervisorTaskHandle;
+const osThreadAttr_t supervisorTask_attributes = {
+  .name = "supervisorTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for httpTask */
+osThreadId_t httpTaskHandle;
+const osThreadAttr_t httpTask_attributes = {
+  .name = "httpTask",
+  .stack_size = 3072 * 4,  /* Увеличено с 2048*4 до 3072*4 (12288 байт) из-за больших буферов на стеке (body[4096], rx[768], hdr[256], req_body[2048]) */
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for canTask */
+osThreadId_t canTaskHandle;
+const osThreadAttr_t canTask_attributes = {
+  .name = "canTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for rs485Task */
+osThreadId_t rs485TaskHandle;
+const osThreadAttr_t rs485Task_attributes = {
+  .name = "rs485Task",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for loggerTask */
+osThreadId_t loggerTaskHandle;
+const osThreadAttr_t loggerTask_attributes = {
+  .name = "loggerTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for watchdogTask */
+osThreadId_t watchdogTaskHandle;
+const osThreadAttr_t watchdogTask_attributes = {
+  .name = "watchdogTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for journalTask */
+osThreadId_t journalTaskHandle;
+const osThreadAttr_t journalTask_attributes = {
+  .name = "journalTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 static void TaskShouldNeverReturn(void);
 /* USER CODE END FunctionPrototypes */
 
-void StartNetTask(void const * argument);
-void StartCommsTask(void const * argument);
-void StartDoorsTask(void const * argument);
-void StartSupervisorTask(void const * argument);
-void StartHttpTask(void const * argument);
-void StartCanTask(void const * argument);
-void StartRs485Task(void const * argument);
-void StartLoggerTask(void const * argument);
-void StartWatchdogTask(void const * argument);
-void StartJournalTask(void const * argument);
+void StartNetTask(void *argument);
+void StartCommsTask(void *argument);
+void StartDoorsTask(void *argument);
+void StartSupervisorTask(void *argument);
+void StartHttpTask(void *argument);
+void StartCanTask(void *argument);
+void StartRs485Task(void *argument);
+void StartLoggerTask(void *argument);
+void StartWatchdogTask(void *argument);
+void StartJournalTask(void *argument);
 
 extern void MX_LWIP_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
-
-/* GetIdleTaskMemory prototype (linked to static allocation support) */
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize );
-
-/* USER CODE BEGIN GET_IDLE_TASK_MEMORY */
-static StaticTask_t xIdleTaskTCBBuffer;
-static StackType_t  xIdleStack[configMINIMAL_STACK_SIZE];
-
-void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
-                                   StackType_t **ppxIdleTaskStackBuffer,
-                                   uint32_t *pulIdleTaskStackSize)
-{
-  *ppxIdleTaskTCBBuffer   = &xIdleTaskTCBBuffer;
-  *ppxIdleTaskStackBuffer = &xIdleStack[0];
-  *pulIdleTaskStackSize   = configMINIMAL_STACK_SIZE;
-}
-/* USER CODE END GET_IDLE_TASK_MEMORY */
 
 /**
   * @brief  FreeRTOS initialization
@@ -142,49 +192,43 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of netTask */
-  osThreadDef(netTask, StartNetTask, osPriorityLow, 0, 768);
-  netTaskHandle = osThreadCreate(osThread(netTask), NULL);
+  /* creation of netTask */
+  netTaskHandle = osThreadNew(StartNetTask, NULL, &netTask_attributes);
 
-  /* definition and creation of commsTask */
-  osThreadDef(commsTask, StartCommsTask, osPriorityNormal, 0, 512);
-  commsTaskHandle = osThreadCreate(osThread(commsTask), NULL);
+  /* creation of commsTask */
+  commsTaskHandle = osThreadNew(StartCommsTask, NULL, &commsTask_attributes);
 
-  /* definition and creation of doorsTask */
-  osThreadDef(doorsTask, StartDoorsTask, osPriorityAboveNormal, 0, 512);
-  doorsTaskHandle = osThreadCreate(osThread(doorsTask), NULL);
+  /* creation of doorsTask */
+  doorsTaskHandle = osThreadNew(StartDoorsTask, NULL, &doorsTask_attributes);
 
-  /* definition and creation of supervisorTask */
-  osThreadDef(supervisorTask, StartSupervisorTask, osPriorityHigh, 0, 512);
-  supervisorTaskHandle = osThreadCreate(osThread(supervisorTask), NULL);
+  /* creation of supervisorTask */
+  supervisorTaskHandle = osThreadNew(StartSupervisorTask, NULL, &supervisorTask_attributes);
 
-  /* definition and creation of httpTask */
-  osThreadDef(httpTask, StartHttpTask, osPriorityBelowNormal, 0, 512);
-  httpTaskHandle = osThreadCreate(osThread(httpTask), NULL);
+  /* creation of httpTask */
+  httpTaskHandle = osThreadNew(StartHttpTask, NULL, &httpTask_attributes);
 
-  /* definition and creation of canTask */
-  osThreadDef(canTask, StartCanTask, osPriorityNormal, 0, 512);
-  canTaskHandle = osThreadCreate(osThread(canTask), NULL);
+  /* creation of canTask */
+  canTaskHandle = osThreadNew(StartCanTask, NULL, &canTask_attributes);
 
-  /* definition and creation of rs485Task */
-  osThreadDef(rs485Task, StartRs485Task, osPriorityNormal, 0, 512);
-  rs485TaskHandle = osThreadCreate(osThread(rs485Task), NULL);
+  /* creation of rs485Task */
+  rs485TaskHandle = osThreadNew(StartRs485Task, NULL, &rs485Task_attributes);
 
-  /* definition and creation of loggerTask */
-  osThreadDef(loggerTask, StartLoggerTask, osPriorityBelowNormal, 0, 512);
-  loggerTaskHandle = osThreadCreate(osThread(loggerTask), NULL);
+  /* creation of loggerTask */
+  loggerTaskHandle = osThreadNew(StartLoggerTask, NULL, &loggerTask_attributes);
 
-  /* definition and creation of watchdogTask */
-  osThreadDef(watchdogTask, StartWatchdogTask, osPriorityAboveNormal, 0, 512);
-  watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
+  /* creation of watchdogTask */
+  watchdogTaskHandle = osThreadNew(StartWatchdogTask, NULL, &watchdogTask_attributes);
 
-  /* definition and creation of journalTask */
-  osThreadDef(journalTask, StartJournalTask, osPriorityBelowNormal, 0, 512);
-  journalTaskHandle = osThreadCreate(osThread(journalTask), NULL);
+  /* creation of journalTask */
+  journalTaskHandle = osThreadNew(StartJournalTask, NULL, &journalTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* Все задачи по Этапу 2 созданы здесь */
+
   /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+
+  /* USER CODE END RTOS_EVENTS */
 
 }
 
@@ -195,13 +239,15 @@ void MX_FREERTOS_Init(void) {
 * @retval None
 */
 /* USER CODE END Header_StartNetTask */
-void StartNetTask(void const * argument)
+void StartNetTask(void *argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN StartNetTask */
   /* Если хочешь задержку "до" LWIP init — её нельзя ставить здесь,
      потому что MX_LWIP_Init() находится в автогенерируемом блоке выше. */
+  printf("ETH: irq=%lu rxcb=%lu txcb=%lu\n", g_eth_irq, g_eth_rx_cb, g_eth_tx_cb);
+
   NetTask_Run(argument);
 
   configASSERT(0);
@@ -216,7 +262,7 @@ void StartNetTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartCommsTask */
-void StartCommsTask(void const * argument)
+void StartCommsTask(void *argument)
 {
   /* USER CODE BEGIN StartCommsTask */
   CommsTask_Run(argument);
@@ -233,7 +279,7 @@ void StartCommsTask(void const * argument)
   * @retval None
   */
 /* USER CODE END Header_StartDoorsTask */
-void StartDoorsTask(void const * argument)
+void StartDoorsTask(void *argument)
 {
   /* USER CODE BEGIN StartDoorsTask */
   DoorsTask_Run(argument);
@@ -250,7 +296,7 @@ void StartDoorsTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartSupervisorTask */
-void StartSupervisorTask(void const * argument)
+void StartSupervisorTask(void *argument)
 {
   /* USER CODE BEGIN StartSupervisorTask */
   SupervisorTask_Run(argument);
@@ -267,9 +313,10 @@ void StartSupervisorTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartHttpTask */
-void StartHttpTask(void const * argument)
+void StartHttpTask(void *argument)
 {
   /* USER CODE BEGIN StartHttpTask */
+
   HttpTask_Run(argument);
 
   configASSERT(0);
@@ -284,7 +331,7 @@ void StartHttpTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartCanTask */
-void StartCanTask(void const * argument)
+void StartCanTask(void *argument)
 {
   /* USER CODE BEGIN StartCanTask */
   CanTask_Run(argument);
@@ -301,7 +348,7 @@ void StartCanTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartRs485Task */
-void StartRs485Task(void const * argument)
+void StartRs485Task(void *argument)
 {
   /* USER CODE BEGIN StartRs485Task */
   Rs485Task_Run(argument);
@@ -318,7 +365,7 @@ void StartRs485Task(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartLoggerTask */
-void StartLoggerTask(void const * argument)
+void StartLoggerTask(void *argument)
 {
   /* USER CODE BEGIN StartLoggerTask */
   LoggerTask_Run(argument);
@@ -335,7 +382,7 @@ void StartLoggerTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartWatchdogTask */
-void StartWatchdogTask(void const * argument)
+void StartWatchdogTask(void *argument)
 {
   /* USER CODE BEGIN StartWatchdogTask */
   WatchdogTask_Run(argument);
@@ -352,7 +399,7 @@ void StartWatchdogTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartJournalTask */
-void StartJournalTask(void const * argument)
+void StartJournalTask(void *argument)
 {
   /* USER CODE BEGIN StartJournalTask */
   /* Infinite loop */
@@ -379,3 +426,4 @@ static void TaskShouldNeverReturn(void)
   }
 }
 /* USER CODE END Application */
+

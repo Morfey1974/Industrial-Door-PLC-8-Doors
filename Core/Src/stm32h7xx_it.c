@@ -22,6 +22,7 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+volatile uint32_t g_eth_irq = 0;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -195,7 +196,7 @@ void TIM6_DAC_IRQHandler(void)
 void ETH_IRQHandler(void)
 {
   /* USER CODE BEGIN ETH_IRQn 0 */
-
+	g_eth_irq++;
   /* USER CODE END ETH_IRQn 0 */
   HAL_ETH_IRQHandler(&heth);
   /* USER CODE BEGIN ETH_IRQn 1 */

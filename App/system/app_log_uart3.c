@@ -6,6 +6,8 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "portable.h" /* xPortGetFreeHeapSize, xPortGetMinimumEverFreeHeapSize */
+#include "cmsis_os.h" /* osThreadId_t */
 
 #include "usart.h" /* extern UART_HandleTypeDef huart3; */
 
@@ -120,6 +122,7 @@ static void prv_cli_submit_line_from_isr(const char *line);
 static void prv_cli_execute(char *cmd);
 static void prv_cli_trim_inplace(char *s);
 static void prv_cli_print_help(void);
+static void prv_cli_print_mem_stat(void);
 
 static void prv_pending_push_from_isr(uint8_t slot);
 
@@ -309,10 +312,25 @@ static void prv_cli_execute(char *cmd)
      *   log stat
      *   log dump [N]
      *   log clear
+     *   mem stat
      */
+    if (strncmp(cmd, "mem", 3) == 0)
+    {
+        /* Команда mem stat - статистика памяти */
+        char *p = cmd + 3;
+        while (*p == ' ') p++;
+        if (strncmp(p, "stat", 4) == 0)
+        {
+            prv_cli_print_mem_stat();
+            return;
+        }
+        AppLog("CLI: unknown mem subcmd (try: mem stat)");
+        return;
+    }
+    
     if (strncmp(cmd, "log", 3) != 0)
     {
-        AppLog("CLI: unknown cmd (try: log help)");
+        AppLog("CLI: unknown cmd (try: log help or mem stat)");
         return;
     }
 
@@ -375,6 +393,94 @@ static void prv_cli_print_help(void)
     AppLog("  log stat            - journal statistics");
     AppLog("  log dump [N]         - dump last N records (default 20)");
     AppLog("  log clear           - erase journal");
+    AppLog("  mem stat            - memory usage statistics");
+}
+
+static void prv_cli_print_mem_stat(void)
+{
+    /* FreeRTOS heap statistics */
+    size_t free_heap = xPortGetFreeHeapSize();
+    size_t min_ever_free = xPortGetMinimumEverFreeHeapSize();
+    size_t total_heap = 65536; /* configTOTAL_HEAP_SIZE */
+    size_t used_heap = total_heap - free_heap;
+    size_t max_used_heap = total_heap - min_ever_free;
+    
+    AppLog("=== Memory Statistics ===");
+    AppLog("Heap (FreeRTOS):");
+    AppLog("  Total:     %lu bytes", (unsigned long)total_heap);
+    AppLog("  Free:      %lu bytes", (unsigned long)free_heap);
+    /* Вычисляем проценты как целые числа, т.к. newlib nano может не поддерживать float в printf */
+    unsigned long used_pct = (used_heap * 100UL) / total_heap;
+    unsigned long max_used_pct = (max_used_heap * 100UL) / total_heap;
+    AppLog("  Used:      %lu bytes (%lu%%)", 
+           (unsigned long)used_heap, used_pct);
+    AppLog("  Min free:  %lu bytes (max used: %lu, %lu%%)",
+           (unsigned long)min_ever_free,
+           (unsigned long)max_used_heap,
+           max_used_pct);
+    
+    /* Stack usage for all tasks */
+    AppLog("Task Stacks:");
+    
+    /* Получаем handles задач из freertos.c */
+    extern osThreadId_t netTaskHandle;
+    extern osThreadId_t commsTaskHandle;
+    extern osThreadId_t doorsTaskHandle;
+    extern osThreadId_t supervisorTaskHandle;
+    extern osThreadId_t httpTaskHandle;
+    extern osThreadId_t canTaskHandle;
+    extern osThreadId_t rs485TaskHandle;
+    extern osThreadId_t loggerTaskHandle;
+    extern osThreadId_t watchdogTaskHandle;
+    extern osThreadId_t journalTaskHandle;
+    
+    struct {
+        const char *name;
+        osThreadId_t handle;
+        uint32_t stack_size;
+    } tasks[] = {
+        {"netTask", netTaskHandle, 768 * 4},
+        {"commsTask", commsTaskHandle, 512 * 4},
+        {"doorsTask", doorsTaskHandle, 512 * 4},
+        {"supervisorTask", supervisorTaskHandle, 512 * 4},
+        {"httpTask", httpTaskHandle, 3072 * 4},  /* Обновлено: было 2048*4, стало 3072*4 (12288 байт) */
+        {"canTask", canTaskHandle, 512 * 4},
+        {"rs485Task", rs485TaskHandle, 512 * 4},
+        {"loggerTask", loggerTaskHandle, 512 * 4},
+        {"watchdogTask", watchdogTaskHandle, 512 * 4},
+        {"journalTask", journalTaskHandle, 512 * 4},
+    };
+    
+    for (size_t i = 0; i < sizeof(tasks)/sizeof(tasks[0]); i++)
+    {
+        if (tasks[i].handle != 0)
+        {
+            TaskHandle_t task_handle = (TaskHandle_t)tasks[i].handle;
+            UBaseType_t high_water = uxTaskGetStackHighWaterMark(task_handle);
+            /* high_water возвращает количество слов (4 байта на Cortex-M) */
+            uint32_t free_stack = (uint32_t)high_water * 4;
+            uint32_t used_stack = tasks[i].stack_size - free_stack;
+            /* Вычисляем проценты как целые числа, т.к. newlib nano может не поддерживать float в printf */
+            unsigned long usage_pct = (used_stack * 100UL) / tasks[i].stack_size;
+            
+            AppLog("  %-15s: %5lu/%5lu bytes used (%lu%%)",
+                   tasks[i].name,
+                   (unsigned long)used_stack,
+                   (unsigned long)tasks[i].stack_size,
+                   usage_pct);
+        }
+    }
+    
+    /* ВАЖНО: Сбрасываем состояние ESC-обработчика после вывода команды,
+     * чтобы терминал не "завис" в каком-то режиме.
+     * Это может происходить, если в выводе случайно есть последовательности,
+     * которые терминал интерпретирует как ESC-команды.
+     */
+    s_esc_active = false;
+    s_esc_csi = false;
+    
+    /* Добавляем пустую строку для читаемости и сброса состояния терминала */
+    AppLog("");
 }
 
 /* Упрощённый trim: без динамики и без libc-изысков

@@ -34,6 +34,7 @@
 /* Within 'USER CODE' section, code will be kept by default at each generation */
 /* USER CODE BEGIN 0 */
 
+
 /* USER CODE END 0 */
 
 /* Private define ------------------------------------------------------------*/
@@ -43,7 +44,7 @@
 #define ETHIF_TX_TIMEOUT (2000U)
 /* USER CODE BEGIN OS_THREAD_STACK_SIZE_WITH_RTOS */
 /* Stack size of the interface thread */
-#define INTERFACE_THREAD_STACK_SIZE ( 350 )
+#define INTERFACE_THREAD_STACK_SIZE ( 1536 )
 /* USER CODE END OS_THREAD_STACK_SIZE_WITH_RTOS */
 /* Network interface name */
 #define IFNAME0 's'
@@ -55,7 +56,8 @@
 /* ETH_RX_BUFFER_SIZE parameter is defined in lwipopts.h */
 
 /* USER CODE BEGIN 1 */
-
+volatile uint32_t g_eth_rx_cb = 0;
+volatile uint32_t g_eth_tx_cb = 0;
 /* USER CODE END 1 */
 
 /* Private variables ---------------------------------------------------------*/
@@ -142,7 +144,6 @@ ETH_HandleTypeDef heth;
 ETH_TxPacketConfig TxConfig;
 
 /* Private function prototypes -----------------------------------------------*/
-static void ethernetif_input(void const * argument);
 int32_t ETH_PHY_IO_Init(void);
 int32_t ETH_PHY_IO_DeInit (void);
 int32_t ETH_PHY_IO_ReadReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t *pRegVal);
@@ -211,6 +212,9 @@ void HAL_ETH_ErrorCallback(ETH_HandleTypeDef *handlerEth)
 static void low_level_init(struct netif *netif)
 {
   HAL_StatusTypeDef hal_eth_init_status = HAL_OK;
+/* USER CODE BEGIN OS_THREAD_ATTR_CMSIS_RTOS_V2 */
+  osThreadAttr_t attributes;
+/* USER CODE END OS_THREAD_ATTR_CMSIS_RTOS_V2 */
   uint32_t duplex, speed = 0;
   int32_t PHYLinkState = 0;
   ETH_MACConfigTypeDef MACConf = {0};
@@ -270,22 +274,19 @@ static void low_level_init(struct netif *netif)
   #endif /* LWIP_ARP */
 
   /* create a binary semaphore used for informing ethernetif of frame reception */
-  osSemaphoreDef(RxSem);
-  RxPktSemaphore = osSemaphoreCreate(osSemaphore(RxSem), 1);
+  RxPktSemaphore = osSemaphoreNew(1, 0, NULL);
 
   /* create a binary semaphore used for informing ethernetif of frame transmission */
-  osSemaphoreDef(TxSem);
-  TxPktSemaphore = osSemaphoreCreate(osSemaphore(TxSem), 1);
-
-  /* Decrease the semaphore's initial count from 1 to 0 */
-  osSemaphoreWait(RxPktSemaphore, 0);
-  osSemaphoreWait(TxPktSemaphore, 0);
+  TxPktSemaphore = osSemaphoreNew(1, 0, NULL);
 
   /* create the task that handles the ETH_MAC */
-/* USER CODE BEGIN OS_THREAD_DEF_CREATE_CMSIS_RTOS_V1 */
-  osThreadDef(EthIf, ethernetif_input, osPriorityRealtime, 0, INTERFACE_THREAD_STACK_SIZE);
-  osThreadCreate (osThread(EthIf), netif);
-/* USER CODE END OS_THREAD_DEF_CREATE_CMSIS_RTOS_V1 */
+/* USER CODE BEGIN OS_THREAD_NEW_CMSIS_RTOS_V2 */
+  memset(&attributes, 0x0, sizeof(osThreadAttr_t));
+  attributes.name = "EthIf";
+  attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
+  attributes.priority = osPriorityAboveNormal;
+  osThreadNew(ethernetif_input, netif, &attributes);
+/* USER CODE END OS_THREAD_NEW_CMSIS_RTOS_V2 */
 
 /* USER CODE BEGIN PHY_PRE_CONFIG */
 
@@ -427,7 +428,7 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
       if(HAL_ETH_GetError(&heth) & HAL_ETH_ERROR_BUSY)
       {
         /* Wait for descriptors to become available */
-        osSemaphoreWait(TxPktSemaphore, ETHIF_TX_TIMEOUT);
+        osSemaphoreAcquire(TxPktSemaphore, ETHIF_TX_TIMEOUT);
         HAL_ETH_ReleaseTxPacket(&heth);
         errval = ERR_BUF;
       }
@@ -472,14 +473,14 @@ static struct pbuf * low_level_input(struct netif *netif)
  *
  * @param netif the lwip network interface structure for this ethernetif
  */
-static void ethernetif_input(void const * argument)
+void ethernetif_input(void* argument)
 {
   struct pbuf *p = NULL;
   struct netif *netif = (struct netif *) argument;
 
   for( ;; )
   {
-    if (osSemaphoreWait(RxPktSemaphore, TIME_WAITING_FOR_INPUT) == osOK)
+    if (osSemaphoreAcquire(RxPktSemaphore, TIME_WAITING_FOR_INPUT) == osOK)
     {
       do
       {
@@ -673,7 +674,7 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef* ethHandle)
     HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
     /* Peripheral interrupt init */
-    HAL_NVIC_SetPriority(ETH_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(ETH_IRQn, 7, 0);
     HAL_NVIC_EnableIRQ(ETH_IRQn);
   /* USER CODE BEGIN ETH_MspInit 1 */
 
@@ -798,8 +799,7 @@ int32_t ETH_PHY_IO_GetTick(void)
   * @brief  Check the ETH link state then update ETH driver and netif link accordingly.
   * @retval None
   */
-
-void ethernet_link_thread(void const * argument)
+void ethernet_link_thread(void* argument)
 {
   ETH_MACConfigTypeDef MACConf = {0};
   int32_t PHYLinkState = 0;

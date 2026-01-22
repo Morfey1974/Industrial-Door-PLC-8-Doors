@@ -86,6 +86,18 @@ void DoorsTask_Run(void const *argument);
 AppDoorState_t* Doors_GetStateArray(void);
 
 /**
+ * Получить указатель на массив состояний дверей с захватом мьютекса.
+ * ВАЖНО: После использования необходимо вызвать Doors_ReleaseStateArray().
+ * Возвращает NULL если не удалось захватить мьютекс.
+ */
+AppDoorState_t* Doors_GetStateArrayLocked(void);
+
+/**
+ * Освободить мьютекс, захваченный Doors_GetStateArrayLocked().
+ */
+void Doors_ReleaseStateArray(void);
+
+/**
  * Запросить (пере)установку замка для двери.
  * - door_id: 1..APP_DOOR_MAX
  * - lock_on: 1 = lock, 0 = unlock

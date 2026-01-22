@@ -26,6 +26,7 @@
 #include "lwip/sio.h"
 #endif /* MDK ARM Compiler */
 #include "ethernetif.h"
+#include <string.h>
 
 /* USER CODE BEGIN 0 */
 
@@ -47,6 +48,10 @@ ip4_addr_t gw;
 uint8_t IP_ADDRESS[4];
 uint8_t NETMASK_ADDRESS[4];
 uint8_t GATEWAY_ADDRESS[4];
+/* USER CODE BEGIN OS_THREAD_ATTR_CMSIS_RTOS_V2 */
+#define INTERFACE_THREAD_STACK_SIZE ( 1024 )
+osThreadAttr_t attributes;
+/* USER CODE END OS_THREAD_ATTR_CMSIS_RTOS_V2 */
 
 /* USER CODE BEGIN 2 */
 
@@ -65,7 +70,7 @@ void MX_LWIP_Init(void)
   NETMASK_ADDRESS[0] = 255;
   NETMASK_ADDRESS[1] = 255;
   NETMASK_ADDRESS[2] = 255;
-  NETMASK_ADDRESS[3] = 1;
+  NETMASK_ADDRESS[3] = 0;
   GATEWAY_ADDRESS[0] = 0;
   GATEWAY_ADDRESS[1] = 0;
   GATEWAY_ADDRESS[2] = 0;
@@ -95,10 +100,13 @@ void MX_LWIP_Init(void)
   netif_set_link_callback(&gnetif, ethernet_link_status_updated);
 
   /* Create the Ethernet link handler thread */
-/* USER CODE BEGIN H7_OS_THREAD_DEF_CREATE_CMSIS_RTOS_V1 */
-  osThreadDef(EthLink, ethernet_link_thread, osPriorityBelowNormal, 0, configMINIMAL_STACK_SIZE *2);
-  osThreadCreate (osThread(EthLink), &gnetif);
-/* USER CODE END H7_OS_THREAD_DEF_CREATE_CMSIS_RTOS_V1 */
+/* USER CODE BEGIN H7_OS_THREAD_NEW_CMSIS_RTOS_V2 */
+  memset(&attributes, 0x0, sizeof(osThreadAttr_t));
+  attributes.name = "EthLink";
+  attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
+  attributes.priority = osPriorityBelowNormal;
+  osThreadNew(ethernet_link_thread, &gnetif, &attributes);
+/* USER CODE END H7_OS_THREAD_NEW_CMSIS_RTOS_V2 */
 
 /* USER CODE BEGIN 3 */
 

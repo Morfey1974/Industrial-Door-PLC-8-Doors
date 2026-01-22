@@ -14,6 +14,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 /* ============================================================
    Doors Task (ЭТАП 3 + ЭТАП 4.3/4.4/4.5)
@@ -92,6 +93,9 @@ typedef struct
 
 static door_lock_req_t s_lockReq[APP_DOOR_MAX];
 
+/* Мьютекс для синхронизации доступа к данным дверей */
+static SemaphoreHandle_t s_doors_mutex = NULL;
+
 /* ============================================================
    Вспомогательные функции
    ============================================================ */
@@ -150,7 +154,34 @@ uint32_t DoorsCfg_GetPostCloseTimeoutMs(uint8_t door_id)
 
 AppDoorState_t* Doors_GetStateArray(void)
 {
+    /* ВАЖНО: Эта функция возвращает прямой указатель на массив.
+     * Вызывающий код должен сам захватывать мьютекс перед использованием.
+     * Для безопасного доступа используйте Doors_GetState() или Doors_GetStateArrayLocked().
+     */
     return s_doors;
+}
+
+AppDoorState_t* Doors_GetStateArrayLocked(void)
+{
+    /* Инициализируем мьютекс, если еще не создан */
+    if (!s_doors_mutex) {
+        s_doors_mutex = xSemaphoreCreateMutex();
+        if (!s_doors_mutex) return NULL;
+    }
+
+    /* Захватываем мьютекс для безопасного чтения */
+    if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return NULL; /* Таймаут при захвате мьютекса */
+    }
+
+    return s_doors;
+}
+
+void Doors_ReleaseStateArray(void)
+{
+    if (s_doors_mutex) {
+        xSemaphoreGive(s_doors_mutex);
+    }
 }
 
 uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uint32_t timeout_ms)
@@ -159,10 +190,26 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
 
     uint8_t idx = (uint8_t)(door_id - 1U);
 
+    /* Инициализируем мьютекс, если еще не создан */
+    if (!s_doors_mutex) {
+        s_doors_mutex = xSemaphoreCreateMutex();
+        if (!s_doors_mutex) return 0U;
+    }
+
+    /* Захватываем мьютекс для безопасного чтения alarming */
+    if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return 0U; /* Таймаут при захвате мьютекса */
+    }
+
     /* Приоритет сигнализации:
      * если сигнализация активна (любая причина) — внешние команды отвергаем.
      */
-    if (s_doors[idx].alarming)
+    uint8_t alarming = s_doors[idx].alarming;
+    
+    /* Освобождаем мьютекс перед записью в s_lockReq (это отдельный массив) */
+    xSemaphoreGive(s_doors_mutex);
+
+    if (alarming)
         return 0U;
 
     s_lockReq[idx].pending  = 1U;
@@ -182,8 +229,23 @@ uint8_t Doors_GetState(uint8_t door_id, AppDoorState_t *out)
     if (!out) return 0U;
     if (door_id == 0U || door_id > APP_DOOR_MAX) return 0U;
 
+    /* Инициализируем мьютекс, если еще не создан */
+    if (!s_doors_mutex) {
+        s_doors_mutex = xSemaphoreCreateMutex();
+        if (!s_doors_mutex) return 0U; /* Не удалось создать мьютекс */
+    }
+
+    /* Захватываем мьютекс для безопасного чтения */
+    if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return 0U; /* Таймаут при захвате мьютекса */
+    }
+
     uint8_t idx = (uint8_t)(door_id - 1U);
     *out = s_doors[idx];
+
+    /* Освобождаем мьютекс */
+    xSemaphoreGive(s_doors_mutex);
+
     return 1U;
 }
 
@@ -197,9 +259,14 @@ void Doors_TaskInit(void)
     memset(s_lockSavedBeforeAlarm, 0, sizeof(s_lockSavedBeforeAlarm));
     memset(s_lockReq, 0, sizeof(s_lockReq));
 
+    /* Инициализируем мьютекс для синхронизации доступа к данным дверей */
+    if (!s_doors_mutex) {
+        s_doors_mutex = xSemaphoreCreateMutex();
+    }
+
     /* Конфиг по умолчанию:
      * - open timeout выключен
-     * - post-close timeout = 0 (реакция “готово” сразу)
+     * - post-close timeout = 0 (реакция "готово" сразу)
      */
     s_cfgOpenTimeoutMs = 0U;
     for (uint8_t i = 0; i < APP_DOOR_MAX; i++)
@@ -339,6 +406,17 @@ static void updateOneDoor(uint8_t door1based)
 
     bool closed = DoorHAL_IsClosed(door1based);
     bool alarm  = DoorHAL_IsAlarmPressed(door1based);
+
+    /* Захватываем мьютекс для безопасной записи в s_doors.
+     * Используем ограниченный таймаут (50мс) вместо portMAX_DELAY,
+     * чтобы не блокировать HTTP задачу на долгое время.
+     * Если не удалось захватить - пропускаем обновление этой итерации.
+     */
+    if (s_doors_mutex) {
+        if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
+            return; /* Не удалось захватить мьютекс - пропускаем эту итерацию */
+        }
+    }
 
     /* --------------------------------------------------------
      * 1) OPEN/CLOSE события
@@ -525,6 +603,11 @@ static void updateOneDoor(uint8_t door1based)
     {
         DoorHAL_SetLock(door1based, false);
         s_doors[idx].locked = 0U;
+    }
+
+    /* Освобождаем мьютекс */
+    if (s_doors_mutex) {
+        xSemaphoreGive(s_doors_mutex);
     }
 }
 
