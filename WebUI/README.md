@@ -1,0 +1,117 @@
+# Industrial Door PLC - Web Interface
+
+Web-интерфейс для управления промышленным контроллером дверей.
+
+## Технологии
+
+- **React 18+** - UI библиотека
+- **Vite** - Сборщик и dev-сервер
+- **React Router** - Маршрутизация
+- **Axios** - HTTP клиент
+
+## Быстрый старт
+
+### Предварительные требования
+
+- Node.js 18+ и npm
+- Visual Studio 2022 или Visual Studio Code
+
+**Подробная инструкция по установке и интеграции в Visual Studio:** см. файл `INSTALL_VS.md`
+
+### Установка зависимостей
+
+```bash
+npm install
+```
+
+### Запуск dev-сервера
+
+```bash
+npm run dev
+```
+
+Приложение откроется на `http://localhost:3000`
+
+### Сборка для продакшена
+
+```bash
+npm run build
+```
+
+Собранные файлы будут в папке `dist/`
+
+## Структура проекта
+
+```
+WebUI/
+├── src/
+│   ├── components/     # React компоненты
+│   │   ├── layout/    # Компоненты layout (Header, Sidebar, Tabs)
+│   │   ├── common/    # Общие компоненты (Button, Table, Card)
+│   │   └── ui/        # UI компоненты (DoorCard, EventRow)
+│   ├── pages/         # Страницы приложения
+│   │   ├── Monitoring/    # Страницы мониторинга
+│   │   ├── Configuration/ # Страницы конфигурации
+│   │   └── Settings/      # Страницы настроек
+│   ├── services/      # API сервисы
+│   ├── hooks/          # Кастомные хуки
+│   ├── utils/          # Утилиты
+│   ├── styles/         # Стили
+│   └── context/        # React контексты
+├── public/             # Статические файлы
+└── dist/               # Собранная версия
+```
+
+## Интеграция с Visual Studio
+
+**ВАЖНО:** Подробная пошаговая инструкция находится в файле `INSTALL_VS.md`
+
+Краткая версия:
+1. Установите Node.js (если не установлен)
+2. Откройте папку `WebUI` в Visual Studio через "Файл → Открыть → Папка"
+3. В терминале выполните `npm install`
+4. Запустите `npm run dev`
+
+## API Endpoints
+
+Базовый URL контроллера настраивается в `src/utils/constants.js`
+
+- `GET /api/state` - Состояние системы
+- `GET /api/doors` - Состояние дверей
+- `GET /api/config` - Конфигурация
+- `PUT /api/config` - Обновление конфигурации
+- `GET /api/journal/stat` - Статистика журнала
+- `GET /api/journal/dump` - Записи журнала
+
+## Цветовая схема
+
+- **Primary:** `#3A6577` (Темно-бирюзовый)
+- **Secondary:** `#EDEDED` (Светло-серый)
+- **Accent:** `#E6332A` (Красный)
+
+Все цвета определены в `src/styles/variables.css`
+
+## Полезные команды
+
+```bash
+# Установка зависимостей
+npm install
+
+# Запуск dev-сервера
+npm run dev
+
+# Сборка для продакшена
+npm run build
+
+# Предпросмотр собранной версии
+npm run preview
+
+# Проверка кода (линтинг)
+npm run lint
+```
+
+## Документация
+
+- **План разработки:** `../План_UI.md`
+- **Инструкция по установке:** `INSTALL_VS.md`
+- **API контракт:** `../API_CONTRACT.md`

@@ -22,6 +22,9 @@
 /* Stage 7 service: atomic A/B persist to QSPI + journal event */
 #include "config_service.h"
 
+/* Stage 9: journal dump endpoint */
+#include "log/event_journal.h"
+
 /* Active configuration stored by ConfigService (Этап 7) */
 extern project_config_t g_project_cfg;
 
@@ -251,6 +254,129 @@ static uint8_t build_journal_stat(jsonw_t *w)
     );
 }
 
+/* Простой парсер query параметров: извлекает значение параметра из строки вида "?key=value&key2=value2" */
+static uint32_t parse_query_uint32(const char *path, const char *key, uint32_t default_val)
+{
+    if (!path || !key) return default_val;
+
+    /* Ищем начало query string */
+    const char *qmark = strchr(path, '?');
+    if (!qmark) return default_val;
+
+    /* Ищем ключ */
+    char key_pattern[32];
+    snprintf(key_pattern, sizeof(key_pattern), "%s=", key);
+    const char *key_pos = strstr(qmark, key_pattern);
+    if (!key_pos) return default_val;
+
+    /* Пропускаем "key=" */
+    const char *val_start = key_pos + strlen(key_pattern);
+    
+    /* Читаем число до '&' или конца строки */
+    uint32_t val = 0;
+    while (*val_start >= '0' && *val_start <= '9')
+    {
+        val = val * 10U + (uint32_t)(*val_start - '0');
+        val_start++;
+        if (*val_start == '&' || *val_start == 0) break;
+    }
+
+    return val;
+}
+
+static uint8_t build_journal_dump(jsonw_t *w, const char *path)
+{
+    /* Парсим query параметры */
+    uint32_t offset = parse_query_uint32(path, "offset", 0U);
+    uint32_t limit = parse_query_uint32(path, "limit", 20U);
+
+    /* Ограничиваем limit разумными значениями */
+    if (limit == 0 || limit > 200) limit = 20U;
+
+    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен) */
+    journal_record_t records[200];
+    uint32_t count = 0;
+
+    journal_status_t status = EventJournal_ReadRecords(offset, limit, records, &count);
+    
+    if (status != JOURNAL_OK)
+    {
+        /* В случае ошибки возвращаем пустой массив */
+        return jw_appendf(w, "{\"records\":[],\"count\":0,\"offset\":%lu,\"limit\":%lu,\"error\":%u}",
+                         (unsigned long)offset, (unsigned long)limit, (unsigned)status);
+    }
+
+    if (!jw_appendf(w, "{\"records\":[")) return 0U;
+
+    for (uint32_t i = 0; i < count; i++)
+    {
+        if (i != 0)
+        {
+            if (!jw_appendf(w, ",")) return 0U;
+        }
+
+        const journal_record_t *r = &records[i];
+        
+        /* Преобразуем type и source в строки для читаемости */
+        const char *type_str = "UNKNOWN";
+        switch (r->type)
+        {
+            case 1: type_str = "DOOR_OPEN"; break;
+            case 2: type_str = "DOOR_CLOSE"; break;
+            case 3: type_str = "DOOR_ALARM"; break;
+            case 4: type_str = "DOOR_OPEN_TIMEOUT"; break;
+            case 5: type_str = "DOOR_POST_CLOSE_READY"; break;
+            case 6: type_str = "DOOR_SIGNAL_ON"; break;
+            case 7: type_str = "DOOR_SIGNAL_OFF"; break;
+            case 8: type_str = "CMD_LOCK"; break;
+            case 9: type_str = "CMD_UNLOCK"; break;
+            case 10: type_str = "NET_LINK_UP"; break;
+            case 11: type_str = "NET_LINK_DOWN"; break;
+            case 12: type_str = "SYSTEM_FAULT"; break;
+        }
+
+        const char *source_str = "UNKNOWN";
+        switch (r->source)
+        {
+            case 0: source_str = "NONE"; break;
+            case 1: source_str = "DOOR_LOCAL"; break;
+            case 2: source_str = "SUPERVISOR"; break;
+            case 3: source_str = "WATCHDOG"; break;
+            case 4: source_str = "CAN"; break;
+            case 5: source_str = "RS485"; break;
+            case 6: source_str = "HTTP"; break;
+        }
+
+        if (!jw_appendf(w,
+            "{"
+              "\"recSeq\":%lu,"
+              "\"timestamp\":%lu,"
+              "\"type\":\"%s\","
+              "\"typeCode\":%u,"
+              "\"source\":\"%s\","
+              "\"sourceCode\":%u,"
+              "\"doorId\":%u,"
+              "\"flags\":%u,"
+              "\"arg\":%lu"
+            "}",
+            (unsigned long)r->recSeq,
+            (unsigned long)r->timestamp,
+            type_str,
+            (unsigned)r->type,
+            source_str,
+            (unsigned)r->source,
+            (unsigned)r->door_id,
+            (unsigned)r->flags,
+            (unsigned long)r->arg
+        )) return 0U;
+    }
+
+    if (!jw_appendf(w, "],\"count\":%lu,\"offset\":%lu,\"limit\":%lu}",
+                   (unsigned long)count, (unsigned long)offset, (unsigned long)limit)) return 0U;
+
+    return 1U;
+}
+
 int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
@@ -277,6 +403,12 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
     if (strcmp(path, "/api/journal/stat") == 0)
     {
         return build_journal_stat(&w) ? 200 : 500;
+    }
+
+    /* /api/journal/dump с поддержкой query параметров offset и limit */
+    if (strncmp(path, "/api/journal/dump", 16) == 0)
+    {
+        return build_journal_dump(&w, path) ? 200 : 500;
     }
 
     return 404;

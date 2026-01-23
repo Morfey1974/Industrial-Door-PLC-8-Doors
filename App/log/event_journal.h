@@ -69,6 +69,36 @@ void EventJournal_PrintStats(void);
 /* Очистить (стереть) журнал. Эквивалент EventJournal_EraseAll(), но удобнее для CLI. */
 journal_status_t EventJournal_Clear(void);
 
+/* --- HTTP API: чтение записей с пагинацией (Этап 9) ---
+ * Читает записи журнала в обратном хронологическом порядке (новые -> старые).
+ * 
+ * Параметры:
+ *   offset - количество записей для пропуска (0 = начать с самых новых)
+ *   limit - максимальное количество записей для чтения (1..200)
+ *   out_records - буфер для записи структур записей (должен быть размером >= limit)
+ *   out_count - выходной параметр: фактическое количество прочитанных записей
+ * 
+ * Возвращает:
+ *   JOURNAL_OK - успешно
+ *   JOURNAL_NOT_INIT - журнал не инициализирован
+ *   JOURNAL_IO_ERROR - ошибка чтения из QSPI
+ * 
+ * Примечание: функция блокирует доступ к QSPI через AppQspiLock.
+ */
+typedef struct {
+    uint32_t recSeq;
+    uint32_t timestamp;
+    uint16_t type;
+    uint16_t source;
+    uint8_t  door_id;
+    uint8_t  flags;
+    uint32_t arg;
+} journal_record_t;
+
+journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
+                                          journal_record_t *out_records,
+                                          uint32_t *out_count);
+
 /* --- Internal for JournalTask --- */
 BaseType_t EventJournal_WaitEvent(app_event_t *out_evt, TickType_t ticks_to_wait);
 void EventJournal_WriteEventToFlash(const app_event_t *evt);

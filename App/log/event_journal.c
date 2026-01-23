@@ -576,3 +576,129 @@ void EventJournal_DumpLast(uint32_t count)
 
     vPortFree(buf);
 }
+
+/* =========================================================
+ * HTTP API: чтение записей с пагинацией (Этап 9)
+ * ========================================================= */
+
+journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
+                                          journal_record_t *out_records,
+                                          uint32_t *out_count)
+{
+    if (!out_records || !out_count) return JOURNAL_NOT_INIT;
+    if (s_q == NULL) return JOURNAL_NOT_INIT; /* журнал не инициализирован */
+    if (limit == 0) {
+        *out_count = 0;
+        return JOURNAL_OK;
+    }
+
+    /* Ограничим разумным числом для HTTP API */
+    if (limit > 200) limit = 200;
+
+    *out_count = 0;
+
+    AppQspiLock_Lock();
+
+    uint32_t sector = s_cur_sector;
+    uint32_t ofs;
+
+    /* Начинаем с последней записи в текущем секторе */
+    if (s_cur_write_ofs > ELOG_SECTOR_HDR_BYTES)
+        ofs = s_cur_write_ofs - sizeof(elog_record_t);
+    else
+        ofs = 0;
+
+    uint32_t skipped = 0;
+    uint32_t collected = 0;
+
+    /* Сначала пропускаем offset записей */
+    while (skipped < offset)
+    {
+        if (ofs == 0)
+        {
+            /* Перейти на предыдущий сектор по кольцу */
+            const uint32_t scnt = sector_count();
+            sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
+            if (!find_last_valid_ofs_in_sector(sector, &ofs))
+            {
+                /* Достигли конца журнала при пропуске */
+                AppQspiLock_Unlock();
+                *out_count = 0;
+                return JOURNAL_OK; /* Не ошибка, просто нет записей после offset */
+            }
+        }
+
+        elog_record_t r;
+        if (flash_read(sector_base(sector) + ofs, &r, sizeof(r)) != HAL_OK)
+        {
+            s_stats.io_errors++;
+            AppQspiLock_Unlock();
+            return JOURNAL_IO_ERROR;
+        }
+        if (!record_is_valid(&r))
+        {
+            /* Невалидная запись -> достигли конца */
+            AppQspiLock_Unlock();
+            *out_count = 0;
+            return JOURNAL_OK;
+        }
+
+        skipped++;
+
+        /* Сдвинуться на предыдущую запись */
+        if (ofs >= (ELOG_SECTOR_HDR_BYTES + sizeof(elog_record_t)))
+            ofs -= sizeof(elog_record_t);
+        else
+            ofs = 0;
+    }
+
+    /* Теперь собираем limit записей */
+    while (collected < limit)
+    {
+        if (ofs == 0)
+        {
+            /* Перейти на предыдущий сектор по кольцу */
+            const uint32_t scnt = sector_count();
+            sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
+            if (!find_last_valid_ofs_in_sector(sector, &ofs))
+            {
+                /* Достигли конца журнала */
+                break;
+            }
+        }
+
+        elog_record_t r;
+        if (flash_read(sector_base(sector) + ofs, &r, sizeof(r)) != HAL_OK)
+        {
+            s_stats.io_errors++;
+            break;
+        }
+        if (!record_is_valid(&r))
+        {
+            /* Невалидная запись -> останов */
+            break;
+        }
+
+        /* Копируем данные в выходную структуру */
+        out_records[collected].recSeq = r.recSeq;
+        out_records[collected].timestamp = r.timestamp;
+        out_records[collected].type = r.type;
+        out_records[collected].source = r.source;
+        out_records[collected].door_id = r.door_id;
+        out_records[collected].flags = r.flags;
+        out_records[collected].arg = r.arg;
+
+        collected++;
+
+        /* Сдвинуться на предыдущую запись */
+        if (ofs >= (ELOG_SECTOR_HDR_BYTES + sizeof(elog_record_t)))
+            ofs -= sizeof(elog_record_t);
+        else
+            ofs = 0;
+    }
+
+    AppQspiLock_Unlock();
+
+    *out_count = collected;
+    return JOURNAL_OK;
+}

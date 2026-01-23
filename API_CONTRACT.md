@@ -89,6 +89,58 @@ Example response:
 }
 ```
 
+### `GET /api/journal/dump`
+Returns journal records with pagination support. Records are returned in reverse chronological order (newest first).
+
+Query parameters:
+- `offset` (optional, default: 0) - number of records to skip
+- `limit` (optional, default: 20, max: 200) - maximum number of records to return
+
+Example request:
+```
+GET /api/journal/dump?offset=0&limit=10
+```
+
+Example response:
+```json
+{
+  "records": [
+    {
+      "recSeq": 110,
+      "timestamp": 1234567890,
+      "type": "DOOR_OPEN",
+      "typeCode": 1,
+      "source": "DOOR_LOCAL",
+      "sourceCode": 1,
+      "doorId": 1,
+      "flags": 0,
+      "arg": 0
+    },
+    {
+      "recSeq": 109,
+      "timestamp": 1234567880,
+      "type": "DOOR_CLOSE",
+      "typeCode": 2,
+      "source": "DOOR_LOCAL",
+      "sourceCode": 1,
+      "doorId": 1,
+      "flags": 0,
+      "arg": 0
+    }
+  ],
+  "count": 2,
+  "offset": 0,
+  "limit": 10
+}
+```
+
+Notes:
+- Records are returned in reverse chronological order (newest first)
+- If `offset` exceeds available records, returns empty array with `count: 0`
+- `type` and `source` fields include both human-readable string and numeric code
+- Supported event types: `DOOR_OPEN`, `DOOR_CLOSE`, `DOOR_ALARM`, `DOOR_OPEN_TIMEOUT`, `DOOR_POST_CLOSE_READY`, `DOOR_SIGNAL_ON`, `DOOR_SIGNAL_OFF`, `CMD_LOCK`, `CMD_UNLOCK`, `NET_LINK_UP`, `NET_LINK_DOWN`, `SYSTEM_FAULT`
+- Supported sources: `NONE`, `DOOR_LOCAL`, `SUPERVISOR`, `WATCHDOG`, `CAN`, `RS485`, `HTTP`
+
 ### `PUT /api/config` (draft merge upload)
 Uploads a *partial* JSON payload. Only provided keys are updated; others remain unchanged.
 

@@ -10,24 +10,24 @@
  * Для включения отладки установите HTTP_DEBUG_ENABLED=1
  * ========================================================= */
 #ifndef HTTP_DEBUG_ENABLED
-#define HTTP_DEBUG_ENABLED 0  /* 1 = включить отладку, 0 = выключить */
+#define HTTP_DEBUG_ENABLED 1  /* 1 = включить отладку, 0 = выключить */
 #endif
 
 /* Детализация отладки (можно включать/выключать отдельно) */
 #ifndef HTTP_DEBUG_REQUESTS
-#define HTTP_DEBUG_REQUESTS 0  /* Логировать входящие запросы */
+#define HTTP_DEBUG_REQUESTS 1  /* Логировать входящие запросы */
 #endif
 
 #ifndef HTTP_DEBUG_RESPONSES
-#define HTTP_DEBUG_RESPONSES 0  /* Логировать формирование ответов */
+#define HTTP_DEBUG_RESPONSES 1  /* Логировать формирование ответов */
 #endif
 
 #ifndef HTTP_DEBUG_SEND
-#define HTTP_DEBUG_SEND 0  /* Логировать отправку данных */
+#define HTTP_DEBUG_SEND 1  /* Логировать отправку данных */
 #endif
 
 #ifndef HTTP_DEBUG_ERRORS
-#define HTTP_DEBUG_ERRORS 0  /* Логировать ошибки */
+#define HTTP_DEBUG_ERRORS 1  /* Логировать ошибки */
 #endif
 
 #ifdef __cplusplus
