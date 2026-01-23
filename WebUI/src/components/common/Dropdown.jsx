@@ -8,14 +8,18 @@ const Dropdown = ({
   onChange, 
   placeholder = 'Выберите...',
   disabled = false,
-  className = '' 
+  className = '',
+  id,
+  ...props
 }) => {
   return (
     <select
+      id={id}
       className={`dropdown ${className}`}
       value={value}
       onChange={onChange}
       disabled={disabled}
+      {...props}
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((option) => (
