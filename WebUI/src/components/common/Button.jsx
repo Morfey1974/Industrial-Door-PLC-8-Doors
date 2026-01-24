@@ -8,12 +8,14 @@ const Button = ({
   disabled = false, 
   variant = 'primary',
   type = 'button',
+  size = 'normal', // 'small', 'normal', 'large'
   ...props 
 }) => {
+  const sizeClass = size !== 'normal' ? `btn-${size}` : '';
   return (
     <button
       type={type}
-      className={`btn btn-${variant}`}
+      className={`btn btn-${variant} ${sizeClass}`.trim()}
       onClick={onClick}
       disabled={disabled}
       {...props}

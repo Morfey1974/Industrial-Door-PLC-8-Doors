@@ -18,33 +18,56 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Игнорируем ошибки отмены запроса
+    // Игнорируем ошибки отмены запроса (не логируем их)
     if (error.code === 'ERR_CANCELED' || error.message === 'canceled') {
       return Promise.reject(error);
     }
     
+    // Обработка таймаута
     if (error.code === 'ECONNABORTED') {
-      console.warn('API Request timeout');
-      return Promise.reject(new Error('Превышено время ожидания ответа от сервера'));
+      const timeoutMsg = 'Превышено время ожидания ответа от сервера';
+      console.warn('API Request timeout:', error.config?.url || 'unknown');
+      return Promise.reject(new Error(timeoutMsg));
     }
+    
+    // Обработка ответа сервера с кодом ошибки
     if (error.response) {
-      // Сервер ответил с кодом ошибки
       const status = error.response.status;
+      const url = error.config?.url || 'unknown';
       if (status >= 500) {
-        console.error('API Server Error:', status, error.response.data);
+        console.error(`API Server Error [${status}]:`, url, error.response.data);
       } else {
-        console.warn('API Client Error:', status, error.response.data);
+        console.warn(`API Client Error [${status}]:`, url, error.response.data);
       }
       return Promise.reject(error);
-    } else if (error.request) {
-      // Запрос был отправлен, но ответа не получено
-      console.warn('API Network Error - нет ответа от сервера');
-      return Promise.reject(new Error('Не удалось подключиться к контроллеру'));
-    } else {
-      // Ошибка при настройке запроса
-      console.warn('API Request Error:', error.message);
-      return Promise.reject(error);
     }
+    
+    // Обработка сетевых ошибок (запрос отправлен, но ответа нет)
+    if (error.request) {
+      const url = error.config?.url || 'unknown';
+      let errorMessage = 'Не удалось подключиться к контроллеру';
+      
+      // Определяем тип сетевой ошибки
+      if (error.code === 'ERR_CONNECTION_RESET' || error.message?.includes('ERR_CONNECTION_RESET')) {
+        errorMessage = 'Соединение с контроллером разорвано. Проверьте подключение и перезагрузите страницу.';
+        console.error(`API Connection Reset:`, url);
+      } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+        errorMessage = 'Ошибка сети. Проверьте подключение к контроллеру.';
+        console.error(`API Network Error:`, url, error.code || error.message);
+      } else if (error.code === 'ERR_INTERNET_DISCONNECTED') {
+        errorMessage = 'Нет подключения к интернету.';
+        console.error(`API Internet Disconnected:`, url);
+      } else {
+        // Общая ошибка сети (не логируем как ошибку, только предупреждение)
+        console.warn(`API Network Error (${error.code || 'unknown'}):`, url);
+      }
+      
+      return Promise.reject(new Error(errorMessage));
+    }
+    
+    // Ошибка при настройке запроса
+    console.warn('API Request Setup Error:', error.message);
+    return Promise.reject(error);
   }
 );
 
@@ -91,6 +114,20 @@ export const getJournalStat = async (signal = null) => {
 export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
   const config = signal ? { signal, params: { offset, limit } } : { params: { offset, limit } };
   const response = await apiClient.get('/journal/dump', config);
+  return response.data;
+};
+
+// Получить полную конфигурацию (все двери, зависимости, таймауты)
+export const getConfigFull = async (signal = null) => {
+  const config = signal ? { signal } : {};
+  const response = await apiClient.get('/config/full', config);
+  return response.data;
+};
+
+// Сохранить полную конфигурацию
+export const putConfigFull = async (configData, signal = null) => {
+  const config = signal ? { signal } : {};
+  const response = await apiClient.put('/config/full', configData, config);
   return response.data;
 };
 

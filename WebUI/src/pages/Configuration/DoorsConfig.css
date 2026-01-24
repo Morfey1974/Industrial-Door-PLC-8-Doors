@@ -1,0 +1,616 @@
+/* Стили для страницы конфигурации дверей */
+
+.doors-config {
+  padding: var(--spacing-lg);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.doors-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.doors-config-header h1 {
+  margin: 0;
+  color: var(--color-text-dark);
+}
+
+.doors-config-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.auto-save-indicator {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Панель инструментов */
+.doors-config-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* Список сохраненных конфигураций */
+.saved-configs-list {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.saved-configs-list h3 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-sm);
+}
+
+.saved-configs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.saved-config-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-secondary);
+}
+
+.saved-config-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.saved-config-info strong {
+  color: var(--color-text-dark);
+}
+
+.saved-config-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.saved-config-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/* Сообщения */
+.alert {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.alert-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  color: #c33;
+}
+
+.alert-success {
+  background: #efe;
+  border: 1px solid #cfc;
+  color: #3c3;
+}
+
+.alert button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.alert button:hover {
+  opacity: 1;
+}
+
+/* Вкладки */
+.doors-config-tabs {
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.tabs-header {
+  display: flex;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-secondary);
+}
+
+.tab-button {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-button:hover {
+  background: var(--color-white);
+  color: var(--color-text-dark);
+}
+
+.tab-button.active {
+  background: var(--color-white);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tabs-content {
+  padding: var(--spacing-lg);
+}
+
+/* Общие стили для вкладок */
+.general-tab,
+.doors-tab,
+.dependencies-tab,
+.timeouts-tab {
+  animation: fadeIn 0.3s;
+  color: var(--color-text-dark); /* Явно указываем цвет текста для всех вкладок */
+}
+
+.dependencies-tab h2,
+.dependencies-tab h3 {
+  color: var(--color-text-dark); /* Цвет заголовков */
+}
+
+.dependencies-list {
+  color: var(--color-text-dark); /* Цвет текста в списке зависимостей */
+}
+
+.dependencies-list h3 {
+  color: var(--color-text-dark); /* Цвет заголовка списка */
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Формы */
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--color-text-dark);
+}
+
+.required {
+  color: var(--color-accent);
+}
+
+.form-input {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-base);
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.form-input.error {
+  border-color: var(--color-accent);
+}
+
+.form-input:disabled {
+  background: var(--color-secondary);
+  cursor: not-allowed;
+}
+
+.form-group small {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.error-message {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+}
+
+/* Информация о конфигурации */
+.config-info {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--color-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.config-info h3 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.info-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.info-value {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-text-dark);
+}
+
+/* Таблица дверей */
+.doors-tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.doors-tab-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.filter-select {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-base);
+}
+
+.doors-table-container {
+  overflow-x: auto;
+}
+
+.doors-config-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-white);
+}
+
+.doors-config-table thead {
+  background: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.doors-config-table th,
+.doors-config-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.doors-config-table tbody tr:hover {
+  background: var(--color-secondary);
+}
+
+.doors-config-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Модальное окно */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s;
+}
+
+.modal-content {
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--color-text-dark);
+}
+
+.modal-body {
+  padding: var(--spacing-lg);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Зависимости */
+.dependencies-tab {
+  color: var(--color-text-dark); /* Базовый цвет текста для всей вкладки */
+}
+
+.dependencies-tab h2 {
+  color: var(--color-text-dark);
+  margin-top: 0;
+}
+
+.dependencies-editor {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--color-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-dark); /* Явно указываем цвет текста */
+}
+
+.dependency-form {
+  color: var(--color-text-dark); /* Цвет текста в форме */
+}
+
+.dependencies-editor h3 {
+  color: var(--color-text-dark); /* Цвет заголовка */
+  margin-top: 0;
+}
+
+.dependencies-editor label {
+  color: var(--color-text-dark); /* Цвет меток */
+}
+
+.door-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: var(--spacing-sm);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-text-dark); /* Явно указываем цвет текста */
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  color: var(--color-text-dark); /* Явно указываем темный цвет текста для видимости */
+}
+
+.checkbox-label span {
+  color: var(--color-text-dark); /* Цвет текста в span внутри label */
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.dependencies-table-container {
+  overflow-x: auto;
+}
+
+.dependencies-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dependencies-table th,
+.dependencies-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dependencies-table thead {
+  background: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+/* Таймауты */
+.timeouts-tab-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.timeouts-tab-info {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--color-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.timeouts-tab-info p {
+  margin: var(--spacing-xs) 0;
+}
+
+.timeouts-node-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.timeouts-node-group h3 {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-primary);
+}
+
+.timeouts-table-container {
+  overflow-x: auto;
+}
+
+.timeouts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.timeouts-table th,
+.timeouts-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.timeouts-table thead {
+  background: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.timeout-input {
+  width: 150px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* Пустое состояние */
+.empty-state {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .doors-config-toolbar {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+  
+  .toolbar-left,
+  .toolbar-right {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .saved-configs-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .tabs-header {
+    flex-wrap: wrap;
+  }
+  
+  .tab-button {
+    flex: 1;
+    min-width: 120px;
+  }
+}

@@ -224,6 +224,116 @@ static uint8_t build_config(jsonw_t *w)
     );
 }
 
+/* Построение полной конфигурации для Web UI (все двери, зависимости, таймауты) */
+static uint8_t build_config_full(jsonw_t *w)
+{
+    const project_config_t *cfg = &g_project_cfg;
+    
+    /* Начинаем JSON объект */
+    if (!jw_appendf(w, "{")) return 0U;
+    
+    /* Базовые поля */
+    if (!jw_appendf(w,
+        "\"formatVersion\":%lu,"
+        "\"seq\":%lu,"
+        "\"projectName\":\"%s\","
+        "\"openTimeoutMs\":%lu,"
+        "\"doorCount\":%u,",
+        (unsigned long)cfg->formatVersion,
+        (unsigned long)cfg->seq,
+        cfg->projectName,
+        (unsigned long)cfg->openTimeoutMs,
+        (unsigned)cfg->doorCount
+    )) return 0U;
+    
+    /* Массив дверей */
+    if (!jw_appendf(w, "\"doors\":[")) return 0U;
+    for (uint8_t i = 0; i < cfg->doorCount && i < CFG_MAX_DOORS; i++)
+    {
+        const cfg_door_t *door = &cfg->doors[i];
+        if (i != 0) {
+            if (!jw_appendf(w, ",")) return 0U;
+        }
+        
+        /* Определяем тип двери как строку */
+        const char *type_str = "NC";
+        if (door->type == DOOR_TYPE_NO) type_str = "NO";
+        else if (door->type == DOOR_TYPE_CARD_READER) type_str = "CARD_READER";
+        
+        /* Вычисляем globalDoorId */
+        uint8_t globalDoorId = Config_MakeGlobalDoorId(door->nodeId, door->localDoor);
+        
+        if (!jw_appendf(w,
+            "{"
+              "\"techId\":%u,"
+              "\"drawingId\":%u,"
+              "\"nodeId\":%u,"
+              "\"localDoor\":%u,"
+              "\"globalDoorId\":%u,"
+              "\"type\":\"%s\","
+              "\"typeCode\":%u,"
+              "\"comment\":\"%s\""
+            "}",
+            (unsigned)door->techId,
+            (unsigned)door->drawingId,
+            (unsigned)door->nodeId,
+            (unsigned)door->localDoor,
+            (unsigned)globalDoorId,
+            type_str,
+            (unsigned)door->type,
+            door->comment
+        )) return 0U;
+    }
+    if (!jw_appendf(w, "],")) return 0U;
+    
+    /* Массив зависимостей (edges) */
+    if (!jw_appendf(w, "\"edges\":[")) return 0U;
+    for (uint16_t i = 0; i < cfg->edgeCount && i < CFG_MAX_EDGES; i++)
+    {
+        const cfg_edge_t *edge = &cfg->edges[i];
+        if (i != 0) {
+            if (!jw_appendf(w, ",")) return 0U;
+        }
+        if (!jw_appendf(w,
+            "{\"srcGlobalDoorId\":%u,\"dstGlobalDoorId\":%u}",
+            (unsigned)edge->srcGlobalDoorId,
+            (unsigned)edge->dstGlobalDoorId
+        )) return 0U;
+    }
+    if (!jw_appendf(w, "],")) return 0U;
+    
+    /* Массив индивидуальных таймаутов post-close */
+    if (!jw_appendf(w, "\"postCloseTimeouts\":[")) return 0U;
+    for (uint8_t i = 0; i < cfg->doorCount && i < CFG_MAX_DOORS; i++)
+    {
+        if (i != 0) {
+            if (!jw_appendf(w, ",")) return 0U;
+        }
+        uint8_t globalDoorId = Config_MakeGlobalDoorId(cfg->doors[i].nodeId, cfg->doors[i].localDoor);
+        if (!jw_appendf(w,
+            "{\"globalDoorId\":%u,\"timeoutMs\":%lu}",
+            (unsigned)globalDoorId,
+            (unsigned long)cfg->postCloseTimeoutMs[i]
+        )) return 0U;
+    }
+    if (!jw_appendf(w, "],")) return 0U;
+    
+    /* Сетевые параметры */
+    if (!jw_appendf(w,
+        "\"net\":{"
+          "\"dhcpEnabled\":%u,"
+          "\"webPort\":%u"
+        "}",
+        (unsigned)cfg->net.dhcpEnabled,
+        (unsigned)cfg->net.webPort
+    )) return 0U;
+    
+    /* Закрываем JSON объект */
+    if (!jw_appendf(w, "}")) return 0U;
+    
+    return 1U;
+}
+
 static uint8_t build_journal_stat(jsonw_t *w)
 {
     journal_stats_t st;
@@ -407,6 +517,11 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
     {
         return build_config(&w) ? 200 : 500;
     }
+    if (strcmp(path, "/api/config/full") == 0)
+    {
+        /* Полная конфигурация для Web UI (все двери, зависимости, таймауты) */
+        return build_config_full(&w) ? 200 : 500;
+    }
     if (strcmp(path, "/api/journal/stat") == 0)
     {
         return build_journal_stat(&w) ? 200 : 500;
@@ -521,6 +636,80 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     return 200;
 }
 
+/* Парсинг полной конфигурации из JSON (для PUT /api/config/full)
+ * ВАЖНО: Это упрощенная версия. Полный парсер JSON для массивов дверей и зависимостей
+ * требует более сложной реализации. Пока возвращаем ошибку с инструкцией использовать
+ * частичное обновление через PUT /api/config.
+ */
+static int put_config_full(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    (void)body_len;
+    
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body[0] == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* TODO: Реализовать полный парсер JSON для:
+     * - projectName
+     * - openTimeoutMs
+     * - doors[] (массив дверей)
+     * - edges[] (массив зависимостей)
+     * - postCloseTimeouts[] (массив таймаутов)
+     * - net (сетевые параметры)
+     * 
+     * Пока используем частичное обновление через put_config_merge
+     * для базовых полей.
+     */
+    
+    /* Парсим базовые поля через существующий механизм */
+    project_config_t cfg = g_project_cfg;
+    cfg.formatVersion = CFG_FORMAT_VERSION;
+    cfg.seq = (uint32_t)(g_project_cfg.seq + 1U);
+    
+    /* projectName */
+    char pname[CFG_PROJECT_NAME_LEN];
+    if (Json_GetString(body, "projectName", pname, sizeof(pname))) {
+        memset(cfg.projectName, 0, sizeof(cfg.projectName));
+        strncpy(cfg.projectName, pname, sizeof(cfg.projectName) - 1U);
+    }
+    
+    /* openTimeoutMs */
+    uint32_t ot;
+    if (Json_GetUint32(body, "openTimeoutMs", &ot)) {
+        cfg.openTimeoutMs = ot;
+    }
+    
+    /* TODO: Парсинг массивов doors, edges, postCloseTimeouts
+     * Требует реализации парсера JSON массивов в json_simple.c
+     */
+    
+    /* Валидация */
+    cfg_validate_error_t err;
+    memset(&err, 0, sizeof(err));
+    if (Config_Validate(&cfg, &err) != CFG_VALIDATE_OK) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"%s\"}", err.text);
+        return 400;
+    }
+    
+    Config_Finalize(&cfg);
+    
+    const cfg_storage_status_t st = ConfigService_Persist(&cfg);
+    if (st != CFGST_OK) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"persistStatus\":%u}", (unsigned)st);
+        return 500;
+    }
+    
+    g_project_cfg = cfg;
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu,\"warning\":\"Full config parser not implemented. Only basic fields updated.\"}",
+                     (unsigned)st, (unsigned long)cfg.seq);
+    return 200;
+}
+
 int HttpApi_HandlePut(const char *path,
                       const char *body, size_t body_len,
                       char *out_body, size_t out_sz)
@@ -528,6 +717,10 @@ int HttpApi_HandlePut(const char *path,
     if (!path || !out_body || out_sz == 0U) return 500;
     if (strcmp(path, "/api/config") == 0) {
         return put_config_merge(body, body_len, out_body, out_sz);
+    }
+    if (strcmp(path, "/api/config/full") == 0) {
+        /* Полная конфигурация для Web UI */
+        return put_config_full(body, body_len, out_body, out_sz);
     }
     /* unknown path */
     if (out_body && out_sz) {
