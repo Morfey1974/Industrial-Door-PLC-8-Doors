@@ -16,14 +16,11 @@ const Dashboard = () => {
   // Получаем состояние дверей
   const { data: doors, loading: doorsLoading, error: doorsError, refetch: refetchDoors } = useApi(getDoors);
 
-  // Автообновление каждые 10 секунд
+  // Автообновление каждые 10 секунд (тихое обновление)
   useAutoRefresh(() => {
-    try {
-      refetchState();
-      refetchDoors();
-    } catch (error) {
-      console.error('Auto refresh error:', error);
-    }
+    // Используем тихое обновление, чтобы не показывать состояние загрузки
+    refetchState(true);
+    refetchDoors(true);
   }, 10000);
 
   return (

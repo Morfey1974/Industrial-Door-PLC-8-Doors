@@ -1,12 +1,14 @@
 /**
  * DoorTable компонент - полная таблица состояния дверей
+ * Оптимизирован с React.memo для предотвращения лишних перерисовок
  */
 
+import { memo } from 'react';
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
 import { getDoorStatusText, formatUptime } from '../../utils/formatters';
 
-const DoorTable = ({ doors, filters = {} }) => {
+const DoorTable = memo(({ doors, filters = {} }) => {
   if (!doors || !doors.doors || doors.doors.length === 0) {
     return <p>Нет данных о дверях</p>;
   }
@@ -74,6 +76,24 @@ const DoorTable = ({ doors, filters = {} }) => {
       )}
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Кастомная функция сравнения для оптимизации
+  // Перерисовываем только если изменились данные или фильтры
+  if (prevProps.doors !== nextProps.doors) {
+    // Сравниваем содержимое массивов дверей
+    const prevDoors = prevProps.doors?.doors || [];
+    const nextDoors = nextProps.doors?.doors || [];
+    if (prevDoors.length !== nextDoors.length) return false;
+    if (JSON.stringify(prevDoors) !== JSON.stringify(nextDoors)) return false;
+  }
+  
+  if (JSON.stringify(prevProps.filters) !== JSON.stringify(nextProps.filters)) {
+    return false;
+  }
+  
+  return true; // Пропсы не изменились, не перерисовываем
+});
+
+DoorTable.displayName = 'DoorTable';
 
 export default DoorTable;

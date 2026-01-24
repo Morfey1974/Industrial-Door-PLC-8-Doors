@@ -118,19 +118,29 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
 #endif
     }
     
-    /* Небольшая задержка после отправки заголовка, чтобы дать время lwIP обработать его */
+    /* Увеличиваем задержку после отправки заголовка, чтобы дать время TCP стеку
+     * обработать заголовок, отправить его клиенту и получить ACK.
+     * Это критично для больших ответов, чтобы буфер отправки освободился.
+     */
     if (body_len > 0) {
-        osDelay(2); /* 2мс задержка для обработки заголовка */
+        osDelay(30); /* 30мс задержка для обработки заголовка и освобождения буфера */
     }
     
     if (body_len > 0) {
         /* Отправляем тело с обработкой частичной отправки и non-blocking режима.
          * ВАЖНО: В non-blocking режиме нужно повторять попытки отправки до полной отправки,
          * иначе Content-Length не совпадет с фактически отправленными данными.
+         * 
+         * Оптимизация для больших ответов:
+         * - Уменьшенный размер чанка (128 байт) для лучшей совместимости с TCP буфером
+         * - Задержка между чанками для освобождения буфера TCP стека
+         * - Увеличенный таймаут select для более терпеливого ожидания
          */
         int sent = 0;
         int attempts = 0;
-        const int max_attempts = 100; /* Максимум попыток для предотвращения бесконечного цикла */
+        int consecutive_errors = 0; /* Счетчик последовательных ошибок */
+        const int max_attempts = 200; /* Увеличиваем максимум попыток для больших ответов */
+        const int max_consecutive_errors = 50; /* Максимум последовательных ошибок перед паузой */
         
         while (sent < body_len && attempts < max_attempts) {
             /* Проверяем готовность сокета к записи через select */
@@ -139,36 +149,51 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
             FD_SET(fd, &wfds);
             struct timeval tv_select;
             tv_select.tv_sec = 0;
-            tv_select.tv_usec = 50000; /* 50ms таймаут */
+            tv_select.tv_usec = 100000; /* 100ms таймаут (увеличен для больших ответов) */
             int sel_ready = lwip_select(fd + 1, NULL, &wfds, NULL, &tv_select);
             
             if (sel_ready <= 0) {
-                /* Сокет не готов к записи */
+                /* Сокет не готов к записи - буфер TCP переполнен или обрабатывается */
                 attempts++;
+                consecutive_errors++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-                if (attempts <= 5 || attempts % 10 == 0) {
+                if (attempts <= 5 || attempts % 20 == 0) {
                     AppLog("HTTP: body socket not ready (attempt=%d sent=%d/%d)", attempts, sent, body_len);
                 }
 #endif
-                if (attempts < max_attempts) {
-                    osDelay(5); /* Увеличиваем задержку до 5мс */
+                /* Если много последовательных ошибок - делаем паузу для освобождения буфера */
+                if (consecutive_errors >= max_consecutive_errors) {
+                    osDelay(50); /* Пауза 50мс для освобождения буфера TCP */
+                    consecutive_errors = 0;
+                } else if (attempts < max_attempts) {
+                    osDelay(10); /* Обычная задержка 10мс */
                 }
                 continue;
             }
             
-            /* Отправляем небольшими блоками (256 байт) для надежности */
+            /* Отправляем небольшими блоками (128 байт) для надежности.
+             * Меньший размер чанка снижает риск переполнения буфера TCP.
+             */
             size_t chunk_size = (size_t)(body_len - sent);
-            if (chunk_size > 256) chunk_size = 256;
+            if (chunk_size > 128) chunk_size = 128;
             
             int r = lwip_send(fd, body + sent, chunk_size, 0);
             if (r > 0) {
                 sent += r;
                 attempts = 0; /* Сброс счетчика при успешной отправке */
+                consecutive_errors = 0; /* Сброс счетчика ошибок */
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
-                if (sent % 200 == 0 || sent == body_len) {
+                if (sent % 500 == 0 || sent == body_len) {
                     AppLog("HTTP: body progress sent=%d/%d", sent, body_len);
                 }
 #endif
+                /* Небольшая задержка после успешной отправки чанка, чтобы дать время
+                 * TCP стеку обработать данные и освободить место в буфере.
+                 * Это особенно важно для больших ответов.
+                 */
+                if (sent < body_len) {
+                    osDelay(2); /* 2мс задержка между чанками */
+                }
             } else if (r == 0) {
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 AppLog("HTTP: body send closed (sent=%d/%d)", sent, body_len);
@@ -176,15 +201,23 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                 /* Соединение закрыто */
                 break;
             } else {
-                /* Ошибка: lwip_send возвращает отрицательное значение (err_t) */
+                /* Ошибка: lwip_send возвращает отрицательное значение (err_t)
+                 * Это может быть EWOULDBLOCK (буфер полон) или другая ошибка.
+                 * В любом случае делаем паузу и повторяем попытку.
+                 */
                 attempts++;
+                consecutive_errors++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-                if (attempts <= 5 || attempts % 10 == 0) {
+                if (attempts <= 5 || attempts % 20 == 0) {
                     AppLog("HTTP: body send error r=%d (sent=%d/%d attempt=%d)", r, sent, body_len, attempts);
                 }
 #endif
-                if (attempts < max_attempts) {
-                    osDelay(10); /* Увеличиваем задержку до 10мс */
+                /* Если много последовательных ошибок - делаем паузу */
+                if (consecutive_errors >= max_consecutive_errors) {
+                    osDelay(50); /* Пауза 50мс для освобождения буфера TCP */
+                    consecutive_errors = 0;
+                } else if (attempts < max_attempts) {
+                    osDelay(15); /* Увеличиваем задержку до 15мс при ошибке */
                 }
             }
         }

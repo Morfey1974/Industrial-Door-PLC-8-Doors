@@ -18,7 +18,7 @@ export const API_URL = API_PORT === '80'
   : `${API_BASE_URL}:${API_PORT}/api`;
 
 // Таймауты
-export const API_TIMEOUT = 5000; // 5 секунд
+export const API_TIMEOUT = 30000; // 30 секунд (увеличено для медленных соединений)
 export const AUTO_REFRESH_INTERVAL = 5000; // 5 секунд для автообновления
 
 // Роли пользователей

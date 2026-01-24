@@ -382,6 +382,16 @@ static void prv_cli_execute(char *cmd)
         EventJournal_DumpLast(n);
         return;
     }
+    if (strncmp(p, "info", 4) == 0)
+    {
+        EventJournal_PrintDetailedInfo();
+        return;
+    }
+    if (strncmp(p, "recinfo", 7) == 0)
+    {
+        EventJournal_PrintRecordInfo();
+        return;
+    }
 
     AppLog("CLI: unknown log subcmd (try: log help)");
 }
@@ -390,8 +400,10 @@ static void prv_cli_print_help(void)
 {
     AppLog("CLI commands:");
     AppLog("  log help            - this help");
-    AppLog("  log stat            - journal statistics");
-    AppLog("  log dump [N]         - dump last N records (default 20)");
+    AppLog("  log stat            - journal statistics (short)");
+    AppLog("  log info            - journal detailed information");
+    AppLog("  log recinfo         - record size and capacity info");
+    AppLog("  log dump [N]        - dump last N records (default 20, max 200)");
     AppLog("  log clear           - erase journal");
     AppLog("  mem stat            - memory usage statistics");
 }

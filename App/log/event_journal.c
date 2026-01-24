@@ -578,6 +578,78 @@ void EventJournal_DumpLast(uint32_t count)
 }
 
 /* =========================================================
+ * Дополнительные диагностические функции
+ * ========================================================= */
+
+#include "config/config_layout.h" /* QSPI_SECTOR_SIZE */
+
+/* Константы для диагностики */
+#define ELOG_SECTOR_HDR_BYTES_DIAG 256U
+#define ELOG_RECORD_SIZE_DIAG 32U
+
+void EventJournal_PrintDetailedInfo(void)
+{
+    journal_stats_t st;
+    EventJournal_GetStats(&st);
+    
+    /* Вычисляем количество записей в журнале */
+    const uint32_t records_per_sector = (st.sector_size - ELOG_SECTOR_HDR_BYTES_DIAG) / ELOG_RECORD_SIZE_DIAG;
+    const uint32_t max_records_total = st.sectors * records_per_sector;
+    
+    /* Занятая память */
+    const uint32_t used_sectors = (st.records_written / records_per_sector) + 
+                                   ((st.records_written % records_per_sector > 0) ? 1 : 0);
+    const uint32_t used_memory_bytes = used_sectors * st.sector_size;
+    const uint32_t used_memory_kb = used_memory_bytes / 1024U;
+    
+    AppLog("=== EVENT JOURNAL - DETAILED INFO ===");
+    AppLog("Flash address: 0x%08lX", (unsigned long)st.base);
+    AppLog("Total size: %lu KB (%lu bytes)", 
+           (unsigned long)(st.size / 1024U), (unsigned long)st.size);
+    AppLog("Sector size: %lu bytes", (unsigned long)st.sector_size);
+    AppLog("Sector count: %lu", (unsigned long)st.sectors);
+    AppLog("---");
+    AppLog("Current sector: %lu", (unsigned long)st.current_sector);
+    AppLog("Sector sequence: %lu", (unsigned long)st.current_seq);
+    AppLog("---");
+    AppLog("Total records written: %lu", (unsigned long)st.records_written);
+    AppLog("Max records (theoretical): ~%lu", (unsigned long)max_records_total);
+    AppLog("Records per sector: %lu", (unsigned long)records_per_sector);
+    AppLog("---");
+    AppLog("Used sectors: ~%lu", (unsigned long)used_sectors);
+    AppLog("Used memory: ~%lu KB (~%lu bytes)", 
+           (unsigned long)used_memory_kb, (unsigned long)used_memory_bytes);
+    AppLog("Free memory: ~%lu KB", 
+           (unsigned long)((st.size - used_memory_bytes) / 1024U));
+    AppLog("---");
+    AppLog("Write errors: %lu", (unsigned long)st.io_errors);
+    AppLog("Dropped from queue: %lu", (unsigned long)st.dropped_queue);
+    AppLog("===========================================");
+}
+
+void EventJournal_PrintRecordInfo(void)
+{
+    journal_stats_t st;
+    EventJournal_GetStats(&st);
+    const uint32_t records_per_sector = (st.sector_size - ELOG_SECTOR_HDR_BYTES_DIAG) / ELOG_RECORD_SIZE_DIAG;
+    const uint32_t max_records = st.sectors * records_per_sector;
+    const uint32_t max_data_bytes = max_records * ELOG_RECORD_SIZE_DIAG;
+    
+    AppLog("=== RECORD INFORMATION ===");
+    AppLog("Record size: %u bytes", (unsigned)ELOG_RECORD_SIZE_DIAG);
+    AppLog("Records per sector: %lu (%lu bytes data + %u bytes header = %lu bytes)", 
+           (unsigned long)records_per_sector, 
+           (unsigned long)(records_per_sector * ELOG_RECORD_SIZE_DIAG),
+           (unsigned)ELOG_SECTOR_HDR_BYTES_DIAG,
+           (unsigned long)st.sector_size);
+    AppLog("Max records in journal: ~%lu (%lu sectors * %lu records)", 
+           (unsigned long)max_records, (unsigned long)st.sectors, (unsigned long)records_per_sector);
+    AppLog("Max memory for records: ~%lu KB (%lu bytes)", 
+           (unsigned long)(max_data_bytes / 1024U), (unsigned long)max_data_bytes);
+    AppLog("===========================");
+}
+
+/* =========================================================
  * HTTP API: чтение записей с пагинацией (Этап 9)
  * ========================================================= */
 

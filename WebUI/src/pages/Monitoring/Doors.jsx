@@ -19,13 +19,10 @@ const Doors = () => {
   // Получаем состояние дверей
   const { data: doors, loading, error, refetch } = useApi(getDoors);
 
-  // Автообновление каждые 5 секунд
+  // Автообновление каждые 5 секунд (тихое обновление без показа loading)
   useAutoRefresh(() => {
-    try {
-      refetch();
-    } catch (error) {
-      console.error('Auto refresh error:', error);
-    }
+    // Используем тихое обновление, чтобы не показывать состояние загрузки
+    refetch(true);
   }, 5000);
 
   return (
@@ -49,33 +46,44 @@ const Doors = () => {
         </div>
       )}
 
-      {/* Состояние загрузки */}
-      {loading && (
+      {/* Состояние загрузки - показываем только при первой загрузке */}
+      {loading && !doors && (
         <div className="loading-state">
           <p>Загрузка данных о дверях...</p>
+          <p style={{ fontSize: '0.875rem', opacity: 0.7, marginTop: '0.5rem' }}>
+            Это может занять до 30 секунд. Если загрузка не завершается, проверьте подключение к контроллеру.
+          </p>
         </div>
       )}
 
-      {/* Обработка ошибок */}
-      {error && (
+      {/* Обработка ошибок - показываем только если нет данных */}
+      {error && !doors && (
         <div className="error-state">
           <h3>Ошибка загрузки данных</h3>
           <p>{error}</p>
           <p>Проверьте, что контроллер доступен по адресу: http://192.168.1.50</p>
-          <Button variant="primary" onClick={refetch}>
+          <Button variant="primary" onClick={() => refetch(false)}>
             Повторить попытку
           </Button>
         </div>
       )}
 
-      {/* Таблица дверей */}
-      {!loading && !error && doors && (
+      {/* Таблица дверей - показываем если есть данные, даже при ошибке автообновления */}
+      {doors && (
         <div className="doors-table-section">
           <DoorTable doors={doors} filters={filters} />
+          {/* Показываем предупреждение об ошибке автообновления, но не скрываем таблицу */}
+          {error && doors && (
+            <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
+              <p style={{ margin: 0, fontSize: '0.875rem' }}>
+                ⚠️ Ошибка автообновления: {error}. Данные могут быть устаревшими.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Нет данных */}
+      {/* Нет данных - показываем только если нет данных и нет ошибки */}
       {!loading && !error && (!doors || !doors.doors || doors.doors.length === 0) && (
         <div className="no-data-state">
           <p>Нет данных о дверях</p>

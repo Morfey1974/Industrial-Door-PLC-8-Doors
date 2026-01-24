@@ -69,6 +69,10 @@ void EventJournal_PrintStats(void);
 /* Очистить (стереть) журнал. Эквивалент EventJournal_EraseAll(), но удобнее для CLI. */
 journal_status_t EventJournal_Clear(void);
 
+/* Дополнительные диагностические функции */
+void EventJournal_PrintDetailedInfo(void);
+void EventJournal_PrintRecordInfo(void);
+
 /* --- HTTP API: чтение записей с пагинацией (Этап 9) ---
  * Читает записи журнала в обратном хронологическом порядке (новые -> старые).
  * 

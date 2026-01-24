@@ -301,10 +301,14 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
     
     if (status != JOURNAL_OK)
     {
-        /* В случае ошибки возвращаем пустой массив */
-        return jw_appendf(w, "{\"records\":[],\"count\":0,\"offset\":%lu,\"limit\":%lu,\"error\":%u}",
-                         (unsigned long)offset, (unsigned long)limit, (unsigned)status);
+        /* В случае ошибки возвращаем пустой массив с информацией об ошибке */
+        return jw_appendf(w, "{\"records\":[],\"count\":0,\"offset\":%lu,\"limit\":%lu,\"error\":%u,\"errorMsg\":\"%s\"}",
+                         (unsigned long)offset, (unsigned long)limit, (unsigned)status,
+                         (status == JOURNAL_NOT_INIT) ? "Journal not initialized" :
+                         (status == JOURNAL_IO_ERROR) ? "IO error reading from QSPI" : "Unknown error");
     }
+    
+    /* Если журнал пустой (count == 0), это нормально, не ошибка */
 
     if (!jw_appendf(w, "{\"records\":[")) return 0U;
 

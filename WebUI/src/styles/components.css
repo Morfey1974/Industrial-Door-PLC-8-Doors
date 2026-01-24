@@ -373,3 +373,104 @@
   color: var(--color-text-dark);
   margin-bottom: var(--spacing-sm);
 }
+
+/* Monitoring Events Page */
+.monitoring-events {
+  padding: var(--spacing-lg);
+}
+
+.events-info {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-secondary);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.events-info p {
+  margin: 0;
+  color: var(--color-text-dark);
+}
+
+.events-table-section {
+  margin-top: var(--spacing-md);
+}
+
+.events-table {
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.events-table-content {
+  margin: 0;
+}
+
+.events-table-content th {
+  background-color: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.pagination-section {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.pagination-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--color-text-dark);
+  font-size: var(--font-size-sm);
+}
+
+.pagination-page-info {
+  opacity: 0.7;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.pagination-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.pagination-page-size {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.pagination-page-size label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dark);
+  white-space: nowrap;
+}
+
+.pagination-page-size select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  background-color: var(--color-white);
+  color: var(--color-text-dark);
+  cursor: pointer;
+}
