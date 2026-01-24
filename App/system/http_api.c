@@ -290,11 +290,14 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
     uint32_t offset = parse_query_uint32(path, "offset", 0U);
     uint32_t limit = parse_query_uint32(path, "limit", 20U);
 
-    /* Ограничиваем limit разумными значениями */
-    if (limit == 0 || limit > 200) limit = 20U;
+    /* Ограничиваем limit разумными значениями.
+     * С учетом размера буфера (8KB) и размера одной записи (~150 байт),
+     * максимальное количество записей за один запрос = ~50.
+     */
+    if (limit == 0 || limit > 50) limit = 20U;
 
-    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен) */
-    journal_record_t records[200];
+    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен до 50) */
+    journal_record_t records[50];
     uint32_t count = 0;
 
     journal_status_t status = EventJournal_ReadRecords(offset, limit, records, &count);

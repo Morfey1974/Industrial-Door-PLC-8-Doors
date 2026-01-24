@@ -449,8 +449,11 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 
     if (strcmp(method, "GET") == 0) {
         /* API GET */
-        /* Увеличиваем буфер для ответов, особенно для /api/doors с 8 дверьми */
-        char body[4096];
+        /* Буфер для ответов. Увеличен до 8KB для поддержки больших ответов /api/journal/dump.
+         * Одна запись в JSON занимает ~120-150 байт, поэтому 8KB достаточно для ~50 записей.
+         * Для большего количества записей нужно использовать пагинацию.
+         */
+        char body[8192];
         memset(body, 0, sizeof(body)); /* ВАЖНО: инициализируем нулями для корректного strlen() */
         
         /* Защита от зависания: устанавливаем общий таймаут на обработку запроса.
@@ -478,7 +481,16 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
                 http_send_simple(cfd, 404, "text/plain", "Not Found\n");
             }
         } else {
-            http_send_simple(cfd, 500, "text/plain", "Internal Error\n");
+            /* При ошибке 500 проверяем, есть ли в body JSON с описанием ошибки */
+            if (body[0] == '{' && strstr(body, "errorMsg") != NULL) {
+                /* Если body содержит JSON с ошибкой (например, от build_journal_dump),
+                 * отправляем его как JSON, а не как plain text
+                 */
+                http_send_simple(cfd, 500, "application/json", body);
+            } else {
+                /* Иначе отправляем стандартное сообщение об ошибке */
+                http_send_simple(cfd, 500, "text/plain", "Internal Error\n");
+            }
         }
         (void)lwip_close(cfd);
         return;

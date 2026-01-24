@@ -8,7 +8,14 @@
  * @returns {string} Отформатированная дата и время
  */
 export const formatTimestamp = (timestamp) => {
-  if (!timestamp) return '—';
+  if (!timestamp || timestamp === 0) return 'Не установлено';
+  
+  // Проверяем, что timestamp не слишком маленький (меньше 1 января 2000 года)
+  // Это означает, что RTC не настроен или сброшен
+  const minValidTimestamp = 946684800; // 1 января 2000 года 00:00:00 UTC
+  if (timestamp < minValidTimestamp) {
+    return 'Не установлено';
+  }
   
   const date = new Date(timestamp * 1000); // Преобразуем секунды в миллисекунды
   return date.toLocaleString('ru-RU', {
@@ -27,11 +34,18 @@ export const formatTimestamp = (timestamp) => {
  * @returns {string} Относительное время
  */
 export const formatRelativeTime = (timestamp) => {
-  if (!timestamp) return '—';
+  if (!timestamp || timestamp === 0) return 'Не установлено';
+  
+  // Проверяем, что timestamp не слишком маленький
+  const minValidTimestamp = 946684800; // 1 января 2000 года 00:00:00 UTC
+  if (timestamp < minValidTimestamp) {
+    return 'Не установлено';
+  }
   
   const now = Math.floor(Date.now() / 1000);
   const diff = now - timestamp;
   
+  if (diff < 0) return 'в будущем'; // На случай если часы впереди
   if (diff < 60) return 'только что';
   if (diff < 3600) return `${Math.floor(diff / 60)} мин. назад`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} ч. назад`;

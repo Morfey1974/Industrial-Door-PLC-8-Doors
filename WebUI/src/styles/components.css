@@ -404,11 +404,30 @@
 
 .events-table-content {
   margin: 0;
+  font-size: var(--font-size-sm); /* Уменьшаем размер шрифта для компактности */
 }
 
 .events-table-content th {
   background-color: var(--color-primary);
   color: var(--color-text-light);
+  padding: var(--spacing-xs) var(--spacing-sm); /* Уменьшаем отступы */
+  white-space: nowrap;
+}
+
+.events-table-content td {
+  padding: var(--spacing-xs) var(--spacing-sm); /* Уменьшаем отступы */
+  white-space: nowrap;
+}
+
+/* Оптимизация ширины таблицы - делаем её более компактной */
+.events-table-content {
+  table-layout: auto;
+  width: 100%;
+  min-width: 800px; /* Минимальная ширина для горизонтальной прокрутки */
+}
+
+.events-table {
+  overflow-x: auto; /* Горизонтальная прокрутка при необходимости */
 }
 
 .pagination-section {
@@ -451,6 +470,56 @@
 .pagination-buttons {
   display: flex;
   gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Номера страниц */
+.pagination-page-numbers {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  margin: 0 var(--spacing-sm);
+}
+
+.pagination-page-number {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-white);
+  color: var(--color-text-dark);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-page-number:hover:not(:disabled) {
+  background-color: var(--color-secondary);
+  border-color: var(--color-primary);
+}
+
+.pagination-page-number.active {
+  background-color: var(--color-primary);
+  color: var(--color-text-light);
+  border-color: var(--color-primary);
+  cursor: default;
+}
+
+.pagination-page-number:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+  padding: 0 var(--spacing-xs);
+  color: var(--color-text-dark);
+  opacity: 0.5;
+  user-select: none;
 }
 
 .pagination-page-size {

@@ -96,12 +96,31 @@ const useApi = (apiFunction, dependencies = []) => {
         }
         
         if (isMounted && !abortControllerRef.current?.signal.aborted) {
+          // Извлекаем errorMsg из JSON-ответа, если он есть
+          let errorMessage = err.message || 'Ошибка загрузки данных';
+          if (err.response && err.response.data) {
+            // Если сервер вернул JSON с errorMsg, используем его
+            if (typeof err.response.data === 'object' && err.response.data.errorMsg) {
+              errorMessage = err.response.data.errorMsg;
+            } else if (typeof err.response.data === 'string' && err.response.data.includes('errorMsg')) {
+              // Если ответ - строка с JSON, пытаемся распарсить
+              try {
+                const parsed = JSON.parse(err.response.data);
+                if (parsed.errorMsg) {
+                  errorMessage = parsed.errorMsg;
+                }
+              } catch (e) {
+                // Игнорируем ошибку парсинга
+              }
+            }
+          }
+          
           // Не показываем ошибку, если уже есть данные (тихое обновление)
           if (!data) {
-            setError(err.message || 'Ошибка загрузки данных');
+            setError(errorMessage);
           } else {
             // Логируем ошибку, но не показываем пользователю при автообновлении
-            console.warn('Ошибка автообновления данных:', err.message);
+            console.warn('Ошибка автообновления данных:', errorMessage);
           }
         }
       } finally {
