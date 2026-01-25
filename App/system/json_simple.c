@@ -13,6 +13,26 @@ static const char *skip_ws(const char *p)
     return p;
 }
 
+/* Пропуск строки в кавычках; *p == '"'. Без экранирования. */
+static const char *skip_quoted_string(const char *p)
+{
+    if (!p || *p != '"') return p;
+    p++;
+    while (*p && *p != '"') p++;
+    if (*p == '"') p++;
+    return p;
+}
+
+/* То же, но не выходим за end. */
+static const char *skip_quoted_string_bounded(const char *p, const char *end)
+{
+    if (!p || p >= end || *p != '"') return p;
+    p++;
+    while (p < end && *p != '"') p++;
+    if (p < end && *p == '"') p++;
+    return p;
+}
+
 static void trim_span(json_span_t *s)
 {
     if (!s || !s->ptr) return;
@@ -68,6 +88,7 @@ uint8_t Json_FindKeyValueSpan(const char *json, const char *key, json_span_t *ou
         int depth = 0;
         const char *q = start;
         while (*q) {
+            if (*q == '"') { q = skip_quoted_string(q); continue; }
             if (*q == '{') depth++;
             else if (*q == '}') {
                 depth--;
@@ -80,6 +101,20 @@ uint8_t Json_FindKeyValueSpan(const char *json, const char *key, json_span_t *ou
             q++;
         }
         return 0U;
+    }
+    if (*start == '[') {
+        int depth = 1;
+        const char *q = start + 1;
+        while (*q && depth > 0) {
+            if (*q == '"') { q = skip_quoted_string(q); continue; }
+            if (*q == '[') depth++;
+            else if (*q == ']') { depth--; if (depth == 0) break; }
+            q++;
+        }
+        if (!*q && depth != 0) return 0U;
+        out_val->ptr = start;
+        out_val->len = (size_t)(q - start + 1);
+        return 1U;
     }
     const char *end = start;
     while (*end) {
@@ -105,6 +140,50 @@ uint8_t Json_FindObjectSpan(const char *json, const char *key, json_span_t *out_
     out_obj->ptr = raw.ptr + 1;
     out_obj->len = raw.len - 2U;
     trim_span(out_obj);
+    return 1U;
+}
+
+uint8_t Json_FindArraySpan(const char *json, const char *key, json_span_t *out_arr)
+{
+    if (!json || !key || !out_arr) return 0U;
+    json_span_t raw;
+    if (!Json_FindKeyValueSpan(json, key, &raw)) return 0U;
+    if (!raw.ptr || raw.len < 2U) return 0U;
+    if (raw.ptr[0] != '[') return 0U;
+    if (raw.ptr[raw.len - 1U] != ']') return 0U;
+    out_arr->ptr = raw.ptr + 1;
+    out_arr->len = raw.len - 2U;
+    trim_span(out_arr);
+    return 1U;
+}
+
+uint8_t Json_ArrayNextObject(const char *arr_ptr, size_t arr_len, size_t *inout_off, json_span_t *out_obj)
+{
+    if (!arr_ptr || !inout_off || !out_obj) return 0U;
+    out_obj->ptr = NULL;
+    out_obj->len = 0U;
+    const char *end = arr_ptr + arr_len;
+    size_t pos = *inout_off;
+    if (pos >= arr_len) return 0U;
+
+    const char *p = arr_ptr + pos;
+    while (p < end && (*p == ',' || *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+    if (p >= end || *p != '{') return 0U;
+
+    const char *start = p;
+    int depth = 1;
+    p++;
+    while (p < end && depth > 0) {
+        if (*p == '"') { p = skip_quoted_string_bounded(p, end); continue; }
+        if (*p == '{') depth++;
+        else if (*p == '}') { depth--; if (depth == 0) break; }
+        p++;
+    }
+    if (depth != 0) return 0U;
+
+    out_obj->ptr = start;
+    out_obj->len = (size_t)(p - start + 1);
+    *inout_off = (size_t)(p - arr_ptr + 1);
     return 1U;
 }
 

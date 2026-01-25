@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getConfigFull, putConfigFull, putConfig, putConfigTest } from '../../services/api';
+import { getConfigFull, putConfigFull, putConfigTest } from '../../services/api';
 import { 
   saveDraft, 
   loadDraft, 
@@ -386,141 +386,110 @@ const DoorsConfig = () => {
     }
   }, [loadConfigFromServer]);
   
-  // Применение конфигурации на контроллер
+  // Применение конфигурации на контроллер (PUT /api/config/full)
   const handleApplyToController = useCallback(async () => {
-    // Валидация перед отправкой
     const validation = validateCurrentConfig();
     if (!validation.valid) {
       setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
       return;
     }
-    
-    // Проверяем наличие данных для предупреждения
-    const hasDoors = config.doors && config.doors.length > 0;
-    const hasEdges = config.edges && config.edges.length > 0;
-    const hasTimeouts = config.postCloseTimeouts && config.postCloseTimeouts.length > 0;
-    
-    let confirmMessage = 'Применить конфигурацию на контроллер?\n\n';
-    confirmMessage += '⚠️ ВНИМАНИЕ: В текущей версии firmware поддерживается только обновление базовых параметров:\n';
-    confirmMessage += '- Название проекта (projectName)\n';
-    confirmMessage += '- Глобальный таймаут открытия (openTimeoutMs)\n\n';
-    
-    if (hasDoors || hasEdges || hasTimeouts) {
-      confirmMessage += '⚠️ Двери, зависимости и таймауты пока НЕ будут применены.\n';
-      confirmMessage += 'Они будут сохранены только в локальной конфигурации.\n\n';
+
+    const doorCount = config.doors?.length ?? 0;
+    const edgeCount = config.edges?.length ?? 0;
+    const LIMIT_DOORS_V1 = 8;
+    const LIMIT_EDGES_V1 = 16;
+    const LIMIT_POST_CLOSE_V1 = 8;
+
+    if (doorCount > LIMIT_DOORS_V1) {
+      setError(`В первой версии поддерживается не более ${LIMIT_DOORS_V1} дверей. Сейчас: ${doorCount}. Удалите лишние двери или сохраните конфигурацию и примените другую.`);
+      return;
     }
-    
-    confirmMessage += 'Это заменит текущую конфигурацию на контроллере.';
-    
+    if (edgeCount > LIMIT_EDGES_V1) {
+      setError(`В первой версии поддерживается не более ${LIMIT_EDGES_V1} зависимостей. Сейчас: ${edgeCount}.`);
+      return;
+    }
+    const pctCount = config.postCloseTimeouts?.length ?? 0;
+    if (pctCount > LIMIT_POST_CLOSE_V1) {
+      setError(`В первой версии поддерживается не более ${LIMIT_POST_CLOSE_V1} записей postCloseTimeouts. Сейчас: ${pctCount}.`);
+      return;
+    }
+
+    let confirmMessage = 'Применить полную конфигурацию на контроллер?\n\n';
+    confirmMessage += `Будут применены: название проекта, таймаут открытия, двери (${doorCount}), зависимости (${edgeCount}), таймауты post-close.\n`;
+    confirmMessage += `Лимит v1: не более ${LIMIT_DOORS_V1} дверей.\n\n`;
+    confirmMessage += 'Это заменит текущую конфигурацию на контроллере. Запись в Flash может занять до 90 секунд.';
+
     if (!window.confirm(confirmMessage)) {
       return;
     }
-    
+
     setSaving(true);
     setError(null);
-    setSuccess('Применение конфигурации... Это может занять до 90 секунд (стирание и запись в Flash память)');
-    
+    setSuccess('Применение конфигурации... Это может занять до 90 секунд (стирание и запись в Flash).');
+
     try {
-      // ВАЖНО: В firmware функция put_config_full еще не полностью реализована
-      // Она парсит ТОЛЬКО projectName и openTimeoutMs
-      // Остальные поля (doors, edges, postCloseTimeouts) НЕ парсятся
-      // Но сервер валидирует ВСЮ конфигурацию, включая старые данные
-      // Поэтому отправляем только те поля, которые сервер может обработать
-      
-      // Валидация перед отправкой
       if (!config.projectName || config.projectName.trim().length === 0) {
         setError('Название проекта не может быть пустым');
         setSaving(false);
         return;
       }
-      
       if (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000) {
         setError('Таймаут открытия должен быть от 1000 до 3600000 мс');
         setSaving(false);
         return;
       }
-      
-      // Отправляем минимальный набор полей, которые сервер может обработать
-      // Сервер сам устанавливает formatVersion и seq, поэтому не отправляем их
-      // Остальные поля будут добавлены позже, когда будет реализован полный парсер
-      // ВАЖНО: Убеждаемся, что projectName не слишком длинный
+
       const trimmedProjectName = config.projectName.trim();
       if (trimmedProjectName.length > 32) {
         setError('Название проекта не может быть длиннее 32 символов');
         setSaving(false);
         return;
       }
-      
-      const serverConfig = {
+
+      const doors = (config.doors || []).map((d) => ({
+        techId: d.techId,
+        drawingId: d.drawingId ?? 0,
+        nodeId: d.nodeId,
+        localDoor: d.localDoor,
+        globalDoorId: d.globalDoorId ?? ((d.nodeId - 1) * 8 + d.localDoor),
+        type: d.type === 'NO' ? 'NO' : d.type === 'CARD_READER' ? 'CARD_READER' : 'NC',
+        typeCode: d.typeCode ?? (d.type === 'NO' ? 1 : d.type === 'CARD_READER' ? 2 : 0),
+        comment: d.comment ?? '',
+      }));
+
+      const fullConfig = {
         projectName: trimmedProjectName,
         openTimeoutMs: config.openTimeoutMs,
-        // Временно НЕ отправляем:
-        // - formatVersion (сервер устанавливает сам)
-        // - seq (сервер увеличивает сам)
-        // - doors, edges, postCloseTimeouts (не парсятся пока)
-        // - net (не парсится пока)
+        doors,
+        edges: config.edges || [],
+        postCloseTimeouts: config.postCloseTimeouts || [],
+        net: config.net || { dhcpEnabled: 1, webPort: 8080 },
       };
-      
-      // Логируем данные перед отправкой
-      const jsonString = JSON.stringify(serverConfig);
+
+      const jsonString = JSON.stringify(fullConfig);
       const jsonSize = new Blob([jsonString]).size;
-      
-      console.log('Отправка конфигурации на контроллер:', {
-        projectName: serverConfig.projectName,
-        openTimeoutMs: serverConfig.openTimeoutMs,
-        jsonSize: `${jsonSize} байт`,
-        note: 'Отправляются только базовые поля (projectName, openTimeoutMs). Сервер сам устанавливает formatVersion и seq.',
-      });
-      
-      console.log('JSON данные:', jsonString);
-      
-      console.log('Полная конфигурация (для справки):', {
-        doors: config.doors?.length || 0,
-        edges: config.edges?.length || 0,
-        postCloseTimeouts: config.postCloseTimeouts?.length || 0,
-      });
-      
-      // Проверяем размер данных (сервер ограничен HTTP_BODY_MAX = 2048 байт)
       if (jsonSize > 2048) {
-        setError(`Размер данных слишком большой: ${jsonSize} байт (максимум 2048 байт)`);
+        setError(`Размер данных слишком большой: ${jsonSize} байт (максимум 2048). Уменьшите число дверей или длины комментариев.`);
         setSaving(false);
         return;
       }
-      
-      // ВРЕМЕННО: Используем /api/config (merge) вместо /api/config/full
-      // так как /api/config/full имеет проблему с парсингом заголовков в firmware
-      // (ошибка "Bad Headers" из-за того, что hdr_start указывает на обрезанный буфер)
-      // TODO: Исправить парсинг заголовков в http_server.c для PUT запросов
-      console.log('[DoorsConfig] Используем /api/config (merge) вместо /api/config/full из-за проблемы с парсингом заголовков');
-      const response = await putConfig(serverConfig);
+
+      console.log('[DoorsConfig] PUT /api/config/full:', { doors: doors.length, edges: fullConfig.edges.length, postCloseTimeouts: fullConfig.postCloseTimeouts.length, jsonSize });
+      const response = await putConfigFull(fullConfig);
       console.log('Ответ от контроллера:', response);
-      
-      // Проверяем ответ сервера
+
       if (response && response.ok === 0) {
-        // Сервер вернул ошибку
         const errorMsg = response.error || response.errorMsg || 'Неизвестная ошибка сервера';
         setError(`Ошибка сервера: ${errorMsg}`);
         setSaving(false);
         return;
       }
-      
-      // Очищаем черновик после успешного применения
+
       clearDraft();
       setHasUnsavedChanges(false);
       setHasDraft(false);
-      
-      // Показываем сообщение об успехе, возможно с предупреждением
-      let successMessage = '✅ Базовые параметры конфигурации успешно применены на контроллер';
-      
-      if (hasDoors || hasEdges || hasTimeouts) {
-        successMessage += '\n⚠️ Двери, зависимости и таймауты не были применены (требуется обновление firmware)';
-      }
-      
-      if (response && response.warning) {
-        successMessage += `\nПредупреждение сервера: ${response.warning}`;
-      }
-      
-      setSuccess(successMessage);
+
+      setSuccess('✅ Полная конфигурация успешно применена на контроллер (двери, зависимости, таймауты).');
       setTimeout(() => setSuccess(null), 7000);
     } catch (err) {
       console.error('Ошибка применения конфигурации:', err);

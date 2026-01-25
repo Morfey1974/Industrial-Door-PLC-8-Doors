@@ -649,76 +649,208 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     return 200;
 }
 
-/* Парсинг полной конфигурации из JSON (для PUT /api/config/full)
- * ВАЖНО: Это упрощенная версия. Полный парсер JSON для массивов дверей и зависимостей
- * требует более сложной реализации. Пока возвращаем ошибку с инструкцией использовать
- * частичное обновление через PUT /api/config.
+/* Буфер для разбора одного элемента массива (объект двери/edge/postClose). */
+#define CFG_FULL_ELEM_BUF_SIZE  280
+
+/* Парсинг полной конфигурации из JSON (PUT /api/config/full).
+ * Лимиты v1: 8 дверей, 16 edges, 8 postCloseTimeouts.
+ * Обнуляем doors/edges/postClose, затем заполняем из JSON.
  */
 static int put_config_full(const char *body, size_t body_len, char *out_body, size_t out_sz)
 {
-    (void)body_len;
-    
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
-    
-    if (!body || body[0] == 0) {
+
+    AppLog("CFG full: body len=%u", (unsigned)body_len);
+    if (!body || body_len == 0 || body[0] == 0) {
+        AppLog("CFG full: empty body");
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
         return 400;
     }
-    
-    /* TODO: Реализовать полный парсер JSON для:
-     * - projectName
-     * - openTimeoutMs
-     * - doors[] (массив дверей)
-     * - edges[] (массив зависимостей)
-     * - postCloseTimeouts[] (массив таймаутов)
-     * - net (сетевые параметры)
-     * 
-     * Пока используем частичное обновление через put_config_merge
-     * для базовых полей.
-     */
-    
-    /* Парсим базовые поля через существующий механизм */
+    /* Ожидается, что HTTP-слой передаёт body с null-termination (body[body_len]=0). */
+
     project_config_t cfg = g_project_cfg;
     cfg.formatVersion = CFG_FORMAT_VERSION;
     cfg.seq = (uint32_t)(g_project_cfg.seq + 1U);
-    
+
+    /* Обнуление: заменяем конфиг полностью в рамках лимитов v1. */
+    cfg.doorCount = 0U;
+    cfg.edgeCount = 0U;
+    memset(cfg.doors, 0, sizeof(cfg_door_t) * CFG_FULL_MAX_DOORS_V1);
+    memset(cfg.edges, 0, sizeof(cfg_edge_t) * CFG_FULL_MAX_EDGES_V1);
+    for (uint8_t i = 0; i < CFG_FULL_MAX_POST_CLOSE_V1; i++)
+        cfg.postCloseTimeoutMs[i] = 500U;
+
     /* projectName */
+    AppLog("CFG full: parse projectName");
     char pname[CFG_PROJECT_NAME_LEN];
     if (Json_GetString(body, "projectName", pname, sizeof(pname))) {
         memset(cfg.projectName, 0, sizeof(cfg.projectName));
         strncpy(cfg.projectName, pname, sizeof(cfg.projectName) - 1U);
     }
-    
+
     /* openTimeoutMs */
+    AppLog("CFG full: parse openTimeoutMs");
     uint32_t ot;
-    if (Json_GetUint32(body, "openTimeoutMs", &ot)) {
+    if (Json_GetUint32(body, "openTimeoutMs", &ot))
         cfg.openTimeoutMs = ot;
+
+    /* net (опционально) */
+    json_span_t net_span;
+    if (Json_FindObjectSpan(body, "net", &net_span)) {
+        char net_json[256];
+        size_t n = net_span.len;
+        if (n >= sizeof(net_json)) n = sizeof(net_json) - 1U;
+        memcpy(net_json, net_span.ptr, n);
+        net_json[n] = 0;
+        uint8_t dh;
+        if (Json_GetBool(net_json, "dhcpEnabled", &dh))
+            cfg.net.dhcpEnabled = dh ? 1U : 0U;
+        uint16_t wp;
+        if (Json_GetUint16(net_json, "webPort", &wp))
+            cfg.net.webPort = wp;
     }
-    
-    /* TODO: Парсинг массивов doors, edges, postCloseTimeouts
-     * Требует реализации парсера JSON массивов в json_simple.c
-     */
-    
+
+    /* doors[] */
+    AppLog("CFG full: parse doors");
+    json_span_t doors_arr;
+    if (Json_FindArraySpan(body, "doors", &doors_arr)) {
+        char elem_buf[CFG_FULL_ELEM_BUF_SIZE];
+        size_t off = 0;
+        for (;;) {
+            json_span_t obj;
+            if (!Json_ArrayNextObject(doors_arr.ptr, doors_arr.len, &off, &obj))
+                break;
+            if (cfg.doorCount >= CFG_FULL_MAX_DOORS_V1) {
+                AppLog("CFG full: doors limit %u exceeded", (unsigned)CFG_FULL_MAX_DOORS_V1);
+                (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"doors limit %u exceeded\"}",
+                                 (unsigned)CFG_FULL_MAX_DOORS_V1);
+                return 400;
+            }
+            size_t cp = obj.len;
+            if (cp >= sizeof(elem_buf)) cp = sizeof(elem_buf) - 1U;
+            memcpy(elem_buf, obj.ptr, cp);
+            elem_buf[cp] = 0;
+
+            cfg_door_t *d = &cfg.doors[cfg.doorCount];
+            uint32_t v32;
+            if (!Json_GetUint32(elem_buf, "techId", &v32)) { AppLog("CFG full: door[%u] no techId", (unsigned)cfg.doorCount); continue; }
+            d->techId = (uint16_t)v32;
+            if (Json_GetUint32(elem_buf, "drawingId", &v32)) d->drawingId = (uint16_t)v32;
+            if (!Json_GetUint32(elem_buf, "nodeId", &v32)) { AppLog("CFG full: door[%u] no nodeId", (unsigned)cfg.doorCount); continue; }
+            d->nodeId = (uint8_t)v32;
+            if (!Json_GetUint32(elem_buf, "localDoor", &v32)) { AppLog("CFG full: door[%u] no localDoor", (unsigned)cfg.doorCount); continue; }
+            d->localDoor = (uint8_t)v32;
+            if (Json_GetUint32(elem_buf, "typeCode", &v32))
+                d->type = (uint8_t)v32;
+            else {
+                char ts[16];
+                if (Json_GetString(elem_buf, "type", ts, sizeof(ts))) {
+                    if (strncmp(ts, "NO", 2) == 0) d->type = (uint8_t)DOOR_TYPE_NO;
+                    else if (strncmp(ts, "CARD_READER", 11) == 0) d->type = (uint8_t)DOOR_TYPE_CARD_READER;
+                    else d->type = (uint8_t)DOOR_TYPE_NC;
+                }
+            }
+            memset(d->comment, 0, sizeof(d->comment));
+            (void)Json_GetString(elem_buf, "comment", d->comment, sizeof(d->comment));
+            cfg.doorCount++;
+        }
+    }
+    AppLog("CFG full: doors count=%u", (unsigned)cfg.doorCount);
+
+    /* edges[] */
+    AppLog("CFG full: parse edges");
+    json_span_t edges_arr;
+    if (Json_FindArraySpan(body, "edges", &edges_arr)) {
+        char elem_buf[CFG_FULL_ELEM_BUF_SIZE];
+        size_t off = 0;
+        for (;;) {
+            json_span_t obj;
+            if (!Json_ArrayNextObject(edges_arr.ptr, edges_arr.len, &off, &obj))
+                break;
+            if (cfg.edgeCount >= CFG_FULL_MAX_EDGES_V1) {
+                AppLog("CFG full: edges limit %u exceeded", (unsigned)CFG_FULL_MAX_EDGES_V1);
+                (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"edges limit %u exceeded\"}",
+                                 (unsigned)CFG_FULL_MAX_EDGES_V1);
+                return 400;
+            }
+            size_t cp = obj.len;
+            if (cp >= sizeof(elem_buf)) cp = sizeof(elem_buf) - 1U;
+            memcpy(elem_buf, obj.ptr, cp);
+            elem_buf[cp] = 0;
+
+            uint32_t src, dst;
+            if (!Json_GetUint32(elem_buf, "srcGlobalDoorId", &src) || !Json_GetUint32(elem_buf, "dstGlobalDoorId", &dst)) {
+                AppLog("CFG full: edge[%u] missing src/dst", (unsigned)cfg.edgeCount);
+                continue;
+            }
+            if (src < 1U || src > CFG_MAX_DOORS || dst < 1U || dst > CFG_MAX_DOORS) {
+                AppLog("CFG full: edge src/dst out of range");
+                continue;
+            }
+            cfg.edges[cfg.edgeCount].srcGlobalDoorId = (uint8_t)src;
+            cfg.edges[cfg.edgeCount].dstGlobalDoorId = (uint8_t)dst;
+            cfg.edgeCount++;
+        }
+    }
+    AppLog("CFG full: edges count=%u", (unsigned)cfg.edgeCount);
+
+    /* postCloseTimeouts[] */
+    AppLog("CFG full: parse postCloseTimeouts");
+    json_span_t pct_arr;
+    if (Json_FindArraySpan(body, "postCloseTimeouts", &pct_arr)) {
+        char elem_buf[CFG_FULL_ELEM_BUF_SIZE];
+        size_t off = 0;
+        uint8_t pct_count = 0;
+        for (;;) {
+            json_span_t obj;
+            if (!Json_ArrayNextObject(pct_arr.ptr, pct_arr.len, &off, &obj))
+                break;
+            if (pct_count >= CFG_FULL_MAX_POST_CLOSE_V1) {
+                AppLog("CFG full: postClose limit %u exceeded", (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
+                (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"postCloseTimeouts limit %u exceeded\"}",
+                                 (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
+                return 400;
+            }
+            size_t cp = obj.len;
+            if (cp >= sizeof(elem_buf)) cp = sizeof(elem_buf) - 1U;
+            memcpy(elem_buf, obj.ptr, cp);
+            elem_buf[cp] = 0;
+
+            uint32_t gid, tms;
+            if (!Json_GetUint32(elem_buf, "globalDoorId", &gid) || !Json_GetUint32(elem_buf, "timeoutMs", &tms))
+                continue;
+            if (gid < 1U || gid > CFG_MAX_DOORS)
+                continue;
+            cfg.postCloseTimeoutMs[(size_t)(gid - 1U)] = tms;
+            pct_count++;
+        }
+    }
+
     /* Валидация */
+    AppLog("CFG full: validate");
     cfg_validate_error_t err;
     memset(&err, 0, sizeof(err));
     if (Config_Validate(&cfg, &err) != CFG_VALIDATE_OK) {
+        AppLog("CFG full: validate fail %s", err.text);
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"%s\"}", err.text);
         return 400;
     }
-    
+    AppLog("CFG full: finalize");
     Config_Finalize(&cfg);
-    
+
+    printf("CFG full: persist start\r\n");
+    AppLog("CFG full: persist");
     const cfg_storage_status_t st = ConfigService_Persist(&cfg);
+    printf("CFG full: persist done st=%d\r\n", (int)st);
     if (st != CFGST_OK) {
+        AppLog("CFG full: persist fail %u", (unsigned)st);
         (void)jw_appendf(&w, "{\"ok\":0,\"persistStatus\":%u}", (unsigned)st);
         return 500;
     }
-    
     g_project_cfg = cfg;
-    
-    (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu,\"warning\":\"Full config parser not implemented. Only basic fields updated.\"}",
+    AppLog("CFG full: send 200");
+    (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg.seq);
     return 200;
 }

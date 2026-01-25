@@ -34,6 +34,13 @@
  */
 #define CFG_MAX_EDGES        256U
 
+/* Лимиты первой версии PUT /api/config/full (вариант A).
+ * Явно ограничиваем для простоты отладки и проверок.
+ */
+#define CFG_FULL_MAX_DOORS_V1        8U
+#define CFG_FULL_MAX_EDGES_V1       16U
+#define CFG_FULL_MAX_POST_CLOSE_V1   8U
+
 typedef enum
 {
     DOOR_TYPE_NC = 0,
