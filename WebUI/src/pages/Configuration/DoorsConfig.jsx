@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getConfigFull, putConfigFull, putConfigTest } from '../../services/api';
+import { getConfigFull, putConfigFull } from '../../services/api';
 import { 
   saveDraft, 
   loadDraft, 
@@ -322,15 +322,16 @@ const DoorsConfig = () => {
     }
   }, [config, validateCurrentConfig]);
   
-  // Экспорт конфигурации
-  const handleExport = useCallback(() => {
-    const filename = config.projectName 
+  // Экспорт конфигурации (открывается окно выбора пути, если браузер поддерживает)
+  const handleExport = useCallback(async () => {
+    const filename = config.projectName
       ? `config_${config.projectName.replace(/[^a-zA-Z0-9]/g, '_')}.json`
       : 'config.json';
-    if (exportConfigToFile(config, filename)) {
+    const result = await exportConfigToFile(config, filename);
+    if (result.ok) {
       setSuccess('Конфигурация экспортирована');
       setTimeout(() => setSuccess(null), 3000);
-    } else {
+    } else if (!result.cancelled) {
       setError('Ошибка экспорта конфигурации');
     }
   }, [config]);
@@ -595,65 +596,6 @@ const DoorsConfig = () => {
     }
   }, [config, validateCurrentConfig]);
   
-  // Тестовая запись 1 байта в Flash для диагностики
-  const handleTestFlash = useCallback(async () => {
-    if (!window.confirm('Выполнить тестовую запись 1 байта в Flash?\n\n' +
-                        'Это запишет тестовый байт по адресу 0xFEFFFF (последний байт слота A конфигурации).\n' +
-                        'Операция включает стирание сектора и запись 1 байта.\n\n' +
-                        'Проверьте результат в UART мониторе.')) {
-      return;
-    }
-    
-    setSaving(true);
-    setError(null);
-    setSuccess('Тестовая запись в Flash... Это может занять до 30 секунд');
-    
-    try {
-      // Генерируем случайное значение для теста (0-255)
-      const testValue = Math.floor(Math.random() * 256);
-      
-      console.log('Тестовая запись в Flash:', {
-        address: '0xFEFFFF',
-        value: `0x${testValue.toString(16).padStart(2, '0').toUpperCase()}`,
-        decimal: testValue,
-      });
-      
-      const result = await putConfigTest(testValue);
-      
-      if (result.ok) {
-        setSuccess(`✅ Тестовая запись успешна!\n` +
-                   `Адрес: ${result.address}\n` +
-                   `Старое значение: 0x${result.oldValue.toString(16).padStart(2, '0').toUpperCase()} (${result.oldValue})\n` +
-                   `Записано: 0x${result.writtenValue.toString(16).padStart(2, '0').toUpperCase()} (${result.writtenValue})\n` +
-                   `Проверено: 0x${result.verifiedValue.toString(16).padStart(2, '0').toUpperCase()} (${result.verifiedValue})\n\n` +
-                   `Проверьте UART монитор для деталей.`);
-        setTimeout(() => setSuccess(null), 10000);
-      } else {
-        setError(`❌ Тестовая запись не удалась: ${result.error || 'неизвестная ошибка'}`);
-      }
-    } catch (err) {
-      console.error('Ошибка тестовой записи:', err);
-      let errorMessage = 'Ошибка при тестовой записи в Flash';
-      
-      if (err.response?.data) {
-        const data = err.response.data;
-        if (data.error) {
-          errorMessage = `Ошибка: ${data.error}`;
-        } else if (data.errorMsg) {
-          errorMessage = `Ошибка: ${data.errorMsg}`;
-        }
-      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        errorMessage = 'Превышено время ожидания (30 секунд). Проверьте UART монитор для диагностики.';
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setSaving(false);
-    }
-  }, []);
-  
   const tabs = [
     { id: 'general', label: 'Общие параметры' },
     { id: 'doors', label: 'Двери' },
@@ -812,14 +754,6 @@ const DoorsConfig = () => {
           </Button>
         </div>
         <div className="toolbar-right">
-          <Button 
-            onClick={handleTestFlash} 
-            variant="secondary"
-            disabled={saving || loading}
-            title="Тестовая запись 1 байта в Flash для диагностики пути UI -> HTTP -> Flash"
-          >
-            {saving ? 'Тест...' : '🧪 TEST'}
-          </Button>
           <Button 
             onClick={handleApplyToController} 
             variant="primary"

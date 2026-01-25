@@ -278,6 +278,13 @@
   color: var(--color-text-muted);
 }
 
+/* Поле «Короткий заголовок-описание проекта» — примерно в 2 раза шире обычного */
+.general-tab .form-input.project-name-input {
+  min-width: 40em;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .error-message {
   display: block;
   margin-top: var(--spacing-xs);

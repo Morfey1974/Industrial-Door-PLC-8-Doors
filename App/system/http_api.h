@@ -30,6 +30,12 @@ int HttpApi_HandlePut(const char *path,
                       const char *body, size_t body_len,
                       char *out_body, size_t out_sz);
 
+/* После успешной записи конфигурации (PUT /api/config или /api/config/full)
+ * API выставляет флаг. HTTP‑сервер после отправки 200 проверяет его и при
+ * необходимости выполняет HAL_NVIC_SystemReset. Сброс очищает флаг. */
+int HttpApi_ConfigApplyRequestsReboot(void);
+void HttpApi_ClearRebootRequest(void);
+
 #ifdef __cplusplus
 }
 #endif

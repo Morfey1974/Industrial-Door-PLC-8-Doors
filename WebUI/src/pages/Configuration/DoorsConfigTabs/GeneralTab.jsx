@@ -1,5 +1,6 @@
 /**
  * GeneralTab - вкладка общих параметров конфигурации
+ * Таймаут открытия: отображается и вводится в секундах, хранится в мс.
  */
 
 import { useState, useEffect } from 'react';
@@ -7,36 +8,39 @@ import { useState, useEffect } from 'react';
 const GeneralTab = ({ config, updateConfig, loading }) => {
   const [localConfig, setLocalConfig] = useState({
     projectName: '',
-    openTimeoutMs: 30000,
+    openTimeoutSec: 30,
   });
-  
-  // Синхронизация с родительским состоянием
+
+  const msToSec = (ms) => (ms == null ? 30 : Math.round(Number(ms) / 1000));
+  const secToMs = (s) => {
+    const v = parseInt(String(s), 10);
+    if (Number.isNaN(v)) return 30000;
+    return Math.max(1000, Math.min(3600000, v * 1000));
+  };
+
   useEffect(() => {
     setLocalConfig({
       projectName: config.projectName || '',
-      openTimeoutMs: config.openTimeoutMs || 30000,
+      openTimeoutSec: msToSec(config.openTimeoutMs),
     });
   }, [config]);
-  
-  // Обновление локального состояния
+
   const handleChange = (field, value) => {
     const updated = { ...localConfig, [field]: value };
     setLocalConfig(updated);
-    
-    // Обновляем родительскую конфигурацию
     updateConfig({
       projectName: updated.projectName,
-      openTimeoutMs: parseInt(updated.openTimeoutMs, 10),
+      openTimeoutMs: field === 'openTimeoutSec' ? secToMs(updated.openTimeoutSec) : secToMs(localConfig.openTimeoutSec),
     });
   };
-  
+
   return (
     <div className="general-tab">
       <h2>Общие параметры</h2>
-      
+
       <div className="form-group">
         <label htmlFor="projectName">
-          Название проекта <span className="required">*</span>
+          Короткий заголовок-описание проекта <span className="required">*</span>
         </label>
         <input
           id="projectName"
@@ -46,27 +50,27 @@ const GeneralTab = ({ config, updateConfig, loading }) => {
           placeholder="Введите название проекта"
           maxLength={32}
           disabled={loading}
-          className="form-input"
+          className="form-input project-name-input"
         />
         <small>Максимум 32 символа</small>
       </div>
-      
+
       <div className="form-group">
-        <label htmlFor="openTimeoutMs">
-          Глобальный таймаут открытия (мс) <span className="required">*</span>
+        <label htmlFor="openTimeoutSec">
+          Таймаут, когда дверь долго открыта (с) <span className="required">*</span>
         </label>
         <input
-          id="openTimeoutMs"
+          id="openTimeoutSec"
           type="number"
-          value={localConfig.openTimeoutMs}
-          onChange={(e) => handleChange('openTimeoutMs', e.target.value)}
-          min={1000}
-          max={3600000}
-          step={1000}
+          value={localConfig.openTimeoutSec}
+          onChange={(e) => handleChange('openTimeoutSec', e.target.value)}
+          min={1}
+          max={3600}
+          step={1}
           disabled={loading}
           className="form-input"
         />
-        <small>От 1000 до 3600000 мс (1 час). Применяется ко всем дверям.</small>
+        <small>От 1 до 3600 с (1 час). По умолчанию 30 с. Применяется ко всем дверям.</small>
       </div>
       
       <div className="config-info">

@@ -152,13 +152,26 @@ export const deleteNamedConfig = (name) => {
 };
 
 /**
- * Экспортировать конфигурацию в JSON файл
+ * Экспортировать конфигурацию в JSON файл.
+ * Если доступен File System Access API (Chrome/Edge) — открывает окно «Сохранить как»
+ * для выбора пути. Иначе — скачивание в папку по умолчанию.
  * @param {Object} config - Объект конфигурации
- * @param {string} filename - Имя файла
+ * @param {string} filename - Предлагаемое имя файла
+ * @returns {Promise<{ok: boolean, cancelled?: boolean}>}
  */
-export const exportConfigToFile = (config, filename = 'config.json') => {
+export const exportConfigToFile = async (config, filename = 'config.json') => {
   try {
     const jsonStr = JSON.stringify(config, null, 2);
+    if (typeof window.showSaveFilePicker === 'function') {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      const w = await handle.createWritable();
+      await w.write(jsonStr);
+      await w.close();
+      return { ok: true };
+    }
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -168,10 +181,11 @@ export const exportConfigToFile = (config, filename = 'config.json') => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    return true;
+    return { ok: true };
   } catch (error) {
+    if (error?.name === 'AbortError') return { ok: false, cancelled: true };
     console.error('Ошибка экспорта конфигурации:', error);
-    return false;
+    return { ok: false };
   }
 };
 

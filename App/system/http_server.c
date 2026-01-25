@@ -12,6 +12,7 @@
 #include "app_log.h"
 
 #include "http_api.h"
+#include "stm32h7xx_hal.h"
 
 /* =========================================================
  * Минимальный сокетный HTTP сервер.
@@ -601,6 +602,15 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         }
 
         (void)lwip_close(cfd);
+
+        /* После успешной записи конфигурации — автосброс, чтобы конфиг вступил в силу при загрузке. */
+        if (api_code == 200 &&
+            (strcmp(path, "/api/config") == 0 || strcmp(path, "/api/config/full") == 0) &&
+            HttpApi_ConfigApplyRequestsReboot()) {
+            HttpApi_ClearRebootRequest();
+            osDelay(200);
+            HAL_NVIC_SystemReset();
+        }
         return;
     }
 

@@ -1,97 +1,86 @@
 /**
  * TimeoutsTab - вкладка настройки индивидуальных таймаутов post-close
+ * Таймауты отображаются и вводятся в секундах, в конфиге хранятся в мс.
+ * По умолчанию post-close: 0 с.
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import Button from '../../../components/common/Button';
 
+const msToSec = (ms) => (ms == null || ms === 0 ? 0 : Math.round(Number(ms) / 1000));
+const secToMs = (s) => Math.max(0, Math.min(3600000, (parseInt(String(s), 10) || 0) * 1000));
+
 const TimeoutsTab = ({ config, updateConfig, loading }) => {
-  const [timeouts, setTimeouts] = useState({});
-  
+  const [timeoutsSec, setTimeoutsSec] = useState({});
+
   const doors = config.doors || [];
   const postCloseTimeouts = config.postCloseTimeouts || [];
-  
-  // Инициализация таймаутов из конфигурации
+
   useEffect(() => {
-    const timeoutsMap = {};
-    postCloseTimeouts.forEach(t => {
-      timeoutsMap[t.globalDoorId] = t.timeoutMs || 0;
+    const map = {};
+    postCloseTimeouts.forEach((t) => {
+      map[t.globalDoorId] = msToSec(t.timeoutMs);
     });
-    setTimeouts(timeoutsMap);
+    setTimeoutsSec(map);
   }, [postCloseTimeouts]);
-  
-  // Обновление таймаута для двери
-  const handleTimeoutChange = (globalDoorId, timeoutMs) => {
-    const updatedTimeouts = { ...timeouts, [globalDoorId]: parseInt(timeoutMs, 10) || 0 };
-    setTimeouts(updatedTimeouts);
-    
-    // Обновляем конфигурацию
-    const updatedPostCloseTimeouts = doors.map(door => ({
+
+  const handleTimeoutChange = (globalDoorId, secValue) => {
+    const sec = parseInt(String(secValue), 10) || 0;
+    const updated = { ...timeoutsSec, [globalDoorId]: Math.max(0, Math.min(3600, sec)) };
+    setTimeoutsSec(updated);
+
+    const updatedPostCloseTimeouts = doors.map((door) => ({
       globalDoorId: door.globalDoorId,
-      timeoutMs: updatedTimeouts[door.globalDoorId] || 0,
+      timeoutMs: secToMs(updated[door.globalDoorId]),
     }));
-    
     updateConfig({ postCloseTimeouts: updatedPostCloseTimeouts });
   };
-  
-  // Сброс таймаута для двери
+
   const handleResetTimeout = (globalDoorId) => {
     handleTimeoutChange(globalDoorId, 0);
   };
-  
-  // Массовый сброс всех таймаутов
+
   const handleResetAll = () => {
-    if (!window.confirm('Сбросить все индивидуальные таймауты?')) {
-      return;
-    }
-    
-    const resetTimeouts = {};
-    doors.forEach(door => {
-      resetTimeouts[door.globalDoorId] = 0;
+    if (!window.confirm('Сбросить все индивидуальные таймауты?')) return;
+    const reset = {};
+    doors.forEach((d) => { reset[d.globalDoorId] = 0; });
+    setTimeoutsSec(reset);
+    updateConfig({
+      postCloseTimeouts: doors.map((d) => ({ globalDoorId: d.globalDoorId, timeoutMs: 0 })),
     });
-    setTimeouts(resetTimeouts);
-    
-    const updatedPostCloseTimeouts = doors.map(door => ({
-      globalDoorId: door.globalDoorId,
-      timeoutMs: 0,
-    }));
-    
-    updateConfig({ postCloseTimeouts: updatedPostCloseTimeouts });
   };
-  
-  // Группировка дверей по плате
+
   const doorsByNode = useMemo(() => {
     const grouped = {};
-    doors.forEach(door => {
-      if (!grouped[door.nodeId]) {
-        grouped[door.nodeId] = [];
-      }
-      grouped[door.nodeId].push(door);
+    doors.forEach((d) => {
+      if (!grouped[d.nodeId]) grouped[d.nodeId] = [];
+      grouped[d.nodeId].push(d);
     });
     return grouped;
   }, [doors]);
-  
+
+  const openTimeoutSec = msToSec(config.openTimeoutMs);
+
   return (
     <div className="timeouts-tab">
       <div className="timeouts-tab-header">
         <h2>Индивидуальные таймауты post-close</h2>
         <div className="timeouts-tab-info">
           <p>
-            Глобальный таймаут открытия: <strong>{config.openTimeoutMs || 30000} мс</strong>
+            Таймаут, когда дверь долго открыта: <strong>{openTimeoutSec} с</strong> (по умолчанию 30 с).
           </p>
           <p>
-            Установите индивидуальные таймауты post-close для каждой двери. 
-            Если не установлено (0), используется значение по умолчанию.
+            Установите индивидуальные таймауты post-close для каждой двери (с). По умолчанию 0 с.
           </p>
         </div>
         <Button onClick={handleResetAll} variant="secondary" disabled={loading}>
           Сбросить все
         </Button>
       </div>
-      
+
       {doors.length === 0 ? (
         <div className="empty-state">
-          <p>Нет дверей. Добавьте двери на вкладке "Двери".</p>
+          <p>Нет дверей. Добавьте двери на вкладке «Двери».</p>
         </div>
       ) : (
         <div className="timeouts-content">
@@ -105,12 +94,12 @@ const TimeoutsTab = ({ config, updateConfig, loading }) => {
                       <th>Дверь</th>
                       <th>Global ID</th>
                       <th>Комментарий</th>
-                      <th>Таймаут post-close (мс)</th>
+                      <th>Таймаут post-close (с)</th>
                       <th>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {nodeDoors.map(door => (
+                    {nodeDoors.map((door) => (
                       <tr key={door.globalDoorId}>
                         <td>ID-{door.nodeId}-{door.localDoor}</td>
                         <td>{door.globalDoorId}</td>
@@ -118,11 +107,11 @@ const TimeoutsTab = ({ config, updateConfig, loading }) => {
                         <td>
                           <input
                             type="number"
-                            value={timeouts[door.globalDoorId] || 0}
+                            value={timeoutsSec[door.globalDoorId] ?? 0}
                             onChange={(e) => handleTimeoutChange(door.globalDoorId, e.target.value)}
                             min={0}
-                            max={3600000}
-                            step={1000}
+                            max={3600}
+                            step={1}
                             className="timeout-input"
                             disabled={loading}
                           />
@@ -132,7 +121,7 @@ const TimeoutsTab = ({ config, updateConfig, loading }) => {
                             onClick={() => handleResetTimeout(door.globalDoorId)}
                             variant="secondary"
                             size="small"
-                            disabled={!timeouts[door.globalDoorId]}
+                            disabled={(timeoutsSec[door.globalDoorId] ?? 0) === 0}
                           >
                             Сбросить
                           </Button>

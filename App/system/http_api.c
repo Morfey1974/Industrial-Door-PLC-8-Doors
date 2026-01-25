@@ -22,11 +22,6 @@
 /* Stage 7 service: atomic A/B persist to QSPI + journal event */
 #include "config_service.h"
 
-/* QSPI Flash functions for test write */
-#include "qspi_bringup.h"
-#include "system/app_qspi_lock.h"
-#include "config/config_layout.h"
-
 /* Stage 9: journal dump endpoint */
 #include "log/event_journal.h"
 
@@ -81,6 +76,19 @@ static uint8_t jw_appendf(jsonw_t *w, const char *fmt, ...)
         w->buf[w->len] = 0;
     }
     return 1U;
+}
+
+/* Флаг: после успешной записи конфигурации запросить сброс (HTTP‑сервер делает HAL_NVIC_SystemReset). */
+static volatile uint8_t s_reboot_after_config_apply = 0;
+
+int HttpApi_ConfigApplyRequestsReboot(void)
+{
+    return s_reboot_after_config_apply ? 1 : 0;
+}
+
+void HttpApi_ClearRebootRequest(void)
+{
+    s_reboot_after_config_apply = 0;
 }
 
 static uint32_t safe_uptime_s(void)
@@ -646,6 +654,7 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     AppLog("CFG:6 send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg.seq);
+    s_reboot_after_config_apply = 1;
     return 200;
 }
 
@@ -852,117 +861,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     AppLog("CFG full: send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg.seq);
-    return 200;
-}
-
-/* Тестовая запись 1 байта в Flash для диагностики пути UI -> HTTP -> Flash
- * Использует адрес 0xFEFFFF (последний байт слота A конфигурации)
- * JSON body: {"value": 123} или просто число
- */
-static int put_config_test(const char *body, size_t body_len, char *out_body, size_t out_sz)
-{
-    jsonw_t w;
-    jw_init(&w, out_body, out_sz);
-    
-    /* Тестовый адрес: последний байт слота A (0xFEFFFF) */
-    const uint32_t test_addr = 0xFEFFFFUL;
-    uint8_t test_value = 0xAA; /* Значение по умолчанию */
-    
-    /* Парсим JSON body для получения значения (опционально) */
-    if (body && body_len > 0) {
-        /* Простой парсинг: ищем "value": число или просто число */
-        const char *value_str = strstr(body, "\"value\"");
-        if (value_str) {
-            const char *colon = strchr(value_str, ':');
-            if (colon) {
-                int parsed = 0;
-                if (sscanf(colon + 1, "%d", &parsed) == 1 && parsed >= 0 && parsed <= 255) {
-                    test_value = (uint8_t)parsed;
-                }
-            }
-        } else {
-            /* Пробуем распарсить как простое число */
-            int parsed = 0;
-            if (sscanf(body, "%d", &parsed) == 1 && parsed >= 0 && parsed <= 255) {
-                test_value = (uint8_t)parsed;
-            }
-        }
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - writing 1 byte: value=0x%02X to addr=0x%08lX", 
-           (unsigned)test_value, (unsigned long)test_addr);
-    
-    /* Читаем текущее значение */
-    uint8_t old_value = 0xFF;
-    AppQspiLock_Lock();
-    HAL_StatusTypeDef read_st = QSPI_Flash_Read(test_addr, &old_value, 1);
-    AppQspiLock_Unlock();
-    
-    if (read_st != HAL_OK) {
-        AppLog("HTTP: PUT /api/config/test - read failed: HAL status=%d", (int)read_st);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"read failed\",\"halStatus\":%d}", (int)read_st);
-        return 500;
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - old value=0x%02X", (unsigned)old_value);
-    
-    /* Для записи нужно стереть сектор, если значение изменится */
-    /* Но для теста мы можем записать в уже стертый сектор или стереть сектор */
-    /* Используем адрес, выровненный по сектору */
-    const uint32_t sector_addr = (test_addr / QSPI_SECTOR_SIZE) * QSPI_SECTOR_SIZE;
-    
-    AppLog("HTTP: PUT /api/config/test - erasing sector at 0x%08lX", (unsigned long)sector_addr);
-    AppQspiLock_Lock();
-    HAL_StatusTypeDef erase_st = QSPI_Flash_Erase4K(sector_addr);
-    AppQspiLock_Unlock();
-    
-    if (erase_st != HAL_OK) {
-        AppLog("HTTP: PUT /api/config/test - erase failed: HAL status=%d", (int)erase_st);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"erase failed\",\"halStatus\":%d}", (int)erase_st);
-        return 500;
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - erase complete, writing byte");
-    
-    /* Записываем 1 байт */
-    AppQspiLock_Lock();
-    HAL_StatusTypeDef write_st = QSPI_Flash_ProgramPage(test_addr, &test_value, 1);
-    AppQspiLock_Unlock();
-    
-    if (write_st != HAL_OK) {
-        AppLog("HTTP: PUT /api/config/test - write failed: HAL status=%d", (int)write_st);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"write failed\",\"halStatus\":%d}", (int)write_st);
-        return 500;
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - write complete, verifying");
-    
-    /* Читаем обратно для проверки */
-    uint8_t verify_value = 0xFF;
-    AppQspiLock_Lock();
-    HAL_StatusTypeDef verify_st = QSPI_Flash_Read(test_addr, &verify_value, 1);
-    AppQspiLock_Unlock();
-    
-    if (verify_st != HAL_OK) {
-        AppLog("HTTP: PUT /api/config/test - verify read failed: HAL status=%d", (int)verify_st);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"verify read failed\",\"halStatus\":%d}", (int)verify_st);
-        return 500;
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - verify value=0x%02X (expected=0x%02X)", 
-           (unsigned)verify_value, (unsigned)test_value);
-    
-    if (verify_value != test_value) {
-        AppLog("HTTP: PUT /api/config/test - VERIFY FAILED: written=0x%02X, read=0x%02X",
-               (unsigned)test_value, (unsigned)verify_value);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"verify failed\",\"written\":%u,\"read\":%u}",
-                         (unsigned)test_value, (unsigned)verify_value);
-        return 500;
-    }
-    
-    AppLog("HTTP: PUT /api/config/test - SUCCESS: byte written and verified");
-    (void)jw_appendf(&w, "{\"ok\":1,\"address\":\"0x%08lX\",\"oldValue\":%u,\"writtenValue\":%u,\"verifiedValue\":%u}",
-                     (unsigned long)test_addr, (unsigned)old_value, (unsigned)test_value, (unsigned)verify_value);
+    s_reboot_after_config_apply = 1;
     return 200;
 }
 
@@ -977,10 +876,6 @@ int HttpApi_HandlePut(const char *path,
     if (strcmp(path, "/api/config/full") == 0) {
         /* Полная конфигурация для Web UI */
         return put_config_full(body, body_len, out_body, out_sz);
-    }
-    if (strcmp(path, "/api/config/test") == 0) {
-        /* Тестовая запись 1 байта в Flash для диагностики */
-        return put_config_test(body, body_len, out_body, out_sz);
     }
     /* unknown path */
     if (out_body && out_sz) {
