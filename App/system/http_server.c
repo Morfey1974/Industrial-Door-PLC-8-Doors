@@ -1,5 +1,6 @@
 #include "http_server.h"
 
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -123,7 +124,7 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
      * Это критично для больших ответов, чтобы буфер отправки освободился.
      */
     if (body_len > 0) {
-        osDelay(30); /* 30мс задержка для обработки заголовка и освобождения буфера */
+        osDelay(50); /* 50мс после заголовка: дать TCP отправить его и освободить буфер */
     }
     
     if (body_len > 0) {
@@ -138,9 +139,10 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
          */
         int sent = 0;
         int attempts = 0;
-        int consecutive_errors = 0; /* Счетчик последовательных ошибок */
-        const int max_attempts = 200; /* Увеличиваем максимум попыток для больших ответов */
-        const int max_consecutive_errors = 50; /* Максимум последовательных ошибок перед паузой */
+        int consecutive_errors = 0;
+        int last_body_errno = 0; /* последний errno при send error для диагностики INCOMPLETE */
+        const int max_attempts = 400; /* больше попыток (≈6 с при 15 ms) для устойчивости */
+        const int max_consecutive_errors = 50;
         
         while (sent < body_len && attempts < max_attempts) {
             /* Проверяем готовность сокета к записи через select */
@@ -201,15 +203,15 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                 /* Соединение закрыто */
                 break;
             } else {
-                /* Ошибка: lwip_send возвращает отрицательное значение (err_t)
-                 * Это может быть EWOULDBLOCK (буфер полон) или другая ошибка.
-                 * В любом случае делаем паузу и повторяем попытку.
+                /* Ошибка: lwip_send возвращает -1, errno указывает причину
+                 * (например EAGAIN/EWOULDBLOCK, ECONNRESET, ENOTCONN).
                  */
+                last_body_errno = errno;
                 attempts++;
                 consecutive_errors++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 if (attempts <= 5 || attempts % 20 == 0) {
-                    AppLog("HTTP: body send error r=%d (sent=%d/%d attempt=%d)", r, sent, body_len, attempts);
+                    AppLog("HTTP: body send error r=%d errno=%d (sent=%d/%d attempt=%d)", r, last_body_errno, sent, body_len, attempts);
                 }
 #endif
                 /* Если много последовательных ошибок - делаем паузу */
@@ -224,7 +226,7 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
         
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
         if (sent < body_len) {
-            AppLog("HTTP: body send INCOMPLETE! sent=%d/%d attempts=%d", sent, body_len, attempts);
+            AppLog("HTTP: body send INCOMPLETE! sent=%d/%d attempts=%d errno=%d", sent, body_len, attempts, last_body_errno);
         } else {
             AppLog("HTTP: body sent OK (%d bytes)", sent);
         }
@@ -419,11 +421,25 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     }
     rx[r] = 0;
 
-    /* Достаём Request-Line (до \n). */
+    /* Достаём Request-Line (до \n). 
+     * ВАЖНО: Сохраняем указатель на начало заголовков и восстанавливаем \n после парсинга,
+     * чтобы strstr мог найти конец заголовков в исходном буфере.
+     */
     char *nl = strchr(rx, '\n');
-    if (nl) *nl = 0;
+    const char *hdr_start_orig = NULL; /* Сохраняем указатель на начало заголовков */
+    char saved_nl = 0;
+    char saved_cr = 0;
+    
+    if (nl) {
+        hdr_start_orig = nl + 1; /* Начало заголовков - после первого \n */
+        saved_nl = *nl; /* Сохраняем оригинальный символ */
+        *nl = 0; /* Обрезаем request-line для парсинга */
+    }
     char *cr = strchr(rx, '\r');
-    if (cr) *cr = 0;
+    if (cr) {
+        saved_cr = *cr;
+        *cr = 0;
+    }
 
     char method[8];
     char path[96];
@@ -435,6 +451,10 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         (void)lwip_close(cfd);
         return;
     }
+    
+    /* Восстанавливаем символы для поиска заголовков в PUT запросах */
+    if (nl) *nl = saved_nl;
+    if (cr) *cr = saved_cr;
 
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_REQUESTS
     AppLog("HTTP: %s %s", method, path);
@@ -498,10 +518,20 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 
     if (strcmp(method, "PUT") == 0) {
         /* For PUT we need body. Find end of headers in the original rx buffer.
-         * Note: we truncated rx at first newline to parse request-line, but only
-         * by inserting a 0 at that position; the rest of rx (headers) is intact.
+         * ИСПРАВЛЕНИЕ: hdr_start должен указывать на начало заголовков (после request-line),
+         * а не на начало обрезанного буфера rx. После восстановления \n и \r, strstr может
+         * правильно найти конец заголовков в исходном буфере.
          */
-        const char *hdr_start = rx;
+        if (!hdr_start_orig) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: PUT Bad Headers - no header start found");
+#endif
+            http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
+            (void)lwip_close(cfd);
+            return;
+        }
+        
+        const char *hdr_start = hdr_start_orig;
         const char *hdr_end = strstr(hdr_start, "\r\n\r\n");
         int hdr_end_len = 4;
         if (!hdr_end) {
@@ -509,6 +539,12 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             hdr_end_len = 2;
         }
         if (!hdr_end) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: PUT Bad Headers - cannot find header end. rx_len=%d, hdr_start=%p", r, (void*)hdr_start);
+            if (r < 200 && hdr_start) {
+                AppLog("HTTP: hdr_start preview: %.200s", hdr_start);
+            }
+#endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
             (void)lwip_close(cfd);
             return;

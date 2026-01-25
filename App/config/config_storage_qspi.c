@@ -1,19 +1,20 @@
 #include "config_storage_qspi.h"
 
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "config/config_layout.h"
 #include "config/config_format.h"
 
 #include "system/app_qspi_lock.h"
+#include "system/config_service.h"
+#include "system/app_log.h"
 
 /* Фасад драйвера QSPI (реализация в Core/Src проекта). */
 #include "qspi_bringup.h"
 
-#ifdef CFG_TEST_SAVE
-/* HAL_Delay() для тестовых пауз в окнах power-cut. */
-#include "stm32h7xx_hal.h"
-#endif
+#include "stm32h7xx_hal.h"  /* HAL_GetTick() для логирования времени операций; HAL_Delay() в CFG_TEST_SAVE */
 
 #ifdef CFG_TEST_SAVE
 /*
@@ -62,16 +63,6 @@ static int qspi_erase_4k(uint32_t addr)
     int rc = (QSPI_Flash_Erase4K(addr) == HAL_OK) ? 0 : -1;
     AppQspiLock_Unlock();
     return rc;
-}
-
-static int qspi_erase_region_4k(uint32_t base, uint32_t size)
-{
-    for (uint32_t off = 0; off < size; off += (uint32_t)QSPI_SECTOR_SIZE)
-    {
-        if (qspi_erase_4k(base + off) != 0)
-            return -1;
-    }
-    return 0;
 }
 
 static uint32_t header_crc32(const cfg_slot_header_t *h)
@@ -171,23 +162,51 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
 
     const uint32_t base = slot_base(target);
 
-    /* Стираем весь слот */
-    if (qspi_erase_region_4k(base, (uint32_t)QSPI_CFG_SLOT_SIZE) != 0)
-        return CFGST_IO_ERROR;
+    const uint32_t t_start = HAL_GetTick();
 
-    /* Пишем payload постранично */
+    /* Стираем весь слот по секторам; короткие логи (APP_LOG_MSG_MAX 96) */
+    {
+        const uint32_t n_sectors = (uint32_t)QSPI_CFG_SLOT_SIZE / (uint32_t)QSPI_SECTOR_SIZE;
+        uint32_t erase_sum_ms = 0U;
+        AppLog("[CFG] SaveNew: erase slot %d 0x%08lX %lu sec", (int)target, (unsigned long)base, (unsigned long)n_sectors);
+        for (uint32_t i = 0U; i < n_sectors; i++)
+        {
+            const uint32_t sec_addr = base + i * (uint32_t)QSPI_SECTOR_SIZE;
+            if (i == 0U) AppLog("[CFG] SaveNew: sec0 start");
+            const uint32_t t0 = HAL_GetTick();
+            if (qspi_erase_4k(sec_addr) != 0) {
+                AppLog("[CFG] SaveNew: erase fail sec %lu", (unsigned long)i);
+                return CFGST_IO_ERROR;
+            }
+            const uint32_t dt = HAL_GetTick() - t0;
+            erase_sum_ms += dt;
+            if (i == 0U) AppLog("[CFG] SaveNew: sec0 ok %lu ms", (unsigned long)dt);
+            if (i > 0U && (i % 4U == 0U || i == n_sectors - 1U))
+                AppLog("[CFG] SaveNew: sec %lu %lu ms", (unsigned long)i, (unsigned long)dt);
+        }
+        AppLog("[CFG] SaveNew: erase done %lu ms", (unsigned long)erase_sum_ms);
+    }
+
+    /* Пишем payload постранично; логируем только итог по времени */
     const uint8_t *p = (const uint8_t*)cfg;
     uint32_t addr = base + QSPI_CFG_PAYLOAD_OFFSET;
     uint32_t left = (uint32_t)sizeof(project_config_t);
+    uint32_t total_written = 0U;
+    const uint32_t t_payload_start = HAL_GetTick();
     while (left)
     {
         const uint32_t chunk = (left > (uint32_t)QSPI_PAGE_SIZE) ? (uint32_t)QSPI_PAGE_SIZE : left;
-        if (qspi_write_page(addr, p, chunk) != 0)
+        if (qspi_write_page(addr, p, chunk) != 0) {
+            AppLog("[CFG] SaveNew: write fail 0x%08lX", (unsigned long)addr);
             return CFGST_IO_ERROR;
+        }
         addr += chunk;
         p += chunk;
         left -= chunk;
+        total_written += chunk;
     }
+    const uint32_t payload_ms = HAL_GetTick() - t_payload_start;
+    AppLog("[CFG] SaveNew: payload %lu B %lu ms", (unsigned long)total_written, (unsigned long)payload_ms);
 
 #ifdef CFG_TEST_SAVE
     /*
@@ -223,8 +242,16 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
     HAL_Delay(1000);
 #endif
 
-    if (qspi_write_page(base + QSPI_CFG_HEADER_OFFSET, &h, (uint32_t)sizeof(h)) != 0)
-        return CFGST_IO_ERROR;
+    {
+        const uint32_t t0 = HAL_GetTick();
+        if (qspi_write_page(base + QSPI_CFG_HEADER_OFFSET, &h, (uint32_t)sizeof(h)) != 0) {
+            AppLog("[CFG] SaveNew: hdr fail");
+            return CFGST_IO_ERROR;
+        }
+        AppLog("[CFG] SaveNew: hdr %lu ms", (unsigned long)(HAL_GetTick() - t0));
+    }
+
+    AppLog("[CFG] SaveNew: TOTAL %lu ms", (unsigned long)(HAL_GetTick() - t_start));
 
 #ifdef CFG_TEST_SAVE
     /*

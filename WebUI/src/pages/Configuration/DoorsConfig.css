@@ -78,6 +78,11 @@
   background: var(--color-secondary);
 }
 
+.saved-config-item.unsaved-config {
+  background: #fff3cd;
+  border-color: #ffc107;
+}
+
 .saved-config-info {
   display: flex;
   flex-direction: column;
@@ -141,10 +146,24 @@
   overflow: hidden;
 }
 
-.tabs-header {
+.tabs-header-with-actions {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   border-bottom: 2px solid var(--color-border);
   background: var(--color-secondary);
+  padding-right: var(--spacing-md);
+}
+
+.tabs-header {
+  display: flex;
+  flex: 1;
+}
+
+.tabs-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
 }
 
 .tab-button {
@@ -461,6 +480,13 @@
 
 .dependencies-editor label {
   color: var(--color-text-dark); /* Цвет меток */
+  font-weight: 500; /* Делаем метки более заметными */
+}
+
+/* Явно указываем темный цвет для меток в форме зависимостей */
+.dependency-form .form-group label {
+  color: var(--color-text-dark) !important; /* Принудительно темный цвет для видимости */
+  font-weight: 500;
 }
 
 .door-checkboxes {

@@ -97,8 +97,13 @@ export const getConfig = async (signal = null) => {
 };
 
 // Обновить конфигурацию (частичное обновление)
+// ВАЖНО: Операция сохранения конфигурации в QSPI Flash может занять до 90 секунд
+// (стирание сектора ~5-10 сек + запись данных ~5-10 сек + возможные задержки)
 export const putConfig = async (configData, signal = null) => {
-  const config = signal ? { signal } : {};
+  const config = {
+    timeout: 90000, // 90 секунд для операций записи в Flash (стирание + запись)
+    ...(signal ? { signal } : {}),
+  };
   const response = await apiClient.put('/config', configData, config);
   return response.data;
 };
@@ -124,10 +129,39 @@ export const getConfigFull = async (signal = null) => {
   return response.data;
 };
 
+// Тестовая запись 1 байта в Flash для диагностики
+// Используется для проверки пути UI -> HTTP -> Flash
+export const putConfigTest = async (value = 0xAA, signal = null) => {
+  const requestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout: 30000, // 30 секунд для тестовой записи (стирание + запись 1 байта)
+    ...(signal ? { signal } : {}),
+  };
+  const response = await apiClient.put('/config/test', JSON.stringify({ value }), requestConfig);
+  return response.data;
+};
+
 // Сохранить полную конфигурацию
+// ВАЖНО: Операция сохранения конфигурации в QSPI Flash может занять до 90 секунд
+// (стирание сектора ~5-10 сек + запись данных ~5-10 сек + возможные задержки)
 export const putConfigFull = async (configData, signal = null) => {
-  const config = signal ? { signal } : {};
-  const response = await apiClient.put('/config/full', configData, config);
+  const requestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout: 90000, // 90 секунд для операций записи в Flash (стирание + запись)
+    ...(signal ? { signal } : {}),
+  };
+  
+  // Логируем данные перед отправкой для отладки
+  console.log('[API] PUT /config/full request:', {
+    data: configData,
+    dataSize: JSON.stringify(configData).length,
+  });
+  
+  const response = await apiClient.put('/config/full', configData, requestConfig);
   return response.data;
 };
 

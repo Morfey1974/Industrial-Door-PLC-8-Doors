@@ -105,7 +105,7 @@ const osThreadAttr_t supervisorTask_attributes = {
 osThreadId_t httpTaskHandle;
 const osThreadAttr_t httpTask_attributes = {
   .name = "httpTask",
-  .stack_size = 3072 * 4,  /* Увеличено с 2048*4 до 3072*4 (12288 байт) из-за больших буферов на стеке (body[4096], rx[768], hdr[256], req_body[2048]) */
+  .stack_size = 4096 * 4,  /* 16KB: put_config_merge держит project_config_t на стеке (~4–5KB) + буферы */
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for canTask */

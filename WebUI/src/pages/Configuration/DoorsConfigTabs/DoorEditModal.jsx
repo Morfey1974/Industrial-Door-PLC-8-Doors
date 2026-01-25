@@ -39,10 +39,24 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
   const validate = () => {
     const newErrors = {};
     
+    // Определяем techId текущей редактируемой двери (если редактируем существующую)
+    // techId используется как уникальный идентификатор двери и не должен меняться при редактировании
+    const editingDoorTechId = door && door.techId !== undefined && door.techId !== null 
+      ? parseInt(door.techId, 10) 
+      : null;
+    
     if (!formData.techId || formData.techId < 1) {
       newErrors.techId = 'TechId должен быть положительным числом';
     } else {
-      const duplicate = existingDoors.find(d => d.techId === formData.techId);
+      const techIdNum = parseInt(formData.techId, 10);
+      // existingDoors уже должен быть отфильтрован и не содержать редактируемую дверь
+      // Но на всякий случай проверяем еще раз по techId
+      const duplicate = existingDoors.find(
+        d => {
+          const dTechId = parseInt(d.techId, 10);
+          return dTechId === techIdNum && dTechId !== editingDoorTechId;
+        }
+      );
       if (duplicate) {
         newErrors.techId = `TechId ${formData.techId} уже используется`;
       }
@@ -57,9 +71,18 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
     }
     
     // Проверка уникальности пары nodeId+localDoor
+    // existingDoors уже должен быть отфильтрован и не содержать редактируемую дверь
+    // Но на всякий случай проверяем еще раз по techId
     if (formData.nodeId && formData.localDoor) {
       const duplicate = existingDoors.find(
-        d => d.nodeId === formData.nodeId && d.localDoor === formData.localDoor
+        d => {
+          const dNodeId = parseInt(d.nodeId, 10);
+          const dLocalDoor = parseInt(d.localDoor, 10);
+          const dTechId = parseInt(d.techId, 10);
+          return dNodeId === formData.nodeId && 
+                 dLocalDoor === formData.localDoor &&
+                 dTechId !== editingDoorTechId; // Исключаем текущую редактируемую дверь
+        }
       );
       if (duplicate) {
         newErrors.nodeId = `Дверь на плате ${formData.nodeId}, позиция ${formData.localDoor} уже существует`;

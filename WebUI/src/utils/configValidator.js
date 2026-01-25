@@ -161,7 +161,8 @@ export const validateDoor = (door, existingDoors = []) => {
   if (!door.techId || door.techId < 1) {
     errors.push('TechId должен быть положительным числом');
   } else {
-    const duplicate = existingDoors.find(d => d.techId === door.techId && d !== door);
+    // existingDoors уже должен быть отфильтрован и не содержать редактируемую дверь
+    const duplicate = existingDoors.find(d => d.techId === door.techId);
     if (duplicate) {
       errors.push(`TechId ${door.techId} уже используется`);
     }
@@ -176,10 +177,9 @@ export const validateDoor = (door, existingDoors = []) => {
   }
   
   if (door.nodeId && door.localDoor) {
+    // existingDoors уже должен быть отфильтрован и не содержать редактируемую дверь
     const duplicate = existingDoors.find(
-      d => d.nodeId === door.nodeId && 
-           d.localDoor === door.localDoor && 
-           d !== door
+      d => d.nodeId === door.nodeId && d.localDoor === door.localDoor
     );
     if (duplicate) {
       errors.push(`Дверь на плате ${door.nodeId}, позиция ${door.localDoor} уже существует`);

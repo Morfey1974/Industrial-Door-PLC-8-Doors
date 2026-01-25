@@ -10,6 +10,13 @@
 
 #include "log/event_journal.h"
 
+/* Примечание: приостановка JournalTask на время persist отключена.
+ * При suspend JournalTask может удерживать AppQspiLock (в WriteEventToFlash).
+ * SaveNew затем блокируется на Lock → дедлок. Лог обрывается на "[CFG] SaveNew: eras".
+ * Оставляем конкуренцию за QSPI; при необходимости — отдельный механизм
+ * (например, флаг "persist in progress", который JournalTask учитывает).
+ */
+
 /* Примечание по диагностике загрузки конфигурации (этап 7.1/7.2):
  * - В раннем буте LoggerTask может ещё не работать, поэтому AppLog() может быть не виден.
  * - А вот printf() уже используется (см. BOOT: ...), поэтому ключевые строки вида
@@ -126,6 +133,7 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg)
     }
 
     st = ConfigStorage_SaveNew(cfg, &info);
+
     log_msg("[CFG] persist: status=%u slot=%d seq=%lu\r\n",
             (unsigned)st,
             (int)info.used_slot,

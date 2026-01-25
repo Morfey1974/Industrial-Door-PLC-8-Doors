@@ -72,8 +72,9 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
   
   // Сохранение двери (добавление или обновление)
   const handleSaveDoor = (doorData) => {
-    // Валидация
-    const validation = validateDoor(doorData, doors.filter(d => d !== editingDoor));
+    // Валидация - исключаем текущую редактируемую дверь по techId
+    const editingDoorTechId = editingDoor ? editingDoor.techId : null;
+    const validation = validateDoor(doorData, doors.filter(d => d.techId !== editingDoorTechId));
     if (!validation.valid) {
       alert(`Ошибки валидации:\n${validation.errors.join('\n')}`);
       return false;
@@ -92,25 +93,31 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
     }
     
     const updatedDoors = [...doors];
-    const existingIndex = updatedDoors.findIndex(
-      d => d.nodeId === doorData.nodeId && d.localDoor === doorData.localDoor && d !== editingDoor
+    
+    // Ищем индекс редактируемой двери по techId (techId не должен меняться при редактировании)
+    const editingDoorIndex = editingDoor ? updatedDoors.findIndex(
+      d => d.techId === editingDoor.techId
+    ) : -1;
+    
+    // Проверяем, не занят ли новый nodeId+localDoor другой дверью
+    // (исключаем текущую редактируемую дверь из проверки)
+    const conflictingDoor = updatedDoors.find(
+      d => d.nodeId === doorData.nodeId && 
+           d.localDoor === doorData.localDoor &&
+           d.techId !== editingDoor?.techId // Исключаем текущую редактируемую дверь
     );
     
-    if (existingIndex >= 0) {
+    if (conflictingDoor) {
       alert('Дверь с такой платой и позицией уже существует');
       return false;
     }
     
     // Обновляем или добавляем
-    const doorIndex = updatedDoors.findIndex(
-      d => d.nodeId === editingDoor.nodeId && 
-           d.localDoor === editingDoor.localDoor &&
-           d.techId === editingDoor.techId
-    );
-    
-    if (doorIndex >= 0) {
-      updatedDoors[doorIndex] = doorData;
+    if (editingDoorIndex >= 0) {
+      // Обновляем существующую дверь
+      updatedDoors[editingDoorIndex] = doorData;
     } else {
+      // Добавляем новую дверь
       updatedDoors.push(doorData);
     }
     
@@ -245,7 +252,7 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
       {editingDoor && (
         <DoorEditModal
           door={editingDoor}
-          existingDoors={doors.filter(d => d !== editingDoor)}
+          existingDoors={doors.filter(d => d.techId !== editingDoor.techId)}
           onSave={handleSaveDoor}
           onCancel={() => setEditingDoor(null)}
         />
