@@ -123,8 +123,12 @@ export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
 };
 
 // Получить полную конфигурацию (все двери, зависимости, таймауты)
+// GET запрос быстрее, чем PUT, поэтому используем меньший таймаут
 export const getConfigFull = async (signal = null) => {
-  const config = signal ? { signal } : {};
+  const config = {
+    timeout: 10000, // 10 секунд для GET запроса (чтение быстрее, чем запись)
+    ...(signal ? { signal } : {}),
+  };
   const response = await apiClient.get('/config/full', config);
   return response.data;
 };

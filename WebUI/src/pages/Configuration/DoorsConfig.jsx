@@ -73,17 +73,57 @@ const DoorsConfig = () => {
     try {
       const serverConfig = await getConfigFull();
       
+      // Проверка структуры ответа
+      if (!serverConfig || typeof serverConfig !== 'object') {
+        throw new Error('Некорректный формат ответа от сервера');
+      }
+      
       // Преобразуем формат с сервера в наш внутренний формат
+      const doors = Array.isArray(serverConfig.doors) ? serverConfig.doors : [];
+      const edges = Array.isArray(serverConfig.edges) ? serverConfig.edges : [];
+      const postCloseTimeoutsRaw = Array.isArray(serverConfig.postCloseTimeouts) 
+        ? serverConfig.postCloseTimeouts 
+        : [];
+      
+      // Нормализация postCloseTimeouts: фильтруем дефолтные значения (500ms на сервере = 0 в UI)
+      // В UI храним только таймауты, которые отличаются от дефолтного (0ms)
+      const DEFAULT_POST_CLOSE_TIMEOUT_MS = 500; // Дефолтное значение на сервере
+      const postCloseTimeouts = postCloseTimeoutsRaw
+        .filter(t => t && t.timeoutMs !== undefined && t.timeoutMs !== null && t.timeoutMs !== DEFAULT_POST_CLOSE_TIMEOUT_MS && t.timeoutMs !== 0)
+        .map(t => ({
+          globalDoorId: t.globalDoorId,
+          timeoutMs: t.timeoutMs,
+        }));
+      
       const transformedConfig = {
         formatVersion: serverConfig.formatVersion || 0x00010001,
         seq: serverConfig.seq || 0,
         projectName: serverConfig.projectName || '',
         openTimeoutMs: serverConfig.openTimeoutMs || 30000,
-        doors: serverConfig.doors || [],
-        edges: serverConfig.edges || [],
-        postCloseTimeouts: serverConfig.postCloseTimeouts || [],
+        doors: doors,
+        edges: edges,
+        postCloseTimeouts: postCloseTimeouts,
         net: serverConfig.net || { dhcpEnabled: 1, webPort: 8080 },
       };
+      
+      // Валидация загруженных данных (мягкая - только критические ошибки)
+      // При загрузке с сервера пустое projectName - это нормально, пользователь может заполнить его позже
+      const validation = validateConfig(transformedConfig);
+      if (!validation.valid) {
+        // Фильтруем некритические ошибки при загрузке (пустое projectName - не критично)
+        const criticalErrors = validation.errors.filter(err => 
+          !err.includes('Название проекта не может быть пустым')
+        );
+        
+        if (criticalErrors.length > 0) {
+          console.warn('Загруженная конфигурация имеет критические ошибки валидации:', criticalErrors);
+          // Показываем только критические ошибки
+          setError(`Внимание: загруженная конфигурация содержит ошибки: ${criticalErrors.join(', ')}. Проверьте данные перед применением.`);
+        } else {
+          // Если только некритические ошибки (пустое projectName) - просто логируем
+          console.info('Загруженная конфигурация: projectName пустое (это нормально, можно заполнить позже)');
+        }
+      }
       
       setConfig(transformedConfig);
       setLastSaved(new Date());
@@ -93,7 +133,39 @@ const DoorsConfig = () => {
       return transformedConfig;
     } catch (err) {
       console.error('Ошибка загрузки конфигурации:', err);
-      setError(`Ошибка загрузки: ${err.message}`);
+      
+      // Улучшенная обработка ошибок
+      let errorMessage = 'Ошибка загрузки конфигурации';
+      
+      if (err.response) {
+        // Ошибка от сервера
+        const status = err.response.status;
+        if (status === 404) {
+          errorMessage = 'Endpoint /api/config/full не найден. Убедитесь, что прошивка поддерживает этот endpoint.';
+        } else if (status === 500) {
+          errorMessage = 'Внутренняя ошибка сервера при загрузке конфигурации. Проверьте логи контроллера.';
+        } else if (status >= 400 && status < 500) {
+          errorMessage = `Ошибка клиента (${status}). Проверьте запрос.`;
+        } else {
+          errorMessage = `Ошибка сервера (${status})`;
+        }
+      } else if (err.request) {
+        // Запрос отправлен, но ответа нет
+        if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+          errorMessage = 'Превышено время ожидания ответа от контроллера. Проверьте подключение к сети.';
+        } else if (err.code === 'ERR_CONNECTION_RESET') {
+          errorMessage = 'Соединение с контроллером разорвано. Проверьте подключение и перезагрузите страницу.';
+        } else if (err.code === 'ERR_NETWORK') {
+          errorMessage = 'Ошибка сети. Проверьте подключение к контроллеру.';
+        } else {
+          errorMessage = 'Нет ответа от контроллера. Проверьте подключение к сети и доступность контроллера.';
+        }
+      } else if (err.message) {
+        // Ошибка при настройке запроса или другая ошибка
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
       return null;
     } finally {
       setLoading(false);
@@ -373,6 +445,18 @@ const DoorsConfig = () => {
   
   // Загрузка конфигурации с контроллера
   const handleLoadFromController = useCallback(async () => {
+    // Проверка наличия несохраненных изменений
+    if (hasUnsavedChanges || hasDraft) {
+      const confirmMessage = 
+        'У вас есть несохраненные изменения в текущей конфигурации.\n\n' +
+        'Загрузка конфигурации с контроллера заменит текущие данные.\n\n' +
+        'Продолжить? Несохраненные изменения будут потеряны.';
+      
+      if (!window.confirm(confirmMessage)) {
+        return; // Пользователь отменил операцию
+      }
+    }
+    
     const loadedConfig = await loadConfigFromServer();
     if (loadedConfig) {
       setCurrentConfigNameState(null);
@@ -382,10 +466,27 @@ const DoorsConfig = () => {
       clearDraft();
       setViewMode('edit');
       setActiveTab('general');
-      setSuccess('Конфигурация загружена с контроллера');
-      setTimeout(() => setSuccess(null), 3000);
+      
+      // Формируем информативное сообщение об успехе
+      const doorCount = loadedConfig.doors?.length || 0;
+      const edgeCount = loadedConfig.edges?.length || 0;
+      const timeoutCount = loadedConfig.postCloseTimeouts?.length || 0;
+      let successMessage = `Конфигурация загружена с контроллера`;
+      if (doorCount > 0 || edgeCount > 0 || timeoutCount > 0) {
+        const parts = [];
+        if (doorCount > 0) parts.push(`${doorCount} ${doorCount === 1 ? 'дверь' : doorCount < 5 ? 'двери' : 'дверей'}`);
+        if (edgeCount > 0) parts.push(`${edgeCount} ${edgeCount === 1 ? 'зависимость' : edgeCount < 5 ? 'зависимости' : 'зависимостей'}`);
+        if (timeoutCount > 0) parts.push(`${timeoutCount} ${timeoutCount === 1 ? 'таймаут' : timeoutCount < 5 ? 'таймаута' : 'таймаутов'}`);
+        successMessage += ` (${parts.join(', ')})`;
+      }
+      if (loadedConfig.seq) {
+        successMessage += `. Версия: ${loadedConfig.seq}`;
+      }
+      
+      setSuccess(successMessage);
+      setTimeout(() => setSuccess(null), 5000);
     }
-  }, [loadConfigFromServer]);
+  }, [loadConfigFromServer, hasUnsavedChanges, hasDraft]);
   
   // Применение конфигурации на контроллер (PUT /api/config/full)
   const handleApplyToController = useCallback(async () => {
@@ -614,7 +715,7 @@ const DoorsConfig = () => {
         {/* Панель управления (только в режиме списка) */}
         <div className="doors-config-toolbar">
           <div className="toolbar-left">
-            <Button onClick={loadConfigFromServer} disabled={loading}>
+            <Button onClick={handleLoadFromController} disabled={loading}>
               {loading ? 'Загрузка...' : '📥 Загрузить с сервера'}
             </Button>
             <Button onClick={handleExport} variant="secondary">
