@@ -6,6 +6,7 @@ import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import Button from '../components/common/Button';
+import PasswordInput from '../components/common/PasswordInput';
 
 const Login = () => {
   const [username, setUsername] = useState('admin');
@@ -68,18 +69,19 @@ const Login = () => {
               disabled={loading}
             />
           </div>
-          <div className="form-group">
-            <label>Пароль</label>
-            <input
-              type="password"
-              className="form-control"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="admin"
-              required
-              disabled={loading}
-            />
-          </div>
+          <PasswordInput
+            id="login-password"
+            label="Пароль"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="admin"
+            required
+            disabled={loading}
+            showForgotPassword={true}
+            onForgotPassword={() => {
+              alert('Обратитесь к администратору для восстановления пароля');
+            }}
+          />
           <Button 
             type="submit" 
             variant="primary" 

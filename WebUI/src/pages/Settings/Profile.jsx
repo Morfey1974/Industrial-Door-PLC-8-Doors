@@ -10,6 +10,7 @@
 import { useState, useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
+import PasswordInput from '../../components/common/PasswordInput';
 import './Profile.css';
 
 const Profile = () => {
@@ -124,50 +125,46 @@ const Profile = () => {
             </div>
           )}
           
-          <div className="form-group">
-            <label htmlFor="currentPassword">Текущий пароль</label>
-            <input
-              id="currentPassword"
-              type="password"
-              className="form-control"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Введите текущий пароль"
-              required
-              disabled={loading}
-            />
-          </div>
+          <PasswordInput
+            id="currentPassword"
+            label="Текущий пароль"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="Введите текущий пароль"
+            required
+            disabled={loading}
+            showForgotPassword={true}
+            onForgotPassword={() => {
+              alert('Обратитесь к администратору для восстановления пароля');
+            }}
+          />
 
-          <div className="form-group">
-            <label htmlFor="newPassword">Новый пароль</label>
-            <input
-              id="newPassword"
-              type="password"
-              className="form-control"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Минимум 8 символов"
-              required
-              disabled={loading}
-              minLength={8}
-            />
-            <small className="form-help">Минимальная длина: 8 символов</small>
-          </div>
+          <PasswordInput
+            id="newPassword"
+            label="Новый пароль"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Минимум 8 символов"
+            required
+            disabled={loading}
+            minLength={8}
+            showForgotPassword={false}
+          />
+          <small className="form-help" style={{ display: 'block', marginTop: '-10px', marginBottom: '15px' }}>
+            Минимальная длина: 8 символов
+          </small>
 
-          <div className="form-group">
-            <label htmlFor="confirmPassword">Подтверждение пароля</label>
-            <input
-              id="confirmPassword"
-              type="password"
-              className="form-control"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Повторите новый пароль"
-              required
-              disabled={loading}
-              minLength={8}
-            />
-          </div>
+          <PasswordInput
+            id="confirmPassword"
+            label="Подтверждение пароля"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Повторите новый пароль"
+            required
+            disabled={loading}
+            minLength={8}
+            showForgotPassword={false}
+          />
 
           <Button 
             type="submit" 

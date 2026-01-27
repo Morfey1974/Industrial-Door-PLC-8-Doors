@@ -28,6 +28,10 @@
 /* Для доступа к LogicCore (состояние удаленных дверей) */
 #include "comms_task.h"
 
+/* Сервис управления пользователями */
+#include "users_service.h"
+#include "config/users_format.h"
+
 /* Active configuration stored by ConfigService (Этап 7) */
 extern project_config_t g_project_cfg;
 
@@ -472,6 +476,35 @@ static uint32_t parse_query_uint32(const char *path, const char *key, uint32_t d
     return val;
 }
 
+/* Парсер query параметра для строки */
+static uint8_t parse_query_string(const char *path, const char *key, char *out, size_t out_cap)
+{
+    if (!path || !key || !out || out_cap == 0) return 0U;
+
+    /* Ищем начало query string */
+    const char *qmark = strchr(path, '?');
+    if (!qmark) return 0U;
+
+    /* Ищем ключ */
+    char key_pattern[32];
+    snprintf(key_pattern, sizeof(key_pattern), "%s=", key);
+    const char *key_pos = strstr(qmark, key_pattern);
+    if (!key_pos) return 0U;
+
+    /* Пропускаем "key=" */
+    const char *val_start = key_pos + strlen(key_pattern);
+    
+    /* Читаем строку до '&' или конца строки */
+    size_t len = 0;
+    while (*val_start && *val_start != '&' && len < out_cap - 1)
+    {
+        out[len++] = *val_start++;
+    }
+    out[len] = 0;
+    
+    return (len > 0) ? 1U : 0U;
+}
+
 static uint8_t build_journal_dump(jsonw_t *w, const char *path)
 {
     /* Парсим query параметры */
@@ -579,6 +612,71 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
     return 1U;
 }
 
+/* =========================================================
+ * Проверка прав доступа (только Super Admin)
+ * ========================================================= */
+static uint8_t check_super_admin_access(const char *username)
+{
+    if (!username)
+        return 0U;
+    
+    user_role_t role = UsersService_GetUserRole(username);
+    return (role == USER_ROLE_SUPER_ADMIN) ? 1U : 0U;
+}
+
+/* Forward declaration для put_users_update */
+static int put_users_update(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz);
+
+/* =========================================================
+ * GET /api/users - список пользователей
+ * Только для Super Admin
+ * ========================================================= */
+static uint8_t build_users_list(jsonw_t *w)
+{
+    user_record_t users[USERS_MAX_COUNT];
+    uint32_t count = 0;
+    
+    if (!UsersService_GetAllUsers(users, USERS_MAX_COUNT, &count))
+    {
+        (void)jw_appendf(w, "{\"ok\":0,\"error\":\"Failed to get users\"}");
+        return 0U;
+    }
+    
+    if (!jw_appendf(w, "{\"ok\":1,\"users\":[")) return 0U;
+    
+    for (uint32_t i = 0; i < count; i++)
+    {
+        const char *role_str = "operator";
+        if (users[i].role == USER_ROLE_SUPER_ADMIN)
+            role_str = "super_admin";
+        else if (users[i].role == USER_ROLE_ADMIN)
+            role_str = "admin";
+        else if (users[i].role == USER_ROLE_OPERATOR)
+            role_str = "operator";
+        
+        if (i > 0 && !jw_appendf(w, ",")) return 0U;
+        
+        if (!jw_appendf(w,
+            "{"
+              "\"username\":\"%s\","
+              "\"role\":\"%s\","
+              "\"enabled\":%u,"
+              "\"createdAt\":%lu,"
+              "\"lastLogin\":%lu"
+            "}",
+            users[i].username,
+            role_str,
+            (unsigned)users[i].enabled,
+            (unsigned long)users[i].createdAt,
+            (unsigned long)users[i].lastLogin
+        )) return 0U;
+    }
+    
+    if (!jw_appendf(w, "],\"count\":%lu}", (unsigned long)count)) return 0U;
+    
+    return 1U;
+}
+
 int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
@@ -616,6 +714,22 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
     if (strncmp(path, "/api/journal/dump", 16) == 0)
     {
         return build_journal_dump(&w, path) ? 200 : 500;
+    }
+
+    /* GET /api/users - список пользователей (только для Super Admin) */
+    if (strcmp(path, "/api/users") == 0 || strncmp(path, "/api/users?", 11) == 0)
+    {
+        /* Проверка прав доступа через query параметр currentUser */
+        char current_user[32];
+        if (parse_query_string(path, "currentUser", current_user, sizeof(current_user)))
+        {
+            if (!check_super_admin_access(current_user))
+            {
+                (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+                return 403;
+            }
+        }
+        return build_users_list(&w) ? 200 : 500;
     }
 
     return 404;
@@ -888,7 +1002,6 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
 
     /* postCloseTimeouts[] */
     AppLog("CFG full: parse postCloseTimeouts");
-    printf("CFG full: parse postCloseTimeouts\r\n");
     json_span_t pct_arr;
     uint8_t pct_count = 0U;
     if (Json_FindArraySpan(body, "postCloseTimeouts", &pct_arr)) {
@@ -900,7 +1013,6 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
                 break;
             if (pct_count >= CFG_FULL_MAX_POST_CLOSE_V1) {
                 AppLog("CFG full: postClose limit %u exceeded", (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
-                printf("CFG full: postClose limit %u exceeded\r\n", (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
                 (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"postCloseTimeouts limit %u exceeded\"}",
                                  (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
                 return 400;
@@ -913,22 +1025,17 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             uint32_t gid, tms;
             if (!Json_GetUint32(elem_buf, "globalDoorId", &gid) || !Json_GetUint32(elem_buf, "timeoutMs", &tms)) {
                 AppLog("CFG full: postClose[%u] missing gid/tms", (unsigned)pct_count);
-                printf("CFG full: postClose[%u] missing gid/tms, skip\r\n", (unsigned)pct_count);
                 continue;
             }
             if (gid < 1U || gid > CFG_MAX_DOORS) {
                 AppLog("CFG full: postClose gid=%u out of range", (unsigned)gid);
-                printf("CFG full: postClose gid=%u out of range, skip\r\n", (unsigned)gid);
                 continue;
             }
             cfg.postCloseTimeoutMs[(size_t)(gid - 1U)] = tms;
             AppLog("CFG full: postClose gid=%u timeout=%lu ms", (unsigned)gid, (unsigned long)tms);
-            printf("CFG full: postClose gid=%u timeout=%lu ms\r\n", (unsigned)gid, (unsigned long)tms);
             pct_count++;
         }
-        printf("CFG full: parsed %u postCloseTimeouts\r\n", (unsigned)pct_count);
     } else {
-        printf("CFG full: postCloseTimeouts array not found in JSON\r\n");
     }
 
     /* Валидация */
@@ -979,6 +1086,12 @@ int HttpApi_HandlePut(const char *path,
         /* Полная конфигурация для Web UI */
         return put_config_full(body, body_len, out_body, out_sz);
     }
+    
+    /* PUT /api/users/:username - обновление пользователя (только Super Admin) */
+    if (strncmp(path, "/api/users/", 11) == 0) {
+        return put_users_update(path + 11, body, body_len, out_body, out_sz);
+    }
+    
     /* unknown path */
     if (out_body && out_sz) {
         out_body[0] = 0;
@@ -1016,17 +1129,27 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
         return 400;
     }
     
-    /* Для отладки: проверяем admin/admin или admin с сохраненным паролем */
-    if (strcmp(username, "admin") == 0) {
-        const char* adminPwd = get_admin_password();
-        if (strcmp(password, "admin") == 0 || strcmp(password, adminPwd) == 0) {
-            /* Успешный вход - возвращаем роль Super Admin */
-            /* TODO: в будущем добавить генерацию токена и сохранение сессии */
-            (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"super_admin\",\"username\":\"admin\",\"token\":\"debug_token_%lu\"}",
-                             (unsigned long)HAL_GetTick());
-            AppLog("AUTH: login success for admin");
-            return 200;
-        }
+    /* Проверяем учетные данные через UsersService */
+    if (UsersService_VerifyPassword(username, password))
+    {
+        user_role_t role = UsersService_GetUserRole(username);
+        const char *role_str = "operator";
+        
+        if (role == USER_ROLE_SUPER_ADMIN)
+            role_str = "super_admin";
+        else if (role == USER_ROLE_ADMIN)
+            role_str = "admin";
+        else if (role == USER_ROLE_OPERATOR)
+            role_str = "operator";
+        
+        /* Обновляем время последнего входа */
+        UsersService_UpdateLastLogin(username);
+        
+        /* Успешный вход */
+        (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"%s\",\"username\":\"%s\",\"token\":\"debug_token_%lu\"}",
+                         role_str, username, (unsigned long)HAL_GetTick());
+        AppLog("AUTH: login success for %s (role=%s)", username, role_str);
+        return 200;
     }
     
     /* Неверные учетные данные */
@@ -1036,26 +1159,10 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
 }
 
 /* =========================================================
- * Хранение пароля admin (для отладки)
- * 
- * Для отладки: храним пароль admin в статической переменной
- * В будущем: добавить хранение в QSPI, хеширование паролей
- * ========================================================= */
-static char g_admin_password[64] = "admin"; /* По умолчанию admin */
-
-/* Функция для получения текущего пароля admin (для использования в post_auth_login) */
-static const char* get_admin_password(void)
-{
-    return g_admin_password;
-}
-
-/* =========================================================
  * POST /api/auth/change-password - изменение пароля
  * 
- * Для отладки: храним пароль admin в статической переменной
- * В будущем: добавить хранение в QSPI, хеширование паролей
+ * Использует UsersService для работы с базой пользователей в QSPI
  * ========================================================= */
-
 static int post_auth_change_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
 {
     jsonw_t w;
@@ -1066,9 +1173,18 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
         return 400;
     }
     
-    /* Парсим currentPassword и newPassword из JSON */
+    /* Парсим username, currentPassword и newPassword из JSON */
+    char username[32];
     char currentPassword[64];
     char newPassword[64];
+    
+    /* Username опционален - если не указан, используем текущего пользователя из сессии */
+    /* TODO: В будущем получать из токена/сессии */
+    if (!Json_GetString(body, "username", username, sizeof(username))) {
+        /* По умолчанию для отладки используем "admin" */
+        (void)strncpy(username, "admin", sizeof(username) - 1);
+        username[sizeof(username) - 1] = 0;
+    }
     
     if (!Json_GetString(body, "currentPassword", currentPassword, sizeof(currentPassword))) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentPassword required\"}");
@@ -1087,15 +1203,15 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
         return 400;
     }
     
-    if (newPwdLen >= sizeof(g_admin_password)) {
+    if (newPwdLen > 64) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password too long\"}");
         return 400;
     }
     
     /* Проверяем текущий пароль */
-    if (strcmp(currentPassword, g_admin_password) != 0) {
+    if (!UsersService_VerifyPassword(username, currentPassword)) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Current password is incorrect\"}");
-        AppLog("AUTH: change password failed - incorrect current password");
+        AppLog("AUTH: change password failed - incorrect current password for %s", username);
         return 401;
     }
     
@@ -1105,12 +1221,224 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
         return 400;
     }
     
-    /* Сохраняем новый пароль (в будущем - в QSPI с хешированием) */
-    (void)strncpy(g_admin_password, newPassword, sizeof(g_admin_password) - 1);
-    g_admin_password[sizeof(g_admin_password) - 1] = 0;
+    /* Обновляем пароль через UsersService */
+    user_role_t role = UsersService_GetUserRole(username);
+    if (!UsersService_UpdateUser(username, newPassword, role, 1U)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to update password\"}");
+        AppLog("AUTH: change password failed - update error for %s", username);
+        return 500;
+    }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"Password changed successfully\"}");
-    AppLog("AUTH: password changed successfully for admin");
+    AppLog("AUTH: password changed successfully for %s", username);
+    return 200;
+}
+
+/* =========================================================
+ * POST /api/users - создание пользователя
+ * Только для Super Admin
+ * ========================================================= */
+static int post_users_create(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* Проверка прав доступа */
+    char current_user[32];
+    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
+        return 403;
+    }
+    
+    if (!check_super_admin_access(current_user)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    
+    /* Парсим данные нового пользователя */
+    char username[32];
+    char password[64];
+    char role_str[32];
+    
+    if (!Json_GetString(body, "username", username, sizeof(username))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"username required\"}");
+        return 400;
+    }
+    
+    if (!Json_GetString(body, "password", password, sizeof(password))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"password required\"}");
+        return 400;
+    }
+    
+    if (strlen(password) < 8) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Password must be at least 8 characters\"}");
+        return 400;
+    }
+    
+    if (!Json_GetString(body, "role", role_str, sizeof(role_str))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"role required\"}");
+        return 400;
+    }
+    
+    /* Преобразуем роль */
+    user_role_t role = USER_ROLE_OPERATOR;
+    if (strcmp(role_str, "super_admin") == 0)
+        role = USER_ROLE_SUPER_ADMIN;
+    else if (strcmp(role_str, "admin") == 0)
+        role = USER_ROLE_ADMIN;
+    else if (strcmp(role_str, "operator") == 0)
+        role = USER_ROLE_OPERATOR;
+    else {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Invalid role\"}");
+        return 400;
+    }
+    
+    /* Создаем пользователя */
+    if (!UsersService_CreateUser(username, password, role)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to create user\"}");
+        return 500;
+    }
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User created successfully\"}");
+    AppLog("USERS: created user %s by %s", username, current_user);
+    return 200;
+}
+
+/* =========================================================
+ * PUT /api/users/:username - обновление пользователя
+ * Только для Super Admin
+ * ========================================================= */
+static int put_users_update(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!username_param || !body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"invalid request\"}");
+        return 400;
+    }
+    
+    /* Извлекаем username из пути (убираем query параметры если есть) */
+    char username[32];
+    (void)strncpy(username, username_param, sizeof(username) - 1);
+    username[sizeof(username) - 1] = 0;
+    char *qmark = strchr(username, '?');
+    if (qmark) *qmark = 0;
+    
+    /* Проверка прав доступа */
+    char current_user[32];
+    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
+        return 403;
+    }
+    
+    if (!check_super_admin_access(current_user)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    
+    /* Парсим данные для обновления */
+    char new_password[64] = "";
+    char role_str[32] = "";
+    uint8_t enabled = 1U;
+    
+    Json_GetString(body, "password", new_password, sizeof(new_password));
+    Json_GetString(body, "role", role_str, sizeof(role_str));
+    
+    int enabled_int = 1;
+    if (Json_GetInt(body, "enabled", &enabled_int)) {
+        enabled = (enabled_int != 0) ? 1U : 0U;
+    }
+    
+    /* Преобразуем роль */
+    user_role_t role = USER_ROLE_OPERATOR;
+    if (strlen(role_str) > 0) {
+        if (strcmp(role_str, "super_admin") == 0)
+            role = USER_ROLE_SUPER_ADMIN;
+        else if (strcmp(role_str, "admin") == 0)
+            role = USER_ROLE_ADMIN;
+        else if (strcmp(role_str, "operator") == 0)
+            role = USER_ROLE_OPERATOR;
+        else {
+            (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Invalid role\"}");
+            return 400;
+        }
+    } else {
+        /* Если роль не указана, получаем текущую */
+        const user_record_t *user = UsersService_FindUser(username);
+        if (user) {
+            role = user->role;
+        }
+    }
+    
+    /* Обновляем пользователя */
+    const char *pwd_to_update = (strlen(new_password) > 0) ? new_password : NULL;
+    if (!UsersService_UpdateUser(username, pwd_to_update, role, enabled)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to update user\"}");
+        return 500;
+    }
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User updated successfully\"}");
+    AppLog("USERS: updated user %s by %s", username, current_user);
+    return 200;
+}
+
+/* =========================================================
+ * DELETE /api/users/:username - удаление пользователя
+ * Только для Super Admin
+ * ========================================================= */
+static int delete_users_remove(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!username_param) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"invalid request\"}");
+        return 400;
+    }
+    
+    /* Извлекаем username из пути */
+    char username[32];
+    (void)strncpy(username, username_param, sizeof(username) - 1);
+    username[sizeof(username) - 1] = 0;
+    char *qmark = strchr(username, '?');
+    if (qmark) *qmark = 0;
+    
+    /* Проверка прав доступа */
+    char current_user[32] = "";
+    if (body && body_len > 0) {
+        Json_GetString(body, "currentUser", current_user, sizeof(current_user));
+    }
+    
+    if (strlen(current_user) == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
+        return 403;
+    }
+    
+    if (!check_super_admin_access(current_user)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    
+    /* Нельзя удалить самого себя */
+    if (strcmp(username, current_user) == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Cannot delete yourself\"}");
+        return 400;
+    }
+    
+    /* Удаляем пользователя */
+    if (!UsersService_DeleteUser(username)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to delete user\"}");
+        return 500;
+    }
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User deleted successfully\"}");
+    AppLog("USERS: deleted user %s by %s", username, current_user);
     return 200;
 }
 
@@ -1123,25 +1451,36 @@ int HttpApi_HandlePost(const char *path,
     /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: логирование для отладки аутентификации
      * Используем printf для немедленного вывода в UART
      */
-    printf("HTTP_API: POST path='%s' body_len=%u\r\n", path ? path : "(null)", (unsigned)body_len);
-    AppLog("HTTP API: POST path='%s' body_len=%u", path ? path : "(null)", (unsigned)body_len);
-    
     /* Проверяем оба варианта пути: с /api и без (axios может отправлять без /api, если baseURL уже содержит /api) */
     if (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/auth/login") == 0) {
-        printf("HTTP_API: POST auth/login - calling post_auth_login\r\n");
-        AppLog("HTTP API: POST auth/login - calling post_auth_login");
         return post_auth_login(body, body_len, out_body, out_sz);
     }
     
     if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
-        printf("HTTP_API: POST auth/change-password - calling post_auth_change_password\r\n");
-        AppLog("HTTP API: POST auth/change-password - calling post_auth_change_password");
         return post_auth_change_password(body, body_len, out_body, out_sz);
     }
     
+    /* POST /api/users - создание пользователя (только Super Admin) */
+    if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
+        return post_users_create(body, body_len, out_body, out_sz);
+    }
+    
+    /* POST /api/users/:username/delete - удаление пользователя (только Super Admin) */
+    if (strncmp(path, "/api/users/", 11) == 0) {
+        const char *rest = path + 11;
+        const char *delete_pos = strstr(rest, "/delete");
+        if (delete_pos && strlen(rest) > 7) {
+            char username[32];
+            size_t len = (size_t)(delete_pos - rest);
+            if (len < sizeof(username)) {
+                (void)strncpy(username, rest, len);
+                username[len] = 0;
+                return delete_users_remove(username, body, body_len, out_body, out_sz);
+            }
+        }
+    }
+    
     /* unknown path */
-    printf("HTTP_API: POST unknown path='%s' - returning 404\r\n", path);
-    AppLog("HTTP API: POST unknown path='%s' - returning 404", path);
     if (out_body && out_sz) {
         jsonw_t w;
         jw_init(&w, out_body, out_sz);

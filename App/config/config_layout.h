@@ -13,7 +13,8 @@
  *    возможным будущим сценариям (XIP, ресурсы, дампы).
  *
  * Карта:
- *  0x000000 .. 0xF7FFFF   Резерв / не используется модулем хранения
+ *  0x000000 .. 0xF5FFFF   Резерв / не используется модулем хранения
+ *  0xF60000 .. 0xF7FFFF   USERS DB (128 KiB)    [Этап Auth]
  *  0xF80000 .. 0xFDFFFF   EVENT LOG (512 KiB)   [Этап 7B]
  *  0xFE0000 .. 0xFEFFFF   CONFIG SLOT A (64 KiB)
  *  0xFF0000 .. 0xFFFFFF   CONFIG SLOT B (64 KiB)
@@ -51,6 +52,14 @@ typedef struct
 
 #define QSPI_SECTOR_SIZE           4096U
 #define QSPI_PAGE_SIZE             256U
+
+/* Область базы данных пользователей: */
+#define QSPI_USERS_DB_BASE         0xF60000UL
+#define QSPI_USERS_DB_SIZE         (128U * 1024U)
+
+/* Область базы данных пользователей: */
+#define QSPI_USERS_DB_BASE         0xF60000UL
+#define QSPI_USERS_DB_SIZE         (128U * 1024U)
 
 /* Область журнала событий (добавим в Этапе 7B): */
 #define QSPI_EVENT_LOG_BASE        0xF80000UL

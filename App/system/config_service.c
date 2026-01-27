@@ -66,11 +66,9 @@ static void apply_cfg_runtime(const project_config_t *cfg)
 
     /* 1) Global open timeout (same for all doors, set from WEB later) */
     if (DoorsCfg_SetOpenTimeoutMs) {
-        printf("CFG: apply openTimeoutMs=%lu\r\n", (unsigned long)cfg->openTimeoutMs);
         log_msg("[CFG] apply: openTimeoutMs=%lu\r\n", (unsigned long)cfg->openTimeoutMs);
         DoorsCfg_SetOpenTimeoutMs(cfg->openTimeoutMs);
     } else {
-        printf("CFG: apply: DoorsCfg_SetOpenTimeoutMs not available\r\n");
         log_msg("[CFG] apply: DoorsCfg_SetOpenTimeoutMs not available\r\n");
     }
 
@@ -80,33 +78,23 @@ static void apply_cfg_runtime(const project_config_t *cfg)
      *    - Apply door type: NC doors should be locked by default when closed
      */
     if (DoorsCfg_SetPostCloseTimeoutMs) {
-        printf("CFG: apply postCloseTimeouts for %u doors (nodeId=%u)\r\n", 
-               (unsigned)cfg->doorCount, (unsigned)System_GetNodeId());
         log_msg("[CFG] apply: postCloseTimeouts for %u doors\r\n", (unsigned)cfg->doorCount);
         uint8_t appliedCount = 0U;
         for (uint16_t i = 0; i < cfg->doorCount; i++) {
             const cfg_door_t *d = &cfg->doors[i];
             if (d->nodeId != System_GetNodeId()) {
-                printf("CFG: door[%u] nodeId=%u != %u, skip\r\n", 
-                       (unsigned)i, (unsigned)d->nodeId, (unsigned)System_GetNodeId());
                 continue;
             }
             if (d->localDoor < 1U || d->localDoor > 8U) {
-                printf("CFG: door[%u] localDoor=%u out of range, skip\r\n", 
-                       (unsigned)i, (unsigned)d->localDoor);
                 continue;
             }
 
             const uint8_t gid = Config_MakeGlobalDoorId(d->nodeId, d->localDoor);
             if (gid < 1U || gid > CFG_MAX_DOORS) {
-                printf("CFG: door[%u] gid=%u out of range, skip\r\n", 
-                       (unsigned)i, (unsigned)gid);
                 continue;
             }
 
             uint32_t timeout = cfg->postCloseTimeoutMs[gid - 1U];
-            printf("CFG: apply door%u (gid=%u) postCloseTimeoutMs=%lu\r\n", 
-                   (unsigned)d->localDoor, (unsigned)gid, (unsigned long)timeout);
             log_msg("[CFG] apply: door%u (gid=%u) postCloseTimeoutMs=%lu\r\n", 
                     (unsigned)d->localDoor, (unsigned)gid, (unsigned long)timeout);
             DoorsCfg_SetPostCloseTimeoutMs(d->localDoor, timeout);
@@ -121,7 +109,6 @@ static void apply_cfg_runtime(const project_config_t *cfg)
                 if (Doors_GetState(d->localDoor, &state)) {
                     if (state.physClosed && !state.alarming) {
                         /* Door is closed and not in alarm - apply lock for NC type */
-                        printf("CFG: apply door%u (NC type) initial lock\r\n", (unsigned)d->localDoor);
                         log_msg("[CFG] apply: door%u (NC type) initial lock\r\n", (unsigned)d->localDoor);
                         Doors_RequestLock(d->localDoor, 1U, (uint32_t)APP_SRC_SUPERVISOR, 0U);
                     }
@@ -130,9 +117,7 @@ static void apply_cfg_runtime(const project_config_t *cfg)
             
             appliedCount++;
         }
-        printf("CFG: applied %u postCloseTimeouts\r\n", (unsigned)appliedCount);
     } else {
-        printf("CFG: apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
         log_msg("[CFG] apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
     }
 }

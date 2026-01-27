@@ -218,6 +218,34 @@ uint8_t Json_GetUint16(const char *json, const char *key, uint16_t *out)
     return 1U;
 }
 
+uint8_t Json_GetInt(const char *json, const char *key, int *out)
+{
+    if (!out) return 0U;
+    json_span_t v;
+    if (!Json_FindKeyValueSpan(json, key, &v)) return 0U;
+    trim_span(&v);
+    
+    /* Парсим знаковое число */
+    int sign = 1;
+    const char *p = v.ptr;
+    if (p && v.len > 0 && *p == '-') {
+        sign = -1;
+        p++;
+        v.len--;
+    }
+    
+    uint32_t uval;
+    json_span_t uspan = {p, v.len};
+    if (!parse_u32(uspan, &uval)) return 0U;
+    
+    /* Проверяем переполнение для int (обычно 32-bit) */
+    if (uval > 0x7FFFFFFFU && sign == 1) return 0U;
+    if (uval > 0x80000000U && sign == -1) return 0U;
+    
+    *out = sign * (int)uval;
+    return 1U;
+}
+
 uint8_t Json_GetBool(const char *json, const char *key, uint8_t *out_bool)
 {
     if (!out_bool) return 0U;

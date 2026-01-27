@@ -16,6 +16,9 @@ import DoorsConfig from './pages/Configuration/DoorsConfig';
 import NetworkConfig from './pages/Configuration/NetworkConfig';
 import SystemParams from './pages/Configuration/SystemParams';
 import Profile from './pages/Settings/Profile';
+import Users from './pages/Settings/Users';
+import Permissions from './pages/Settings/Permissions';
+import ProtectedRoute from './components/common/ProtectedRoute';
 import './styles/main.css';
 
 // Компонент для управления навигацией
@@ -25,7 +28,7 @@ function AppContent() {
     // Это правило React Hooks - хуки должны вызываться в одном и том же порядке на каждом рендере
     const navigate = useNavigate();
     const location = useLocation();
-    const { isAuthenticated, loading } = useContext(AuthContext);
+    const { user, isAuthenticated, loading } = useContext(AuthContext);
 
     // Определяем активную вкладку на основе текущего пути
     const getActiveTab = () => {
@@ -45,6 +48,8 @@ function AppContent() {
       if (location.pathname === '/configuration/network') return 'network-config';
       if (location.pathname === '/configuration/system') return 'system-params';
       if (location.pathname === '/settings/profile') return 'profile';
+      if (location.pathname === '/settings/permissions') return 'permissions';
+      if (location.pathname === '/settings/users') return 'users';
       return 'doors';
     };
 
@@ -79,28 +84,58 @@ function AppContent() {
       return <Login />;
     }
 
-    const tabs = [
-      { id: 'monitoring', label: 'Мониторинг' },
-      { id: 'configuration', label: 'Конфигурация' },
-      { id: 'settings', label: 'Настройки' },
-    ];
+    // Вкладки - скрываем Конфигурацию для операторов
+    const tabs = (() => {
+      const role = user?.role;
+      const result = [
+        { id: 'monitoring', label: 'Мониторинг' },
+      ];
+      // Конфигурация только для admin и super_admin
+      if (role !== 'operator') {
+        result.push({ id: 'configuration', label: 'Конфигурация' });
+      }
+      result.push({ id: 'settings', label: 'Настройки' });
+      return result;
+    })();
 
-    const sidebarItems = {
-      monitoring: [
+    // Определяем доступные пункты меню в зависимости от роли
+    const getSidebarItems = () => {
+      const role = user?.role;
+      
+      // Мониторинг доступен всем ролям
+      const monitoring = [
         { id: 'doors', label: 'Двери', path: '/monitoring/doors' },
         { id: 'events', label: 'События', path: '/monitoring/events' },
         { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
         { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
-      ],
-      configuration: [
+      ];
+
+      // Конфигурация доступна только администраторам и супер-администраторам
+      const configuration = role === 'operator' ? [] : [
         { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
         { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
         { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
-      ],
-      settings: [
+      ];
+
+      // Настройки
+      const settings = [
         { id: 'profile', label: 'Профиль', path: '/settings/profile' },
-      ],
+      ];
+      
+      // Пункт "Права доступа" для Admin и Super Admin
+      if (role === 'admin' || role === 'super_admin') {
+        settings.push({ id: 'permissions', label: 'Права доступа', path: '/settings/permissions' });
+      }
+      
+      // Пункт "Пользователи" только для Super Admin
+      if (role === 'super_admin') {
+        settings.push({ id: 'users', label: 'Пользователи', path: '/settings/users' });
+      }
+
+      return { monitoring, configuration, settings };
     };
+
+    const sidebarItems = getSidebarItems();
 
     const handleTabChange = (tabId) => {
       setActiveTab(tabId);
@@ -108,6 +143,10 @@ function AppContent() {
       const items = sidebarItems[tabId];
       if (items && items.length > 0) {
         navigate(items[0].path);
+      } else {
+        // Если нет доступных элементов (например, оператор пытается открыть Конфигурацию),
+        // перенаправляем на главную страницу
+        navigate('/');
       }
     };
 
@@ -133,16 +172,58 @@ function AppContent() {
             />
             <div className="layout-content">
               <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/monitoring/doors" element={<Doors />} />
-                <Route path="/monitoring/events" element={<Events />} />
-                <Route path="/monitoring/alarms" element={<Alarms />} />
-                <Route path="/monitoring/statistics" element={<Statistics />} />
-                <Route path="/configuration/doors" element={<DoorsConfig />} />
-                <Route path="/configuration/network" element={<NetworkConfig />} />
-                <Route path="/configuration/system" element={<SystemParams />} />
-                <Route path="/settings/profile" element={<Profile />} />
+                {/* Мониторинг - доступен всем ролям */}
+                <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/monitoring/doors" element={<ProtectedRoute><Doors /></ProtectedRoute>} />
+                <Route path="/monitoring/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+                <Route path="/monitoring/alarms" element={<ProtectedRoute><Alarms /></ProtectedRoute>} />
+                <Route path="/monitoring/statistics" element={<ProtectedRoute><Statistics /></ProtectedRoute>} />
+                
+                {/* Конфигурация - только для admin и super_admin */}
+                <Route 
+                  path="/configuration/doors" 
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <DoorsConfig />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/configuration/network" 
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <NetworkConfig />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/configuration/system" 
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <SystemParams />
+                    </ProtectedRoute>
+                  } 
+                />
+                
+                {/* Настройки - профиль доступен всем, пользователи только super_admin, права доступа для admin и super_admin */}
+                <Route path="/settings/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route 
+                  path="/settings/users" 
+                  element={
+                    <ProtectedRoute allowedRoles={['super_admin']}>
+                      <Users />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/settings/permissions" 
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <Permissions />
+                    </ProtectedRoute>
+                  } 
+                />
               </Routes>
             </div>
           </div>

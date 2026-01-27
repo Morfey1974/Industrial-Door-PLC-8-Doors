@@ -33,6 +33,7 @@
 #include <stdio.h>
 
 #include "system/config_service.h"
+#include "system/users_service.h"
 
 /* Для временного теста сохранения конфигурации (Этап 7.3). */
 #include "FreeRTOS.h"
@@ -200,6 +201,9 @@ int main(void)
     const char *s3 = "BOOT: after cfg\r\n";
     HAL_UART_Transmit(&huart3, (uint8_t *)s3, (uint16_t)strlen(s3), 100);
   }
+
+  /* Инициализация базы пользователей (MASTER only) */
+  UsersService_Init();
 
 #ifdef CFG_TEST_SAVE
   /*

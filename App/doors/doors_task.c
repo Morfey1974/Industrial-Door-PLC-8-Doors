@@ -132,7 +132,6 @@ uint8_t DoorsCfg_SetOpenTimeoutMs(uint32_t timeout_ms)
     s_cfgOpenTimeoutMs = timeout_ms;
     
     /* Логирование для отладки */
-    printf("DOORS: SetOpenTimeoutMs %lu -> %lu\r\n", (unsigned long)oldTimeout, (unsigned long)timeout_ms);
     
     /* Если таймаут изменился и дверь открыта, сбрасываем openSinceMs для всех открытых дверей,
      * чтобы таймаут начал отсчитываться заново с момента применения конфигурации.
@@ -151,7 +150,6 @@ uint8_t DoorsCfg_SetOpenTimeoutMs(uint32_t timeout_ms)
             }
         }
         if (resetCount > 0U) {
-            printf("DOORS: Reset openSinceMs for %u open doors\r\n", (unsigned)resetCount);
         }
     }
     
@@ -166,10 +164,7 @@ uint32_t DoorsCfg_GetOpenTimeoutMs(void)
 uint8_t DoorsCfg_SetPostCloseTimeoutMs(uint8_t door_id, uint32_t timeout_ms)
 {
     if (door_id == 0U || door_id > APP_DOOR_MAX) return 0U;
-    uint32_t oldTimeout = s_doors[door_id - 1U].postCloseTimeoutMs;
     s_doors[door_id - 1U].postCloseTimeoutMs = timeout_ms;
-    printf("DOORS: SetPostCloseTimeoutMs door%u: %lu -> %lu ms\r\n", 
-           (unsigned)door_id, (unsigned long)oldTimeout, (unsigned long)timeout_ms);
     return 1U;
 }
 
@@ -266,10 +261,7 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
      */
     uint8_t newLock = (lock_on != 0U) ? 1U : 0U;
     
-    /* ЛОГИРОВАНИЕ: вход в Doors_RequestLock */
-    printf("DOORS_REQ: Door%u cmd=%s source=0x%08lx timeout=%lu, state: closed=%u locked=%u pending=%u pendingLock=%u\r\n",
-           (unsigned)door_id, newLock ? "LOCK" : "UNLOCK", (unsigned long)source, (unsigned long)timeout_ms,
-           (unsigned)doorClosed, (unsigned)doorLocked, (unsigned)hasPending, (unsigned)pendingLock);
+    /* ЛОГИРОВАНИЕ: вход в Doors_RequestLock - удалено для уменьшения шума в логах */
     
     /* Случай 1: Дверь открыта, есть pending LOCK, приходит новая команда LOCK */
     if (hasPending && !doorClosed && pendingLock && newLock)
@@ -280,7 +272,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
         else
             s_lockReq[idx].expireMs = GetMs() + timeout_ms;
         
-        printf("DOORS_REQ: Door%u LOCK SKIP (open, pending LOCK, update TTL)\r\n", (unsigned)door_id);
         return 1U;
     }
     
@@ -300,7 +291,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                     s_lockReq[idx].expireMs = 0U;
                 else
                     s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-                printf("DOORS_REQ: Door%u UNLOCK CANCEL pending LOCK\r\n", (unsigned)door_id);
             }
             else
             {
@@ -309,12 +299,10 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                  * Это предотвращает ненужные переключения при keepalive командах.
                  */
                 s_lockReq[idx].pending = 0U;
-                printf("DOORS_REQ: Door%u UNLOCK SKIP (already unlocked, clear pending)\r\n", (unsigned)door_id);
             }
         }
         else
         {
-            printf("DOORS_REQ: Door%u UNLOCK IGNORE (already unlocked, no pending)\r\n", (unsigned)door_id);
         }
         /* Если нет pending команды, просто игнорируем UNLOCK для уже разблокированной двери */
         return 1U;
@@ -340,7 +328,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                     s_lockReq[idx].expireMs = 0U;
                 else
                     s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-                printf("DOORS_REQ: Door%u UNLOCK CANCEL pending LOCK\r\n", (unsigned)door_id);
             }
             else
             {
@@ -352,7 +339,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                     s_lockReq[idx].expireMs = 0U;
                 else
                     s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-                printf("DOORS_REQ: Door%u UNLOCK SKIP (already locked, update TTL)\r\n", (unsigned)door_id);
             }
         }
         else
@@ -367,7 +353,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                 s_lockReq[idx].expireMs = 0U;
             else
                 s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-            printf("DOORS_REQ: Door%u UNLOCK SET pending=1 (locked, will apply immediately)\r\n", (unsigned)door_id);
         }
         return 1U;
     }
@@ -388,7 +373,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                     s_lockReq[idx].expireMs = 0U;
                 else
                     s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-                printf("DOORS_REQ: Door%u LOCK CANCEL pending UNLOCK\r\n", (unsigned)door_id);
             }
             else
             {
@@ -400,12 +384,10 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
                     s_lockReq[idx].expireMs = 0U;
                 else
                     s_lockReq[idx].expireMs = GetMs() + timeout_ms;
-                printf("DOORS_REQ: Door%u LOCK SKIP (already locked, update TTL)\r\n", (unsigned)door_id);
             }
         }
         else
         {
-            printf("DOORS_REQ: Door%u LOCK IGNORE (already locked, no pending)\r\n", (unsigned)door_id);
         }
         return 1U;
     }
@@ -420,9 +402,6 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
     else
         s_lockReq[idx].expireMs = GetMs() + timeout_ms;
 
-    printf("DOORS_REQ: Door%u %s SET pending=1 expireMs=%lu\r\n",
-           (unsigned)door_id, newLock ? "LOCK" : "UNLOCK",
-           (unsigned long)s_lockReq[idx].expireMs);
 
     return 1U;
 }
@@ -484,11 +463,9 @@ void Doors_TaskInit(void)
         s_doors[i].postCloseTimeoutMs = savedPostCloseTimeouts[i];
     }
     
-    printf("DOORS: TaskInit done, openTimeoutMs=%lu\r\n", (unsigned long)s_cfgOpenTimeoutMs);
     for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
         if (s_doors[i].postCloseTimeoutMs != 0U) {
-            printf("DOORS: door%u postCloseTimeoutMs=%lu\r\n", 
-                   (unsigned)(i + 1), (unsigned long)s_doors[i].postCloseTimeoutMs);
+            /* postCloseTimeoutMs установлен */
         }
     }
 }
@@ -528,8 +505,6 @@ static void alarm_update(uint8_t door1based, uint8_t idx)
     if (!was && now)
     {
         /* ВХОД В СИГНАЛИЗАЦИЮ */
-        printf("DOORS: Door%u ALARM ON (reasons=0x%08lx)\r\n", 
-               (unsigned)door1based, (unsigned long)s_doors[idx].alarmReasons);
         
         s_lockSavedBeforeAlarm[idx] = s_doors[idx].locked;
 
@@ -547,7 +522,6 @@ static void alarm_update(uint8_t door1based, uint8_t idx)
     else if (was && !now)
     {
         /* ВЫХОД ИЗ СИГНАЛИЗАЦИИ */
-        printf("DOORS: Door%u ALARM OFF\r\n", (unsigned)door1based);
         DoorHAL_SetBuzzer(door1based, false);
 
         /* Восстанавливаем lock-state, который был до сигнализации */
@@ -591,9 +565,7 @@ static void applyNormal(uint8_t door1based, bool physClosed, uint8_t idx)
     /* ЛОГИРОВАНИЕ: изменение состояния замка на аппаратном уровне */
     if (wasLocked != wantLock)
     {
-        printf("DOORS_HAL: Door%u HARDWARE %s (closed=%u locked_state=%u)\r\n",
-               (unsigned)door1based, wantLock ? "LOCK" : "UNLOCK",
-               (unsigned)physClosed, (unsigned)s_doors[idx].locked);
+        /* Изменение состояния блокировки */
     }
 
     DoorHAL_SetLock(door1based, wantLock);
@@ -764,8 +736,6 @@ static void updateOneDoor(uint8_t door1based)
             uint32_t elapsed = now - s_doors[idx].openSinceMs;
             if (elapsed >= t)
             {
-                printf("DOORS: Door%u OPEN_TIMEOUT! elapsed=%lu ms, timeout=%lu ms\r\n", 
-                       (unsigned)door1based, (unsigned long)elapsed, (unsigned long)t);
                 alarm_add(door1based, idx, DOOR_ALARM_OPEN_TIMEOUT);
                 publish_event(EVT_DOOR_OPEN_TIMEOUT, door1based, 0U);
             }
@@ -792,8 +762,6 @@ static void updateOneDoor(uint8_t door1based)
             {
                 s_doors[idx].postClosePending = 0U;
                 publish_event(EVT_DOOR_POST_CLOSE_READY, door1based, 0U);
-                printf("DOORS: Door%u POST_CLOSE_READY elapsed=%lu ms, timeout=%lu ms\r\n", 
-                       (unsigned)door1based, (unsigned long)elapsed, (unsigned long)t);
             }
         }
     }
@@ -837,7 +805,6 @@ static void updateOneDoor(uint8_t door1based)
                     if (s_doors[idx].locked != 0U)
                     {
                         /* Дверь заблокирована - разблокируем */
-                        printf("DOORS_UPDATE: Door%u UNLOCK APPLY (was locked)\r\n", (unsigned)door1based);
                         s_doors[idx].locked = 0U;
                         s_doors[idx].lastChangeMs = now;
                         s_lockReq[idx].pending = 0U;
@@ -847,14 +814,12 @@ static void updateOneDoor(uint8_t door1based)
                         /* Дверь уже разблокирована - просто сбрасываем pending команду
                          * без изменения состояния. Это предотвращает "дергание".
                          */
-                        printf("DOORS_UPDATE: Door%u UNLOCK SKIP (already unlocked, clear pending)\r\n", (unsigned)door1based);
                         s_lockReq[idx].pending = 0U;
                     }
                 }
                 /* Команда lock применяется только если дверь закрыта */
                 else if (closed)
                 {
-                    printf("DOORS_UPDATE: Door%u LOCK APPLY (closed)\r\n", (unsigned)door1based);
                     s_doors[idx].locked = 1U;
                     s_doors[idx].lastChangeMs = now;
                     s_lockReq[idx].pending = 0U;
@@ -885,7 +850,6 @@ static void updateOneDoor(uint8_t door1based)
     {
         if (s_doors[idx].locked != 0U)
         {
-            printf("DOORS_UPDATE: Door%u SAFETY UNLOCK (door open)\r\n", (unsigned)door1based);
         }
         DoorHAL_SetLock(door1based, false);
         s_doors[idx].locked = 0U;
@@ -901,26 +865,13 @@ static void updateOneDoor(uint8_t door1based)
         if (s_lockReq[idx].pending && s_lockReq[idx].lock_on && !s_doors[idx].alarming)
         {
             /* Применяем команду блокировки, которая была отложена */
-            printf("DOORS_UPDATE: Door%u LOCK APPLY (door closed, pending)\r\n", (unsigned)door1based);
             s_doors[idx].locked = 1U;
             s_doors[idx].lastChangeMs = now;
             s_lockReq[idx].pending = 0U;
         }
     }
     
-    /* ЛОГИРОВАНИЕ: финальное состояние после обработки */
-    if (s_doors[idx].locked != 0U)
-    {
-        printf("DOORS_UPDATE: Door%u FINAL STATE: LOCKED closed=%u\r\n", 
-               (unsigned)door1based, (unsigned)closed);
-    }
-    else
-    {
-        printf("DOORS_UPDATE: Door%u FINAL STATE: UNLOCKED closed=%u pending=%u pendingLock=%u\r\n",
-               (unsigned)door1based, (unsigned)closed,
-               (unsigned)s_lockReq[idx].pending, 
-               s_lockReq[idx].pending ? (unsigned)s_lockReq[idx].lock_on : 999U);
-    }
+    /* ЛОГИРОВАНИЕ: финальное состояние после обработки - удалено для уменьшения шума в логах */
 
     /* Освобождаем мьютекс */
     if (s_doors_mutex) {

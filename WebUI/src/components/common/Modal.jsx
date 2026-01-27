@@ -14,9 +14,16 @@ const Modal = ({
   cancelText = 'Отмена',
   onConfirm,
   onCancel,
+  onClose, // Новый проп для закрытия модалки с произвольным содержимым
+  children, // Поддержка произвольного содержимого
 }) => {
   const [inputValue, setInputValue] = useState(defaultValue);
   const inputRef = useRef(null);
+
+  // Если передан children или onClose, используем режим с произвольным содержимым
+  // Это означает, что содержимое управляется извне (через children)
+  const hasCustomContent = (children !== null && children !== undefined && children !== false && 
+    (Array.isArray(children) ? children.length > 0 : true)) || !!onClose;
 
   // Сброс значения input при изменении defaultValue
   useEffect(() => {
@@ -37,8 +44,12 @@ const Modal = ({
     if (!isOpen) return;
 
     const handleEscape = (e) => {
-      if (e.key === 'Escape' && onCancel) {
-        onCancel();
+      if (e.key === 'Escape') {
+        if (hasCustomContent && onClose) {
+          onClose();
+        } else if (onCancel) {
+          onCancel();
+        }
       }
     };
 
@@ -46,12 +57,16 @@ const Modal = ({
     return () => {
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isOpen, onCancel]);
+  }, [isOpen, onCancel, onClose, hasCustomContent]);
 
   // Обработка клика по overlay (закрытие при клике вне модального окна)
   const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget && onCancel) {
-      onCancel();
+    if (e.target === e.currentTarget) {
+      if (hasCustomContent && onClose) {
+        onClose();
+      } else if (onCancel) {
+        onCancel();
+      }
     }
   };
 
@@ -86,38 +101,48 @@ const Modal = ({
           </div>
         )}
         <div className="modal-body">
-          {message && (
-            <div className="modal-message">
-              {typeof message === 'string' ? (
-                <p>{message}</p>
-              ) : (
-                message
+          {hasCustomContent ? (
+            // Произвольное содержимое (children)
+            children
+          ) : (
+            // Стандартное содержимое (message или prompt)
+            <>
+              {message && (
+                <div className="modal-message">
+                  {typeof message === 'string' ? (
+                    <p>{message}</p>
+                  ) : (
+                    message
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          {type === 'prompt' && (
-            <div className="modal-input-wrapper">
-              <input
-                ref={inputRef}
-                type="text"
-                className="modal-input"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                placeholder={placeholder}
-                autoFocus
-              />
-            </div>
+              {type === 'prompt' && (
+                <div className="modal-input-wrapper">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    className="modal-input"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    placeholder={placeholder}
+                    autoFocus
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
-        <div className="modal-footer">
-          <Button onClick={onCancel || (() => {})} variant="secondary">
-            {cancelText}
-          </Button>
-          <Button onClick={handleConfirm} variant="primary">
-            {confirmText}
-          </Button>
-        </div>
+        {!hasCustomContent && (
+          <div className="modal-footer">
+            <Button onClick={onCancel || (() => {})} variant="secondary">
+              {cancelText}
+            </Button>
+            <Button onClick={handleConfirm} variant="primary">
+              {confirmText}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

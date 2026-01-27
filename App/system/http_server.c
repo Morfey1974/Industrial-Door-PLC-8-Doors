@@ -699,7 +699,6 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 
     if (strcmp(method, "POST") == 0) {
         /* POST запросы (аутентификация) */
-        printf("HTTP_SERVER: POST %s\r\n", path);
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_REQUESTS
         AppLog("HTTP: POST %s", path);
 #endif

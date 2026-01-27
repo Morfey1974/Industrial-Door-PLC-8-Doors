@@ -46,6 +46,7 @@ uint8_t Json_ArrayNextObject(const char *arr_ptr, size_t arr_len, size_t *inout_
 
 uint8_t Json_GetUint32(const char *json, const char *key, uint32_t *out);
 uint8_t Json_GetUint16(const char *json, const char *key, uint16_t *out);
+uint8_t Json_GetInt(const char *json, const char *key, int *out);
 uint8_t Json_GetBool(const char *json, const char *key, uint8_t *out_bool);
 uint8_t Json_GetString(const char *json, const char *key, char *out, size_t out_cap);
 
