@@ -9,6 +9,10 @@
 #include "system_node.h"
 
 #include "log/event_journal.h"
+#include "doors/doors_task.h"  /* For Doors_RequestLock, Doors_GetState */
+#include "system/app_events.h" /* For APP_SRC_SUPERVISOR */
+#include "comms_task.h"        /* For CommsTask_GetLogicCore */
+#include "logic/logic_core.h"  /* For LogicCore_RecomputeAndApply */
 
 /* Примечание: приостановка JournalTask на время persist отключена.
  * При suspend JournalTask может удерживать AppQspiLock (в WriteEventToFlash).
@@ -30,8 +34,9 @@ void (*ConfigService_LogWrite)(const char *msg) = 0;
 /* - DoorsCfg_SetOpenTimeoutMs(uint32_t ms) */
 /* - DoorsCfg_SetPostCloseTimeoutMs(uint8_t localDoor, uint32_t ms) */
 /* If headers are not available here, we declare weak externs to avoid hard coupling. */
-extern void DoorsCfg_SetOpenTimeoutMs(uint32_t ms) __attribute__((weak));
-extern void DoorsCfg_SetPostCloseTimeoutMs(uint8_t localDoor, uint32_t ms) __attribute__((weak));
+/* Note: These functions return uint8_t, not void */
+extern uint8_t DoorsCfg_SetOpenTimeoutMs(uint32_t ms) __attribute__((weak));
+extern uint8_t DoorsCfg_SetPostCloseTimeoutMs(uint8_t localDoor, uint32_t ms) __attribute__((weak));
 
 /* Global active configuration (referenced by LogicCore and other modules) */
 project_config_t g_project_cfg;
@@ -61,24 +66,106 @@ static void apply_cfg_runtime(const project_config_t *cfg)
 
     /* 1) Global open timeout (same for all doors, set from WEB later) */
     if (DoorsCfg_SetOpenTimeoutMs) {
+        printf("CFG: apply openTimeoutMs=%lu\r\n", (unsigned long)cfg->openTimeoutMs);
+        log_msg("[CFG] apply: openTimeoutMs=%lu\r\n", (unsigned long)cfg->openTimeoutMs);
         DoorsCfg_SetOpenTimeoutMs(cfg->openTimeoutMs);
+    } else {
+        printf("CFG: apply: DoorsCfg_SetOpenTimeoutMs not available\r\n");
+        log_msg("[CFG] apply: DoorsCfg_SetOpenTimeoutMs not available\r\n");
     }
 
-    /* 2) Per-door post-close timeout
+    /* 2) Per-door post-close timeout and door type
      *    - cfg->postCloseTimeoutMs[] is indexed by globalDoorId-1 (1..80)
      *    - Apply only doors hosted on this node (AppNodeId == cfg->doors[i].nodeId)
+     *    - Apply door type: NC doors should be locked by default when closed
      */
     if (DoorsCfg_SetPostCloseTimeoutMs) {
+        printf("CFG: apply postCloseTimeouts for %u doors (nodeId=%u)\r\n", 
+               (unsigned)cfg->doorCount, (unsigned)System_GetNodeId());
+        log_msg("[CFG] apply: postCloseTimeouts for %u doors\r\n", (unsigned)cfg->doorCount);
+        uint8_t appliedCount = 0U;
         for (uint16_t i = 0; i < cfg->doorCount; i++) {
             const cfg_door_t *d = &cfg->doors[i];
-            if (d->nodeId != System_GetNodeId()) continue;
-            if (d->localDoor < 1U || d->localDoor > 8U) continue;
+            if (d->nodeId != System_GetNodeId()) {
+                printf("CFG: door[%u] nodeId=%u != %u, skip\r\n", 
+                       (unsigned)i, (unsigned)d->nodeId, (unsigned)System_GetNodeId());
+                continue;
+            }
+            if (d->localDoor < 1U || d->localDoor > 8U) {
+                printf("CFG: door[%u] localDoor=%u out of range, skip\r\n", 
+                       (unsigned)i, (unsigned)d->localDoor);
+                continue;
+            }
 
             const uint8_t gid = Config_MakeGlobalDoorId(d->nodeId, d->localDoor);
-            if (gid < 1U || gid > CFG_MAX_DOORS) continue;
+            if (gid < 1U || gid > CFG_MAX_DOORS) {
+                printf("CFG: door[%u] gid=%u out of range, skip\r\n", 
+                       (unsigned)i, (unsigned)gid);
+                continue;
+            }
 
-            DoorsCfg_SetPostCloseTimeoutMs(d->localDoor, cfg->postCloseTimeoutMs[gid - 1U]);
+            uint32_t timeout = cfg->postCloseTimeoutMs[gid - 1U];
+            printf("CFG: apply door%u (gid=%u) postCloseTimeoutMs=%lu\r\n", 
+                   (unsigned)d->localDoor, (unsigned)gid, (unsigned long)timeout);
+            log_msg("[CFG] apply: door%u (gid=%u) postCloseTimeoutMs=%lu\r\n", 
+                    (unsigned)d->localDoor, (unsigned)gid, (unsigned long)timeout);
+            DoorsCfg_SetPostCloseTimeoutMs(d->localDoor, timeout);
+            
+            /* 3) Apply door type: NC doors should be locked by default when closed
+             * According to plan section 3.9.2: NC doors should be locked in safe state
+             * This applies only to local doors on this node
+             */
+            if (d->type == DOOR_TYPE_NC) {
+                /* For NC doors, check if door is closed and apply lock */
+                AppDoorState_t state;
+                if (Doors_GetState(d->localDoor, &state)) {
+                    if (state.physClosed && !state.alarming) {
+                        /* Door is closed and not in alarm - apply lock for NC type */
+                        printf("CFG: apply door%u (NC type) initial lock\r\n", (unsigned)d->localDoor);
+                        log_msg("[CFG] apply: door%u (NC type) initial lock\r\n", (unsigned)d->localDoor);
+                        Doors_RequestLock(d->localDoor, 1U, (uint32_t)APP_SRC_SUPERVISOR, 0U);
+                    }
+                }
+            }
+            
+            appliedCount++;
         }
+        printf("CFG: applied %u postCloseTimeouts\r\n", (unsigned)appliedCount);
+    } else {
+        printf("CFG: apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
+        log_msg("[CFG] apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
+    }
+}
+
+/* Публичная функция для применения конфигурации в runtime */
+void ConfigService_ApplyRuntime(const project_config_t *cfg)
+{
+    apply_cfg_runtime(cfg);
+    
+    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: передача openTimeoutMs на SLAVE через CAN
+     * 
+     * Проблема: на SLAVE при загрузке используется Config_Default, который
+     * устанавливает openTimeoutMs = 30 секунд. Когда конфигурация загружается
+     * на MASTER, SLAVE не получает обновленный openTimeoutMs, потому что
+     * конфигурация хранится только на MASTER.
+     * 
+     * Решение: на MASTER после применения конфигурации отправляем openTimeoutMs
+     * всем онлайн SLAVE узлам через CAN SERVICE кадр.
+     */
+    if (System_GetRole() == APP_ROLE_MASTER && cfg)
+    {
+        extern void CanTask_SendConfigParams(void);
+        CanTask_SendConfigParams();
+    }
+    
+    /* После применения конфигурации пересчитываем логику,
+     * чтобы NC двери были добавлены в lockRequired
+     */
+    extern logic_core_t* CommsTask_GetLogicCore(void);
+    logic_core_t *lc = CommsTask_GetLogicCore();
+    if (lc) {
+        extern void LogicCore_RecomputeAndApply(logic_core_t *lc);
+        LogicCore_RecomputeAndApply(lc);
     }
 }
 

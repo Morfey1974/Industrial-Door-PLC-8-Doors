@@ -31,14 +31,25 @@ apiClient.interceptors.response.use(
     }
     
     // Обработка ответа сервера с кодом ошибки
+    // ВАЖНО: если есть error.response, это НЕ сетевая ошибка, а ответ сервера с кодом ошибки
     if (error.response) {
       const status = error.response.status;
       const url = error.config?.url || 'unknown';
+      const data = error.response.data;
+      
+      // Логируем детали ответа
+      console.error(`API Server Response [${status}]:`, url);
+      console.error('Response data:', data);
+      console.error('Response headers:', error.response.headers);
+      
       if (status >= 500) {
-        console.error(`API Server Error [${status}]:`, url, error.response.data);
+        console.error(`API Server Error [${status}]:`, url, data);
       } else {
-        console.warn(`API Client Error [${status}]:`, url, error.response.data);
+        console.warn(`API Client Error [${status}]:`, url, data);
       }
+      
+      // Пробрасываем ошибку дальше - она будет обработана в компоненте
+      // НЕ создаем новую ошибку, чтобы сохранить оригинальный response
       return Promise.reject(error);
     }
     
@@ -47,13 +58,25 @@ apiClient.interceptors.response.use(
       const url = error.config?.url || 'unknown';
       let errorMessage = 'Не удалось подключиться к контроллеру';
       
+      // Логируем детали запроса для диагностики
+      console.error('API Network Error Details:', {
+        url,
+        code: error.code,
+        message: error.message,
+        request: error.request,
+        config: error.config,
+      });
+      
       // Определяем тип сетевой ошибки
       if (error.code === 'ERR_CONNECTION_RESET' || error.message?.includes('ERR_CONNECTION_RESET')) {
         errorMessage = 'Соединение с контроллером разорвано. Проверьте подключение и перезагрузите страницу.';
         console.error(`API Connection Reset:`, url);
       } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+        // ERR_NETWORK может возникать и при получении ответа, если что-то пошло не так
+        // Проверяем, не был ли это ответ с ошибкой, который не распарсился
         errorMessage = 'Ошибка сети. Проверьте подключение к контроллеру.';
         console.error(`API Network Error:`, url, error.code || error.message);
+        console.error('Full error object:', error);
       } else if (error.code === 'ERR_INTERNET_DISCONNECTED') {
         errorMessage = 'Нет подключения к интернету.';
         console.error(`API Internet Disconnected:`, url);
@@ -146,13 +169,33 @@ export const putConfigFull = async (configData, signal = null) => {
   };
   
   // Логируем данные перед отправкой для отладки
+  const jsonString = JSON.stringify(configData);
+  const jsonSize = jsonString.length;
   console.log('[API] PUT /config/full request:', {
-    data: configData,
-    dataSize: JSON.stringify(configData).length,
+    doors: configData.doors?.length || 0,
+    edges: configData.edges?.length || 0,
+    postCloseTimeouts: configData.postCloseTimeouts?.length || 0,
+    dataSize: jsonSize,
   });
   
-  const response = await apiClient.put('/config/full', configData, requestConfig);
-  return response.data;
+  try {
+    const response = await apiClient.put('/config/full', configData, requestConfig);
+    console.log('[API] PUT /config/full success:', response.data);
+    return response.data;
+  } catch (error) {
+    // Детальное логирование ошибки
+    console.error('[API] PUT /config/full error:', {
+      hasResponse: !!error.response,
+      hasRequest: !!error.request,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message,
+      code: error.code,
+    });
+    // Пробрасываем ошибку дальше для обработки в компоненте
+    throw error;
+  }
 };
 
 export default apiClient;

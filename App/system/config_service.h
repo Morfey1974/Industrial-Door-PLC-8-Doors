@@ -23,6 +23,12 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg);
 /* Persist: атомарная запись Slot A/B. Вызывать после старта RTOS. */
 cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg);
 
+/* Apply runtime: применяет конфигурацию к runtime модулям (doors, etc.)
+ * Вызывается автоматически при загрузке конфигурации при старте.
+ * Также нужно вызывать после ConfigService_Persist, если конфигурация применяется без перезагрузки.
+ */
+void ConfigService_ApplyRuntime(const project_config_t *cfg);
+
 #ifdef __cplusplus
 }
 #endif

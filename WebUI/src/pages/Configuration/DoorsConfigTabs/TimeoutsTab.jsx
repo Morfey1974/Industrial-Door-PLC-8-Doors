@@ -10,7 +10,7 @@ import Button from '../../../components/common/Button';
 const msToSec = (ms) => (ms == null || ms === 0 ? 0 : Math.round(Number(ms) / 1000));
 const secToMs = (s) => Math.max(0, Math.min(3600000, (parseInt(String(s), 10) || 0) * 1000));
 
-const TimeoutsTab = ({ config, updateConfig, loading }) => {
+const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
   const [timeoutsSec, setTimeoutsSec] = useState({});
 
   const doors = config.doors || [];
@@ -40,8 +40,13 @@ const TimeoutsTab = ({ config, updateConfig, loading }) => {
     handleTimeoutChange(globalDoorId, 0);
   };
 
-  const handleResetAll = () => {
-    if (!window.confirm('Сбросить все индивидуальные таймауты?')) return;
+  const handleResetAll = async () => {
+    if (!showConfirm) {
+      if (!window.confirm('Сбросить все индивидуальные таймауты?')) return;
+    } else {
+      const confirmed = await showConfirm('Сбросить все индивидуальные таймауты?', 'Сброс таймаутов');
+      if (!confirmed) return;
+    }
     const reset = {};
     doors.forEach((d) => { reset[d.globalDoorId] = 0; });
     setTimeoutsSec(reset);

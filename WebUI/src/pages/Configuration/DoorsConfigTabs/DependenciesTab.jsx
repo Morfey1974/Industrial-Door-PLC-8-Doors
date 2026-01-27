@@ -11,7 +11,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Button from '../../../components/common/Button';
 
-const DependenciesTab = ({ config, updateConfig, loading }) => {
+const DependenciesTab = ({ config, updateConfig, loading, showConfirm }) => {
   const [selectedSrcDoor, setSelectedSrcDoor] = useState(null);
   const [selectedDstDoors, setSelectedDstDoors] = useState([]);
   
@@ -83,9 +83,16 @@ const DependenciesTab = ({ config, updateConfig, loading }) => {
   };
   
   // Удаление зависимости
-  const handleDeleteDependency = (srcGlobalDoorId) => {
-    if (!window.confirm('Удалить все зависимости для этой двери?')) {
-      return;
+  const handleDeleteDependency = async (srcGlobalDoorId) => {
+    if (!showConfirm) {
+      if (!window.confirm('Удалить все зависимости для этой двери?')) {
+        return;
+      }
+    } else {
+      const confirmed = await showConfirm('Удалить все зависимости для этой двери?', 'Удаление зависимостей');
+      if (!confirmed) {
+        return;
+      }
     }
     
     const updatedEdges = edges.filter(edge => edge.srcGlobalDoorId !== srcGlobalDoorId);

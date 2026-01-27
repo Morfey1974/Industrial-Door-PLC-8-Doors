@@ -10,7 +10,8 @@
  * - Применение конфигурации на контроллер
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { getConfigFull, putConfigFull } from '../../services/api';
 import { 
   saveDraft, 
@@ -27,6 +28,7 @@ import {
 } from '../../utils/configStorage';
 import { validateConfig } from '../../utils/configValidator';
 import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
 import './DoorsConfig.css';
 
 // Компоненты вкладок
@@ -65,6 +67,129 @@ const DoorsConfig = () => {
   const [currentConfigName, setCurrentConfigNameState] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasDraft, setHasDraft] = useState(false); // Есть ли несохраненный черновик
+  
+  // Состояние модального окна
+  const [modal, setModal] = useState({
+    isOpen: false,
+    type: 'confirm', // 'confirm' | 'prompt'
+    title: '',
+    message: '',
+    defaultValue: '',
+    placeholder: '',
+    confirmText: 'OK',
+    cancelText: 'Отмена',
+    onConfirm: null,
+    onCancel: null,
+  });
+  
+
+  // Ref для хранения resolve функции Promise
+  const modalResolveRef = useRef(null);
+  // Ref для хранения имени конфигурации для удаления
+  const deleteConfigNameRef = useRef(null);
+  
+  // Отдельное состояние для модального окна удаления (простое булево значение для flushSync)
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteModalName, setDeleteModalName] = useState(null);
+  
+  // useLayoutEffect для принудительного обновления DOM при открытии модального окна удаления
+  useLayoutEffect(() => {
+    if (deleteModalVisible) {
+      // Принудительно обновляем DOM после открытия модального окна
+      // Это гарантирует, что модальное окно появится сразу
+      requestAnimationFrame(() => {
+        const modalElement = document.querySelector('.modal-overlay');
+        if (modalElement) {
+          // Триггерим перерисовку
+          modalElement.offsetHeight;
+        }
+      });
+    }
+  }, [deleteModalVisible]);
+
+  // useLayoutEffect для принудительного обновления DOM при открытии модального окна
+  useLayoutEffect(() => {
+    if (modal.isOpen) {
+      // Принудительно обновляем DOM после открытия модального окна
+      // Это гарантирует, что модальное окно появится сразу
+      const modalElement = document.querySelector('.modal-overlay');
+      if (modalElement) {
+        // Триггерим перерисовку
+        modalElement.offsetHeight;
+      }
+    }
+  }, [modal.isOpen]);
+
+  // Функции для показа модальных окон
+  const showConfirm = useCallback((message, title = 'Подтвердите действие') => {
+    return new Promise((resolve) => {
+      // Сохраняем resolve функцию в ref
+      modalResolveRef.current = resolve;
+      
+      // Используем flushSync для принудительного синхронного обновления DOM
+      // ВАЖНО: flushSync должен быть вызван синхронно, до возврата Promise
+      flushSync(() => {
+        setModal({
+          isOpen: true,
+          type: 'confirm',
+          title,
+          message,
+          confirmText: 'Да',
+          cancelText: 'Нет',
+          onConfirm: () => {
+            setModal(prev => ({ ...prev, isOpen: false }));
+            if (modalResolveRef.current) {
+              modalResolveRef.current(true);
+              modalResolveRef.current = null;
+            }
+          },
+          onCancel: () => {
+            setModal(prev => ({ ...prev, isOpen: false }));
+            if (modalResolveRef.current) {
+              modalResolveRef.current(false);
+              modalResolveRef.current = null;
+            }
+          },
+        });
+      });
+    });
+  }, []);
+
+  const showPrompt = useCallback((message, defaultValue = '', title = 'Введите значение', placeholder = '') => {
+    return new Promise((resolve) => {
+      // Сохраняем resolve функцию в ref
+      modalResolveRef.current = resolve;
+      
+      // Используем flushSync для принудительного синхронного обновления DOM
+      // Это гарантирует, что модальное окно появится сразу
+      flushSync(() => {
+        setModal({
+          isOpen: true,
+          type: 'prompt',
+          title,
+          message,
+          defaultValue,
+          placeholder,
+          confirmText: 'OK',
+          cancelText: 'Отмена',
+          onConfirm: (value) => {
+            setModal(prev => ({ ...prev, isOpen: false }));
+            if (modalResolveRef.current) {
+              modalResolveRef.current(value);
+              modalResolveRef.current = null;
+            }
+          },
+          onCancel: () => {
+            setModal(prev => ({ ...prev, isOpen: false }));
+            if (modalResolveRef.current) {
+              modalResolveRef.current(null);
+              modalResolveRef.current = null;
+            }
+          },
+        });
+      });
+    });
+  }, []);
   
   // Загрузка конфигурации с сервера
   const loadConfigFromServer = useCallback(async () => {
@@ -175,7 +300,9 @@ const DoorsConfig = () => {
   // Загрузка при монтировании компонента
   useEffect(() => {
     // Загружаем список сохраненных конфигураций
-    setSavedConfigsList(getSavedConfigsList());
+    const configs = getSavedConfigsList();
+    console.log('[DoorsConfig] Загружен список конфигураций:', configs);
+    setSavedConfigsList(configs);
     setCurrentConfigNameState(getCurrentConfigName());
     
     // Проверяем наличие черновика
@@ -247,8 +374,8 @@ const DoorsConfig = () => {
   }, []);
   
   // Сохранение черновика как именованной конфигурации
-  const handleSaveDraft = useCallback(() => {
-    const name = window.prompt('Введите имя конфигурации:');
+  const handleSaveDraft = useCallback(async () => {
+    const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
     if (!name || name.trim().length === 0) return;
     
     const trimmedName = name.trim();
@@ -287,19 +414,39 @@ const DoorsConfig = () => {
   
   // Удаление именованной конфигурации
   const handleDeleteConfig = useCallback((name) => {
-    if (window.confirm(`Удалить конфигурацию "${name}"?`)) {
-      if (deleteNamedConfig(name)) {
-        setSavedConfigsList(getSavedConfigsList());
-        if (currentConfigName === name) {
-          setCurrentConfigNameState(null);
-          setCurrentConfigName(null);
-        }
-        setSuccess(`Конфигурация "${name}" удалена`);
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError('Ошибка удаления конфигурации');
-      }
-    }
+    // Сохраняем имя конфигурации для удаления в ref
+    deleteConfigNameRef.current = name;
+    
+    // Используем setTimeout с нулевой задержкой, чтобы обновление произошло в следующем тике
+    // Это гарантирует, что модальное окно появится сразу, как в handleLoadConfig
+    setTimeout(() => {
+      setModal({
+        isOpen: true,
+        type: 'confirm',
+        title: 'Удаление конфигурации',
+        message: `Удалить конфигурацию "${name}"?`,
+        confirmText: 'Да',
+        cancelText: 'Нет',
+        onConfirm: () => {
+          const configName = deleteConfigNameRef.current;
+          setModal(prev => ({ ...prev, isOpen: false }));
+          if (configName && deleteNamedConfig(configName)) {
+            setSavedConfigsList(getSavedConfigsList());
+            if (currentConfigName === configName) {
+              setCurrentConfigNameState(null);
+              setCurrentConfigName(null);
+            }
+            setSuccess(`Конфигурация "${configName}" удалена`);
+            setTimeout(() => setSuccess(null), 3000);
+          } else if (configName) {
+            setError('Ошибка удаления конфигурации');
+          }
+        },
+        onCancel: () => {
+          setModal(prev => ({ ...prev, isOpen: false }));
+        },
+      });
+    }, 0);
   }, [currentConfigName]);
   
   // Сохранение конфигурации (без выхода)
@@ -330,10 +477,10 @@ const DoorsConfig = () => {
   }, [config, currentConfigName, validateCurrentConfig]);
   
   // Сохранение конфигурации и выход в список
-  const handleSaveAndExit = useCallback(() => {
+  const handleSaveAndExit = useCallback(async () => {
     if (!currentConfigName) {
       // Если конфигурация не имеет имени, предлагаем сохранить как
-      const name = window.prompt('Введите имя конфигурации:');
+      const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
       if (!name || name.trim().length === 0) return;
       
       const trimmedName = name.trim();
@@ -367,8 +514,8 @@ const DoorsConfig = () => {
   }, [config, currentConfigName, validateCurrentConfig]);
   
   // Сохранение как (с другим именем)
-  const handleSaveAs = useCallback(() => {
-    const name = window.prompt('Введите имя конфигурации:');
+  const handleSaveAs = useCallback(async () => {
+    const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
     if (!name || name.trim().length === 0) return;
     
     const trimmedName = name.trim();
@@ -452,7 +599,8 @@ const DoorsConfig = () => {
         'Загрузка конфигурации с контроллера заменит текущие данные.\n\n' +
         'Продолжить? Несохраненные изменения будут потеряны.';
       
-      if (!window.confirm(confirmMessage)) {
+      const confirmed = await showConfirm(confirmMessage, 'Подтвердите действие');
+      if (!confirmed) {
         return; // Пользователь отменил операцию
       }
     }
@@ -486,7 +634,35 @@ const DoorsConfig = () => {
       setSuccess(successMessage);
       setTimeout(() => setSuccess(null), 5000);
     }
-  }, [loadConfigFromServer, hasUnsavedChanges, hasDraft]);
+  }, [loadConfigFromServer, hasUnsavedChanges, hasDraft, showConfirm]);
+
+  // Отмена редактирования - выход без сохранения
+  const handleCancel = useCallback(async () => {
+    // Проверка наличия несохраненных изменений
+    if (hasUnsavedChanges || hasDraft) {
+      const confirmMessage = 
+        'У вас есть несохраненные изменения в текущей конфигурации.\n\n' +
+        'Вы действительно хотите выйти без сохранения?\n\n' +
+        'Все несохраненные изменения будут потеряны.';
+      
+      const confirmed = await showConfirm(confirmMessage, 'Подтвердите действие');
+      if (!confirmed) {
+        return; // Пользователь отменил операцию
+      }
+    }
+    
+    // Очищаем состояние
+    clearDraft();
+    setHasUnsavedChanges(false);
+    setHasDraft(false);
+    setCurrentConfigNameState(null);
+    setCurrentConfigName(null);
+    setError(null);
+    setSuccess(null);
+    
+    // Возвращаемся в режим списка
+    setViewMode('list');
+  }, [hasUnsavedChanges, hasDraft, showConfirm]);
   
   // Применение конфигурации на контроллер (PUT /api/config/full)
   const handleApplyToController = useCallback(async () => {
@@ -498,9 +674,9 @@ const DoorsConfig = () => {
 
     const doorCount = config.doors?.length ?? 0;
     const edgeCount = config.edges?.length ?? 0;
-    const LIMIT_DOORS_V1 = 8;
-    const LIMIT_EDGES_V1 = 16;
-    const LIMIT_POST_CLOSE_V1 = 8;
+    const LIMIT_DOORS_V1 = 16; // Увеличено для поддержки MASTER (8) + SLAVE (8)
+    const LIMIT_EDGES_V1 = 32; // Увеличено для поддержки большего количества зависимостей
+    const LIMIT_POST_CLOSE_V1 = 16; // Увеличено для поддержки 16 дверей
 
     if (doorCount > LIMIT_DOORS_V1) {
       setError(`В первой версии поддерживается не более ${LIMIT_DOORS_V1} дверей. Сейчас: ${doorCount}. Удалите лишние двери или сохраните конфигурацию и примените другую.`);
@@ -521,7 +697,8 @@ const DoorsConfig = () => {
     confirmMessage += `Лимит v1: не более ${LIMIT_DOORS_V1} дверей.\n\n`;
     confirmMessage += 'Это заменит текущую конфигурацию на контроллере. Запись в Flash может занять до 90 секунд.';
 
-    if (!window.confirm(confirmMessage)) {
+    const confirmed = await showConfirm(confirmMessage, 'Подтвердите применение конфигурации');
+    if (!confirmed) {
       return;
     }
 
@@ -570,8 +747,8 @@ const DoorsConfig = () => {
 
       const jsonString = JSON.stringify(fullConfig);
       const jsonSize = new Blob([jsonString]).size;
-      if (jsonSize > 2048) {
-        setError(`Размер данных слишком большой: ${jsonSize} байт (максимум 2048). Уменьшите число дверей или длины комментариев.`);
+      if (jsonSize > 4096) {
+        setError(`Размер данных слишком большой: ${jsonSize} байт (максимум 4096). Уменьшите число дверей или длины комментариев.`);
         setSaving(false);
         return;
       }
@@ -636,12 +813,15 @@ const DoorsConfig = () => {
           } else if (statusText.includes('Bad Body') || (typeof data === 'string' && data.includes('Bad Body'))) {
             errorMessage = 'Ошибка обработки тела запроса на сервере. Возможно, данные повреждены. Попробуйте еще раз.';
           } else if (data && typeof data === 'object') {
+            console.log('[DoorsConfig] Error data object:', data);
             if (data.error) {
               errorMessage = `Ошибка валидации: ${data.error}`;
             } else if (data.errorMsg) {
               errorMessage = `Ошибка валидации: ${data.errorMsg}`;
             } else {
-              errorMessage = 'Ошибка валидации данных на сервере. Проверьте корректность конфигурации.';
+              // Показываем весь объект ошибки для диагностики
+              const errorDetails = JSON.stringify(data);
+              errorMessage = `Ошибка валидации данных на сервере: ${errorDetails}`;
             }
           } else if (typeof data === 'string') {
             if (data.includes('error')) {
@@ -715,6 +895,9 @@ const DoorsConfig = () => {
         {/* Панель управления (только в режиме списка) */}
         <div className="doors-config-toolbar">
           <div className="toolbar-left">
+            <Button onClick={handleCreateConfig} variant="primary">
+              ➕ Создать конфигурацию
+            </Button>
             <Button onClick={handleLoadFromController} disabled={loading}>
               {loading ? 'Загрузка...' : '📥 Загрузить с сервера'}
             </Button>
@@ -743,7 +926,7 @@ const DoorsConfig = () => {
         
         {/* Список сохраненных конфигураций */}
         <div className="saved-configs-list">
-          <h3>Сохраненные конфигурации:</h3>
+          <h3>Сохраненные конфигурации ({savedConfigsList.length})</h3>
           
           {/* Несохраненная конфигурация (черновик) */}
           {hasDraft && (
@@ -796,7 +979,20 @@ const DoorsConfig = () => {
                       Загрузить
                     </Button>
                     <Button 
-                      onClick={() => handleDeleteConfig(item.name)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const name = item.name;
+                        console.log('Кнопка Удалить нажата, имя:', name);
+                        // Сохраняем имя конфигурации
+                        setDeleteModalName(name);
+                        // Используем flushSync для синхронного обновления DOM
+                        flushSync(() => {
+                          console.log('flushSync: устанавливаем deleteModalVisible = true');
+                          setDeleteModalVisible(true);
+                        });
+                        console.log('После flushSync, deleteModalVisible должен быть true');
+                      }}
                       variant="secondary"
                       size="small"
                     >
@@ -808,13 +1004,10 @@ const DoorsConfig = () => {
             </div>
           )}
           
-          {/* Кнопка создания конфигурации (если нет конфигураций) */}
+          {/* Сообщение, если нет конфигураций */}
           {savedConfigsList.length === 0 && !hasDraft && (
             <div className="empty-state">
-              <p>Нет сохраненных конфигураций</p>
-              <Button onClick={handleCreateConfig} variant="primary">
-                ➕ Создать конфигурацию
-              </Button>
+              <p>Нет сохраненных конфигураций. Используйте кнопку "Создать конфигурацию" в панели управления выше.</p>
             </div>
           )}
         </div>
@@ -879,6 +1072,27 @@ const DoorsConfig = () => {
         </div>
       )}
       
+      {/* Отображение имени конфигурации в режиме редактирования */}
+      {viewMode === 'edit' && (
+        <div className="config-name-header" style={{ 
+          marginBottom: '20px', 
+          padding: '12px 16px', 
+          backgroundColor: '#f5f5f5', 
+          borderRadius: '8px',
+          border: '1px solid #ddd'
+        }}>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>
+            {currentConfigName ? (
+              <>📋 Конфигурация: <span style={{ color: '#0066cc' }}>{currentConfigName}</span></>
+            ) : config.projectName ? (
+              <>📋 Проект: <span style={{ color: '#0066cc' }}>{config.projectName}</span></>
+            ) : (
+              <>📋 Новая конфигурация</>
+            )}
+          </h2>
+        </div>
+      )}
+      
       {/* Вкладки с кнопками сохранения */}
       <div className="doors-config-tabs">
         <div className="tabs-header-with-actions">
@@ -903,6 +1117,9 @@ const DoorsConfig = () => {
             <Button onClick={handleSaveAndExit} variant="primary" size="small">
               💾 Сохранить и Выйти
             </Button>
+            <Button onClick={handleCancel} variant="secondary" size="small">
+              ✖ Отмена
+            </Button>
           </div>
         </div>
         
@@ -919,6 +1136,7 @@ const DoorsConfig = () => {
               config={config} 
               updateConfig={updateConfig}
               loading={loading}
+              showConfirm={showConfirm}
             />
           )}
           {activeTab === 'dependencies' && (
@@ -926,6 +1144,7 @@ const DoorsConfig = () => {
               config={config} 
               updateConfig={updateConfig}
               loading={loading}
+              showConfirm={showConfirm}
             />
           )}
           {activeTab === 'timeouts' && (
@@ -933,10 +1152,56 @@ const DoorsConfig = () => {
               config={config} 
               updateConfig={updateConfig}
               loading={loading}
+              showConfirm={showConfirm}
             />
           )}
         </div>
       </div>
+      
+      {/* Модальное окно */}
+      <Modal
+        isOpen={modal.isOpen}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        defaultValue={modal.defaultValue}
+        placeholder={modal.placeholder}
+        confirmText={modal.confirmText}
+        cancelText={modal.cancelText}
+        onConfirm={modal.onConfirm}
+        onCancel={modal.onCancel}
+      />
+      
+      {/* Модальное окно для удаления конфигурации */}
+      <Modal
+        isOpen={deleteModalVisible}
+        type="confirm"
+        title="Удаление конфигурации"
+        message={deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : ''}
+        confirmText="Да"
+        cancelText="Нет"
+        onConfirm={() => {
+          const name = deleteModalName;
+          const currentName = currentConfigName;
+          setDeleteModalVisible(false);
+          setDeleteModalName(null);
+          if (name && deleteNamedConfig(name)) {
+            setSavedConfigsList(getSavedConfigsList());
+            if (currentName === name) {
+              setCurrentConfigNameState(null);
+              setCurrentConfigName(null);
+            }
+            setSuccess(`Конфигурация "${name}" удалена`);
+            setTimeout(() => setSuccess(null), 3000);
+          } else if (name) {
+            setError('Ошибка удаления конфигурации');
+          }
+        }}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setDeleteModalName(null);
+        }}
+      />
     </div>
   );
 };

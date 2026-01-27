@@ -36,10 +36,11 @@
 
 /* Лимиты первой версии PUT /api/config/full (вариант A).
  * Явно ограничиваем для простоты отладки и проверок.
+ * Увеличено до 16 дверей для поддержки MASTER (8) + SLAVE (8).
  */
-#define CFG_FULL_MAX_DOORS_V1        8U
-#define CFG_FULL_MAX_EDGES_V1       16U
-#define CFG_FULL_MAX_POST_CLOSE_V1   8U
+#define CFG_FULL_MAX_DOORS_V1        16U
+#define CFG_FULL_MAX_EDGES_V1       32U
+#define CFG_FULL_MAX_POST_CLOSE_V1   16U
 
 typedef enum
 {

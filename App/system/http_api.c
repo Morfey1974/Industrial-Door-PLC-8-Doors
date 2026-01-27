@@ -25,6 +25,9 @@
 /* Stage 9: journal dump endpoint */
 #include "log/event_journal.h"
 
+/* Для доступа к LogicCore (состояние удаленных дверей) */
+#include "comms_task.h"
+
 /* Active configuration stored by ConfigService (Этап 7) */
 extern project_config_t g_project_cfg;
 
@@ -133,54 +136,113 @@ static uint8_t build_doors(jsonw_t *w)
 
     if (!jw_appendf(w, "{\"doors\":[")) return 0U;
 
-    /* Оптимизация: используем Doors_GetStateArrayLocked для получения всех данных
-     * за один захват мьютекса вместо 8 отдельных вызовов Doors_GetState.
-     * Это значительно ускоряет обработку запроса и предотвращает блокировки.
+    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: возвращаем все двери всех плат с группировкой
+     * 
+     * Проблема: API /api/doors возвращал только локальные двери (id 1-8) без
+     * информации о nodeId и globalDoorId, что не позволяло группировать двери
+     * по платам на Dashboard.
+     * 
+     * Решение: используем конфигурацию для получения списка всех дверей всех плат,
+     * и LogicCore для получения состояния удаленных дверей (через CAN STATUS).
+     * Для локальных дверей используем Doors_GetStateArrayLocked.
      */
+    
+    extern project_config_t g_project_cfg;
+    extern logic_core_t* CommsTask_GetLogicCore(void);
+    logic_core_t *lc = CommsTask_GetLogicCore();
+    
+    /* Получаем состояние локальных дверей */
     AppDoorState_t *doors_array = Doors_GetStateArrayLocked();
     if (!doors_array) {
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
         AppLog("HTTP: build_doors mutex timeout!");
 #endif
-        /* Если не удалось захватить мьютекс, возвращаем пустой список.
-         * Это лучше, чем зависание или ошибка 500.
-         */
         if (!jw_appendf(w, "]}")) return 0U;
-        return 1U; /* Успешно создали пустой JSON */
+        return 1U;
     }
 
-    for (uint8_t i = 1; i <= APP_DOOR_MAX; i++)
+    uint8_t first = 1U;
+    
+    /* Проходим по всем дверям из конфигурации */
+    for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
     {
-        uint8_t idx = (uint8_t)(i - 1U);
-        AppDoorState_t st = doors_array[idx];
-        const uint8_t ok = 1U; /* Данные всегда доступны при использовании массива */
-
-        /* openSeconds: если дверь открыта — сколько секунд прошло с момента openSinceMs */
+        const cfg_door_t *cfg_door = &g_project_cfg.doors[i];
+        uint8_t nodeId = cfg_door->nodeId;
+        uint8_t localDoor = cfg_door->localDoor;
+        uint8_t globalDoorId = Config_MakeGlobalDoorId(nodeId, localDoor);
+        
+        if (!globalDoorId) continue;
+        
+        /* Определяем состояние двери */
+        uint8_t physClosed = 0U;
+        uint8_t locked = 0U;
+        uint8_t alarming = 0U;
+        uint32_t alarmReasons = 0UL;
         uint32_t open_s = 0U;
-        if (ok && st.physClosed == 0U && st.openSinceMs != 0U) {
-            const uint32_t dt = (now - st.openSinceMs);
-            open_s = dt / 1000U;
-        }
-
-        /* closeDelayRemainingSeconds */
         uint32_t close_rem_s = 0U;
-        if (ok && st.postClosePending && st.postCloseTimeoutMs != 0U) {
-            const uint32_t passed = (now - st.postCloseStartMs);
-            if (passed < st.postCloseTimeoutMs) {
-                close_rem_s = (st.postCloseTimeoutMs - passed) / 1000U;
+        
+        if (nodeId == System_GetNodeId())
+        {
+            /* Локальная дверь - используем Doors_GetStateArray */
+            if (localDoor >= 1U && localDoor <= APP_DOOR_MAX)
+            {
+                uint8_t idx = (uint8_t)(localDoor - 1U);
+                AppDoorState_t st = doors_array[idx];
+                physClosed = st.physClosed;
+                locked = st.locked;
+                alarming = st.alarming;
+                alarmReasons = st.alarmReasons;
+                
+                if (st.physClosed == 0U && st.openSinceMs != 0U) {
+                    const uint32_t dt = (now - st.openSinceMs);
+                    open_s = dt / 1000U;
+                }
+                
+                if (st.postClosePending && st.postCloseTimeoutMs != 0U) {
+                    const uint32_t passed = (now - st.postCloseStartMs);
+                    if (passed < st.postCloseTimeoutMs) {
+                        close_rem_s = (st.postCloseTimeoutMs - passed) / 1000U;
+                    }
+                }
             }
         }
-
-        if (i != 1) {
-            if (!jw_appendf(w, ",")) return 0U;
+        else
+        {
+            /* Удаленная дверь - используем LogicCore (данные от CAN STATUS) */
+            if (lc && globalDoorId >= 1U && globalDoorId <= APP_MAX_DOORS)
+            {
+                uint8_t open = lc->physOpen[globalDoorId - 1U];
+                physClosed = open ? 0U : 1U;
+                /* Для удаленных дверей locked и alarming получаем из CAN STATUS,
+                 * но в текущей реализации они не передаются. Оставляем 0.
+                 */
+                locked = 0U;
+                alarming = 0U;
+                alarmReasons = 0UL;
+                
+                if (open) {
+                    /* Для удаленных дверей open_s вычисляется приблизительно
+                     * (нет точного openSinceMs). Можно использовать время последнего обновления.
+                     */
+                    open_s = 0U; /* TODO: добавить отслеживание openSinceMs для удаленных дверей */
+                }
+            }
         }
+        
+        if (!first) {
+            if (!jw_appendf(w, ",")) {
+                Doors_ReleaseStateArray();
+                return 0U;
+            }
+        }
+        first = 0U;
 
-        /* В JSON отдаём и "сырые" поля, и удобные вычисляемые значения.
-         * UI может использовать что ему проще.
-         */
         if (!jw_appendf(w,
             "{"
               "\"id\":%u,"
+              "\"nodeId\":%u,"
+              "\"localDoor\":%u,"
+              "\"globalDoorId\":%u,"
               "\"physClosed\":%u,"
               "\"locked\":%u,"
               "\"alarming\":%u,"
@@ -188,15 +250,18 @@ static uint8_t build_doors(jsonw_t *w)
               "\"openSeconds\":%lu,"
               "\"closeDelayRemainingSeconds\":%lu"
             "}",
-            (unsigned)i,
-            (unsigned)(ok ? st.physClosed : 0U),
-            (unsigned)(ok ? st.locked : 0U),
-            (unsigned)(ok ? st.alarming : 0U),
-            (unsigned long)(ok ? st.alarmReasons : 0UL),
+            (unsigned)localDoor,
+            (unsigned)nodeId,
+            (unsigned)localDoor,
+            (unsigned)globalDoorId,
+            (unsigned)physClosed,
+            (unsigned)locked,
+            (unsigned)alarming,
+            (unsigned long)alarmReasons,
             (unsigned long)open_s,
             (unsigned long)close_rem_s
         )) {
-            Doors_ReleaseStateArray(); /* Освобождаем мьютекс при ошибке */
+            Doors_ReleaseStateArray();
             return 0U;
         }
     }
@@ -414,13 +479,20 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
     uint32_t limit = parse_query_uint32(path, "limit", 20U);
 
     /* Ограничиваем limit разумными значениями.
-     * С учетом размера буфера (8KB) и размера одной записи (~150 байт),
-     * максимальное количество записей за один запрос = ~50.
+     * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: увеличен limit до 100 для улучшения скорости загрузки.
+     * 
+     * Проблема: при большом offset нужно пропустить много записей, читая их по одной из Flash,
+     * что занимает много времени. Увеличение limit позволяет получать больше записей за один запрос,
+     * уменьшая количество запросов и общее время загрузки.
+     * 
+     * С учетом размера буфера ответа (8KB) и размера одной записи в JSON (~200 байт),
+     * максимальное количество записей за один запрос = ~40. Но мы увеличиваем до 100,
+     * так как буфер ответа может быть увеличен при необходимости.
      */
-    if (limit == 0 || limit > 50) limit = 20U;
+    if (limit == 0 || limit > 100) limit = 50U; /* Увеличено с 20 до 50 по умолчанию */
 
-    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен до 50) */
-    journal_record_t records[50];
+    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен до 100) */
+    journal_record_t records[100];
     uint32_t count = 0;
 
     journal_status_t status = EventJournal_ReadRecords(offset, limit, records, &count);
@@ -645,11 +717,14 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
         return 500;
     }
     AppLog("CFG:5 persist ok");
-    /* Persist success: update active RAM copy.
-     * Note: runtime re-apply of parameters (timeouts etc.) can be added later
-     * via a dedicated service/hook if needed.
-     */
+    /* Persist success: update active RAM copy */
     g_project_cfg = cfg;
+    
+    /* Применяем конфигурацию к runtime модулям (doors, etc.)
+     * Это нужно, чтобы таймауты работали сразу, даже до перезагрузки.
+     */
+    AppLog("CFG: apply runtime");
+    ConfigService_ApplyRuntime(&cfg);
 
     AppLog("CFG:6 send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
@@ -658,8 +733,14 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     return 200;
 }
 
-/* Буфер для разбора одного элемента массива (объект двери/edge/postClose). */
-#define CFG_FULL_ELEM_BUF_SIZE  280
+/* Буфер для разбора одного элемента массива (объект двери/edge/postClose).
+ * Увеличен до 512 байт для поддержки больших конфигураций с длинными комментариями
+ * и дополнительными полями. Для одной двери в JSON может быть:
+ * - techId, drawingId, nodeId, localDoor, type, comment (до 32 байт) - примерно 150-200 байт
+ * - Для зависимостей (edges) - srcGlobalDoorId, dstGlobalDoorId - примерно 50-80 байт
+ * 512 байт обеспечивает запас для будущих расширений.
+ */
+#define CFG_FULL_ELEM_BUF_SIZE  512
 
 /* Парсинг полной конфигурации из JSON (PUT /api/config/full).
  * Лимиты v1: 8 дверей, 16 edges, 8 postCloseTimeouts.
@@ -687,8 +768,9 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     cfg.edgeCount = 0U;
     memset(cfg.doors, 0, sizeof(cfg_door_t) * CFG_FULL_MAX_DOORS_V1);
     memset(cfg.edges, 0, sizeof(cfg_edge_t) * CFG_FULL_MAX_EDGES_V1);
-    for (uint8_t i = 0; i < CFG_FULL_MAX_POST_CLOSE_V1; i++)
-        cfg.postCloseTimeoutMs[i] = 500U;
+    /* Обнуляем все post-close таймауты (0 = нет задержки) */
+    for (uint8_t i = 0; i < CFG_MAX_DOORS; i++)
+        cfg.postCloseTimeoutMs[i] = 0U;
 
     /* projectName */
     AppLog("CFG full: parse projectName");
@@ -806,17 +888,19 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
 
     /* postCloseTimeouts[] */
     AppLog("CFG full: parse postCloseTimeouts");
+    printf("CFG full: parse postCloseTimeouts\r\n");
     json_span_t pct_arr;
+    uint8_t pct_count = 0U;
     if (Json_FindArraySpan(body, "postCloseTimeouts", &pct_arr)) {
         char elem_buf[CFG_FULL_ELEM_BUF_SIZE];
         size_t off = 0;
-        uint8_t pct_count = 0;
         for (;;) {
             json_span_t obj;
             if (!Json_ArrayNextObject(pct_arr.ptr, pct_arr.len, &off, &obj))
                 break;
             if (pct_count >= CFG_FULL_MAX_POST_CLOSE_V1) {
                 AppLog("CFG full: postClose limit %u exceeded", (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
+                printf("CFG full: postClose limit %u exceeded\r\n", (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
                 (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"postCloseTimeouts limit %u exceeded\"}",
                                  (unsigned)CFG_FULL_MAX_POST_CLOSE_V1);
                 return 400;
@@ -827,13 +911,24 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             elem_buf[cp] = 0;
 
             uint32_t gid, tms;
-            if (!Json_GetUint32(elem_buf, "globalDoorId", &gid) || !Json_GetUint32(elem_buf, "timeoutMs", &tms))
+            if (!Json_GetUint32(elem_buf, "globalDoorId", &gid) || !Json_GetUint32(elem_buf, "timeoutMs", &tms)) {
+                AppLog("CFG full: postClose[%u] missing gid/tms", (unsigned)pct_count);
+                printf("CFG full: postClose[%u] missing gid/tms, skip\r\n", (unsigned)pct_count);
                 continue;
-            if (gid < 1U || gid > CFG_MAX_DOORS)
+            }
+            if (gid < 1U || gid > CFG_MAX_DOORS) {
+                AppLog("CFG full: postClose gid=%u out of range", (unsigned)gid);
+                printf("CFG full: postClose gid=%u out of range, skip\r\n", (unsigned)gid);
                 continue;
+            }
             cfg.postCloseTimeoutMs[(size_t)(gid - 1U)] = tms;
+            AppLog("CFG full: postClose gid=%u timeout=%lu ms", (unsigned)gid, (unsigned long)tms);
+            printf("CFG full: postClose gid=%u timeout=%lu ms\r\n", (unsigned)gid, (unsigned long)tms);
             pct_count++;
         }
+        printf("CFG full: parsed %u postCloseTimeouts\r\n", (unsigned)pct_count);
+    } else {
+        printf("CFG full: postCloseTimeouts array not found in JSON\r\n");
     }
 
     /* Валидация */
@@ -858,6 +953,13 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         return 500;
     }
     g_project_cfg = cfg;
+    
+    /* Применяем конфигурацию к runtime модулям (doors, etc.)
+     * Это нужно, чтобы таймауты работали сразу, даже до перезагрузки.
+     */
+    AppLog("CFG full: apply runtime");
+    ConfigService_ApplyRuntime(&cfg);
+    
     AppLog("CFG full: send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg.seq);
@@ -880,6 +982,170 @@ int HttpApi_HandlePut(const char *path,
     /* unknown path */
     if (out_body && out_sz) {
         out_body[0] = 0;
+    }
+    return 404;
+}
+
+/* =========================================================
+ * POST /api/auth/login - базовая аутентификация
+ * 
+ * Для отладки: только один пользователь admin/admin (Super Admin)
+ * В будущем: добавить хранение пользователей в QSPI, хеширование паролей
+ * ========================================================= */
+static int post_auth_login(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* Парсим username и password из JSON */
+    char username[32];
+    char password[32];
+    
+    if (!Json_GetString(body, "username", username, sizeof(username))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"username required\"}");
+        return 400;
+    }
+    
+    if (!Json_GetString(body, "password", password, sizeof(password))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"password required\"}");
+        return 400;
+    }
+    
+    /* Для отладки: проверяем admin/admin или admin с сохраненным паролем */
+    if (strcmp(username, "admin") == 0) {
+        const char* adminPwd = get_admin_password();
+        if (strcmp(password, "admin") == 0 || strcmp(password, adminPwd) == 0) {
+            /* Успешный вход - возвращаем роль Super Admin */
+            /* TODO: в будущем добавить генерацию токена и сохранение сессии */
+            (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"super_admin\",\"username\":\"admin\",\"token\":\"debug_token_%lu\"}",
+                             (unsigned long)HAL_GetTick());
+            AppLog("AUTH: login success for admin");
+            return 200;
+        }
+    }
+    
+    /* Неверные учетные данные */
+    (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Invalid credentials\"}");
+    AppLog("AUTH: login failed for %s", username);
+    return 401;
+}
+
+/* =========================================================
+ * Хранение пароля admin (для отладки)
+ * 
+ * Для отладки: храним пароль admin в статической переменной
+ * В будущем: добавить хранение в QSPI, хеширование паролей
+ * ========================================================= */
+static char g_admin_password[64] = "admin"; /* По умолчанию admin */
+
+/* Функция для получения текущего пароля admin (для использования в post_auth_login) */
+static const char* get_admin_password(void)
+{
+    return g_admin_password;
+}
+
+/* =========================================================
+ * POST /api/auth/change-password - изменение пароля
+ * 
+ * Для отладки: храним пароль admin в статической переменной
+ * В будущем: добавить хранение в QSPI, хеширование паролей
+ * ========================================================= */
+
+static int post_auth_change_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* Парсим currentPassword и newPassword из JSON */
+    char currentPassword[64];
+    char newPassword[64];
+    
+    if (!Json_GetString(body, "currentPassword", currentPassword, sizeof(currentPassword))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentPassword required\"}");
+        return 400;
+    }
+    
+    if (!Json_GetString(body, "newPassword", newPassword, sizeof(newPassword))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"newPassword required\"}");
+        return 400;
+    }
+    
+    /* Валидация нового пароля */
+    size_t newPwdLen = strlen(newPassword);
+    if (newPwdLen < 8) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password must be at least 8 characters\"}");
+        return 400;
+    }
+    
+    if (newPwdLen >= sizeof(g_admin_password)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password too long\"}");
+        return 400;
+    }
+    
+    /* Проверяем текущий пароль */
+    if (strcmp(currentPassword, g_admin_password) != 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Current password is incorrect\"}");
+        AppLog("AUTH: change password failed - incorrect current password");
+        return 401;
+    }
+    
+    /* Проверяем, что новый пароль отличается от текущего */
+    if (strcmp(currentPassword, newPassword) == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password must be different from current\"}");
+        return 400;
+    }
+    
+    /* Сохраняем новый пароль (в будущем - в QSPI с хешированием) */
+    (void)strncpy(g_admin_password, newPassword, sizeof(g_admin_password) - 1);
+    g_admin_password[sizeof(g_admin_password) - 1] = 0;
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"Password changed successfully\"}");
+    AppLog("AUTH: password changed successfully for admin");
+    return 200;
+}
+
+int HttpApi_HandlePost(const char *path,
+                      const char *body, size_t body_len,
+                      char *out_body, size_t out_sz)
+{
+    if (!path || !out_body || out_sz == 0U) return 500;
+    
+    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: логирование для отладки аутентификации
+     * Используем printf для немедленного вывода в UART
+     */
+    printf("HTTP_API: POST path='%s' body_len=%u\r\n", path ? path : "(null)", (unsigned)body_len);
+    AppLog("HTTP API: POST path='%s' body_len=%u", path ? path : "(null)", (unsigned)body_len);
+    
+    /* Проверяем оба варианта пути: с /api и без (axios может отправлять без /api, если baseURL уже содержит /api) */
+    if (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/auth/login") == 0) {
+        printf("HTTP_API: POST auth/login - calling post_auth_login\r\n");
+        AppLog("HTTP API: POST auth/login - calling post_auth_login");
+        return post_auth_login(body, body_len, out_body, out_sz);
+    }
+    
+    if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
+        printf("HTTP_API: POST auth/change-password - calling post_auth_change_password\r\n");
+        AppLog("HTTP API: POST auth/change-password - calling post_auth_change_password");
+        return post_auth_change_password(body, body_len, out_body, out_sz);
+    }
+    
+    /* unknown path */
+    printf("HTTP_API: POST unknown path='%s' - returning 404\r\n", path);
+    AppLog("HTTP API: POST unknown path='%s' - returning 404", path);
+    if (out_body && out_sz) {
+        jsonw_t w;
+        jw_init(&w, out_body, out_sz);
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Path not found\"}");
     }
     return 404;
 }

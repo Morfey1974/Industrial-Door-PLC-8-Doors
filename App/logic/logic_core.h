@@ -38,7 +38,14 @@ typedef struct logic_core_t
      * Это даёт детерминированность и устраняет “дребезг” логики при быстром открытии/закрытии.
      */
     uint8_t depActive[APP_MAX_DOORS];      /* 1 если зависимости этой двери учитываются */
-    uint8_t closePending[APP_MAX_DOORS];   /* 1 если ждём POST_CLOSE_READY после CLOSE */
+    uint8_t closePending[APP_MAX_DOORS];   /* 1 если ждём POST_CLOSE_READY после CLOSE (для источника, устарело) */
+
+    /* --- Post-close delay для целевых дверей ---
+     * Когда источник закрывается, целевые двери остаются заблокированными
+     * на время их собственного post-close таймаута
+     */
+    uint8_t targetUnlockPending[APP_MAX_DOORS];  /* 1 если целевая дверь ждет разблокировки */
+    uint32_t targetUnlockStartMs[APP_MAX_DOORS]; /* когда начался отсчет для целевой двери */
 
     /* --- вычисленный результат --- */
     door_bitset_t lockRequired; /* глобальная маска дверей, которые ТРЕБУЕТСЯ блокировать */

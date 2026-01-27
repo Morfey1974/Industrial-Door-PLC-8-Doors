@@ -1,5 +1,6 @@
 #include "doors_task.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -11,6 +12,7 @@
 /* Stage-2 system */
 #include "system/app_events.h"
 #include "system/app_health.h"
+#include "system/config_service.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -126,7 +128,33 @@ static void publish_event(app_event_type_t type, uint32_t door1based, uint32_t a
 uint8_t DoorsCfg_SetOpenTimeoutMs(uint32_t timeout_ms)
 {
     /* 0 = отключено. Диапазоны/валидация будут на этапе конфигуратора. */
+    uint32_t oldTimeout = s_cfgOpenTimeoutMs;
     s_cfgOpenTimeoutMs = timeout_ms;
+    
+    /* Логирование для отладки */
+    printf("DOORS: SetOpenTimeoutMs %lu -> %lu\r\n", (unsigned long)oldTimeout, (unsigned long)timeout_ms);
+    
+    /* Если таймаут изменился и дверь открыта, сбрасываем openSinceMs для всех открытых дверей,
+     * чтобы таймаут начал отсчитываться заново с момента применения конфигурации.
+     * Это важно, чтобы сигнализация срабатывала корректно при изменении конфигурации.
+     */
+    if (oldTimeout != timeout_ms && timeout_ms != 0U) {
+        uint32_t now = GetMs();
+        uint8_t resetCount = 0U;
+        for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
+            /* Если дверь открыта (не закрыта) и таймаут ещё не сработал */
+            if (s_doors[i].physClosed == 0U && 
+                (s_doors[i].alarmReasons & DOOR_ALARM_OPEN_TIMEOUT) == 0U) {
+                /* Сбрасываем openSinceMs, чтобы таймаут начал отсчитываться заново */
+                s_doors[i].openSinceMs = now;
+                resetCount++;
+            }
+        }
+        if (resetCount > 0U) {
+            printf("DOORS: Reset openSinceMs for %u open doors\r\n", (unsigned)resetCount);
+        }
+    }
+    
     return 1U;
 }
 
@@ -138,7 +166,10 @@ uint32_t DoorsCfg_GetOpenTimeoutMs(void)
 uint8_t DoorsCfg_SetPostCloseTimeoutMs(uint8_t door_id, uint32_t timeout_ms)
 {
     if (door_id == 0U || door_id > APP_DOOR_MAX) return 0U;
+    uint32_t oldTimeout = s_doors[door_id - 1U].postCloseTimeoutMs;
     s_doors[door_id - 1U].postCloseTimeoutMs = timeout_ms;
+    printf("DOORS: SetPostCloseTimeoutMs door%u: %lu -> %lu ms\r\n", 
+           (unsigned)door_id, (unsigned long)oldTimeout, (unsigned long)timeout_ms);
     return 1U;
 }
 
@@ -196,7 +227,7 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
         if (!s_doors_mutex) return 0U;
     }
 
-    /* Захватываем мьютекс для безопасного чтения alarming */
+    /* Захватываем мьютекс для безопасного чтения состояния двери */
     if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         return 0U; /* Таймаут при захвате мьютекса */
     }
@@ -205,6 +236,11 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
      * если сигнализация активна (любая причина) — внешние команды отвергаем.
      */
     uint8_t alarming = s_doors[idx].alarming;
+    uint8_t doorClosed = s_doors[idx].physClosed;
+    uint8_t doorLocked = s_doors[idx].locked;
+    uint8_t hasPending = s_lockReq[idx].pending;
+    /* ВАЖНО: pendingLock имеет смысл только если hasPending=1 */
+    uint8_t pendingLock = hasPending ? s_lockReq[idx].lock_on : 0U;
     
     /* Освобождаем мьютекс перед записью в s_lockReq (это отдельный массив) */
     xSemaphoreGive(s_doors_mutex);
@@ -212,14 +248,181 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
     if (alarming)
         return 0U;
 
+    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ для предотвращения "дергания" дверей на SLAVE:
+     * 
+     * Проблема: MASTER отправляет команды каждые 100ms, а STATUS приходит каждые 200ms.
+     * Это создает рассинхронизацию: MASTER может отправлять LOCK для открытой двери,
+     * затем UNLOCK, затем снова LOCK, создавая цикл переключений.
+     * 
+     * Также MASTER отправляет UNLOCK для всех дверей, которые не в lockRequired,
+     * даже если они уже разблокированы, что создает постоянные переключения.
+     * 
+     * Решение:
+     * 1. Если дверь открыта и приходит команда LOCK, а уже есть pending LOCK
+     *    (того же типа), не перезаписываем команду - просто обновляем TTL.
+     * 2. Если дверь уже разблокирована и приходит команда UNLOCK, не перезаписываем
+     *    pending команду, только обновляем TTL (если есть pending) или игнорируем.
+     *    Это предотвращает ненужные переключения.
+     */
+    uint8_t newLock = (lock_on != 0U) ? 1U : 0U;
+    
+    /* ЛОГИРОВАНИЕ: вход в Doors_RequestLock */
+    printf("DOORS_REQ: Door%u cmd=%s source=0x%08lx timeout=%lu, state: closed=%u locked=%u pending=%u pendingLock=%u\r\n",
+           (unsigned)door_id, newLock ? "LOCK" : "UNLOCK", (unsigned long)source, (unsigned long)timeout_ms,
+           (unsigned)doorClosed, (unsigned)doorLocked, (unsigned)hasPending, (unsigned)pendingLock);
+    
+    /* Случай 1: Дверь открыта, есть pending LOCK, приходит новая команда LOCK */
+    if (hasPending && !doorClosed && pendingLock && newLock)
+    {
+        /* Не перезаписываем, только обновляем TTL, чтобы команда не истекла */
+        if (timeout_ms == 0U)
+            s_lockReq[idx].expireMs = 0U;
+        else
+            s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+        
+        printf("DOORS_REQ: Door%u LOCK SKIP (open, pending LOCK, update TTL)\r\n", (unsigned)door_id);
+        return 1U;
+    }
+    
+    /* Случай 2: Дверь уже разблокирована, приходит команда UNLOCK */
+    if (!newLock && (doorLocked == 0U))
+    {
+        /* Дверь уже разблокирована - проверяем тип pending команды */
+        if (hasPending)
+        {
+            if (pendingLock)
+            {
+                /* Есть pending LOCK (дверь была открыта) - отменяем его командой UNLOCK */
+                s_lockReq[idx].pending = 1U;
+                s_lockReq[idx].lock_on = 0U;
+                s_lockReq[idx].source = source;
+                if (timeout_ms == 0U)
+                    s_lockReq[idx].expireMs = 0U;
+                else
+                    s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+                printf("DOORS_REQ: Door%u UNLOCK CANCEL pending LOCK\r\n", (unsigned)door_id);
+            }
+            else
+            {
+                /* Есть pending UNLOCK для уже разблокированной двери - 
+                 * сбрасываем pending, чтобы не обрабатывать команду в updateOneDoor.
+                 * Это предотвращает ненужные переключения при keepalive командах.
+                 */
+                s_lockReq[idx].pending = 0U;
+                printf("DOORS_REQ: Door%u UNLOCK SKIP (already unlocked, clear pending)\r\n", (unsigned)door_id);
+            }
+        }
+        else
+        {
+            printf("DOORS_REQ: Door%u UNLOCK IGNORE (already unlocked, no pending)\r\n", (unsigned)door_id);
+        }
+        /* Если нет pending команды, просто игнорируем UNLOCK для уже разблокированной двери */
+        return 1U;
+    }
+    
+    /* Случай 3: Дверь уже заблокирована, приходит команда UNLOCK
+     * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: если дверь заблокирована и приходит UNLOCK,
+     * НЕ устанавливаем pending, а сразу применяем команду через прямой вызов.
+     * Это предотвращает задержку и возможность для других команд вмешаться.
+     */
+    if (!newLock && (doorLocked != 0U) && doorClosed)
+    {
+        /* Дверь заблокирована и закрыта - проверяем тип pending команды */
+        if (hasPending)
+        {
+            if (pendingLock)
+            {
+                /* Есть pending LOCK - отменяем его командой UNLOCK */
+                s_lockReq[idx].pending = 1U;
+                s_lockReq[idx].lock_on = 0U;
+                s_lockReq[idx].source = source;
+                if (timeout_ms == 0U)
+                    s_lockReq[idx].expireMs = 0U;
+                else
+                    s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+                printf("DOORS_REQ: Door%u UNLOCK CANCEL pending LOCK\r\n", (unsigned)door_id);
+            }
+            else
+            {
+                /* Есть pending UNLOCK для уже заблокированной двери - 
+                 * обновляем только TTL, не перезаписываем команду.
+                 * Это предотвращает ненужные переключения при keepalive командах.
+                 */
+                if (timeout_ms == 0U)
+                    s_lockReq[idx].expireMs = 0U;
+                else
+                    s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+                printf("DOORS_REQ: Door%u UNLOCK SKIP (already locked, update TTL)\r\n", (unsigned)door_id);
+            }
+        }
+        else
+        {
+            /* Нет pending команды - устанавливаем pending UNLOCK для немедленного применения
+             * в updateOneDoor. Это предотвращает задержку до следующего цикла.
+             */
+            s_lockReq[idx].pending = 1U;
+            s_lockReq[idx].lock_on = 0U;
+            s_lockReq[idx].source = source;
+            if (timeout_ms == 0U)
+                s_lockReq[idx].expireMs = 0U;
+            else
+                s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+            printf("DOORS_REQ: Door%u UNLOCK SET pending=1 (locked, will apply immediately)\r\n", (unsigned)door_id);
+        }
+        return 1U;
+    }
+    
+    /* Случай 4: Дверь уже заблокирована, приходит команда LOCK */
+    if (newLock && (doorLocked != 0U) && doorClosed)
+    {
+        /* Дверь уже заблокирована и закрыта - проверяем тип pending команды */
+        if (hasPending)
+        {
+            if (!pendingLock)
+            {
+                /* Есть pending UNLOCK - отменяем его командой LOCK */
+                s_lockReq[idx].pending = 1U;
+                s_lockReq[idx].lock_on = 1U;
+                s_lockReq[idx].source = source;
+                if (timeout_ms == 0U)
+                    s_lockReq[idx].expireMs = 0U;
+                else
+                    s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+                printf("DOORS_REQ: Door%u LOCK CANCEL pending UNLOCK\r\n", (unsigned)door_id);
+            }
+            else
+            {
+                /* Есть pending LOCK для уже заблокированной двери - 
+                 * обновляем только TTL, не перезаписываем команду.
+                 * Это предотвращает ненужные переключения при keepalive командах.
+                 */
+                if (timeout_ms == 0U)
+                    s_lockReq[idx].expireMs = 0U;
+                else
+                    s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+                printf("DOORS_REQ: Door%u LOCK SKIP (already locked, update TTL)\r\n", (unsigned)door_id);
+            }
+        }
+        else
+        {
+            printf("DOORS_REQ: Door%u LOCK IGNORE (already locked, no pending)\r\n", (unsigned)door_id);
+        }
+        return 1U;
+    }
+    
+    /* Для всех остальных случаев перезаписываем команду */
     s_lockReq[idx].pending  = 1U;
-    s_lockReq[idx].lock_on  = (lock_on != 0U) ? 1U : 0U;
+    s_lockReq[idx].lock_on  = newLock;
     s_lockReq[idx].source   = source;
 
     if (timeout_ms == 0U)
         s_lockReq[idx].expireMs = 0U;
     else
         s_lockReq[idx].expireMs = GetMs() + timeout_ms;
+
+    printf("DOORS_REQ: Door%u %s SET pending=1 expireMs=%lu\r\n",
+           (unsigned)door_id, newLock ? "LOCK" : "UNLOCK",
+           (unsigned long)s_lockReq[idx].expireMs);
 
     return 1U;
 }
@@ -251,6 +454,17 @@ uint8_t Doors_GetState(uint8_t door_id, AppDoorState_t *out)
 
 void Doors_TaskInit(void)
 {
+    /* ВАЖНО: Сохраняем таймауты перед обнулением структур!
+     * Таймауты могут быть установлены из конфигурации ДО запуска этой задачи
+     * (через ConfigService_InitOnBoot() -> DoorsCfg_SetPostCloseTimeoutMs()).
+     * Если их не сохранить, они будут потеряны при memset.
+     */
+    uint32_t savedPostCloseTimeouts[APP_DOOR_MAX];
+    for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
+        savedPostCloseTimeouts[i] = s_doors[i].postCloseTimeoutMs;
+    }
+    uint32_t savedOpenTimeout = s_cfgOpenTimeoutMs;
+    
     memset(s_doors, 0, sizeof(s_doors));
     memset(s_prevAlarmRaw, 0, sizeof(s_prevAlarmRaw));
     memset(s_lastAlarmEdgeMs, 0, sizeof(s_lastAlarmEdgeMs));
@@ -264,13 +478,19 @@ void Doors_TaskInit(void)
         s_doors_mutex = xSemaphoreCreateMutex();
     }
 
-    /* Конфиг по умолчанию:
-     * - open timeout выключен
-     * - post-close timeout = 0 (реакция "готово" сразу)
-     */
-    s_cfgOpenTimeoutMs = 0U;
-    for (uint8_t i = 0; i < APP_DOOR_MAX; i++)
-        s_doors[i].postCloseTimeoutMs = 0U;
+    /* Восстанавливаем таймауты из конфигурации (если они были установлены) */
+    s_cfgOpenTimeoutMs = savedOpenTimeout;
+    for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
+        s_doors[i].postCloseTimeoutMs = savedPostCloseTimeouts[i];
+    }
+    
+    printf("DOORS: TaskInit done, openTimeoutMs=%lu\r\n", (unsigned long)s_cfgOpenTimeoutMs);
+    for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
+        if (s_doors[i].postCloseTimeoutMs != 0U) {
+            printf("DOORS: door%u postCloseTimeoutMs=%lu\r\n", 
+                   (unsigned)(i + 1), (unsigned long)s_doors[i].postCloseTimeoutMs);
+        }
+    }
 }
 
 /* ============================================================
@@ -308,6 +528,9 @@ static void alarm_update(uint8_t door1based, uint8_t idx)
     if (!was && now)
     {
         /* ВХОД В СИГНАЛИЗАЦИЮ */
+        printf("DOORS: Door%u ALARM ON (reasons=0x%08lx)\r\n", 
+               (unsigned)door1based, (unsigned long)s_doors[idx].alarmReasons);
+        
         s_lockSavedBeforeAlarm[idx] = s_doors[idx].locked;
 
         /* Любые внешние pending-команды не должны перебивать сигнализацию */
@@ -324,6 +547,7 @@ static void alarm_update(uint8_t door1based, uint8_t idx)
     else if (was && !now)
     {
         /* ВЫХОД ИЗ СИГНАЛИЗАЦИИ */
+        printf("DOORS: Door%u ALARM OFF\r\n", (unsigned)door1based);
         DoorHAL_SetBuzzer(door1based, false);
 
         /* Восстанавливаем lock-state, который был до сигнализации */
@@ -358,10 +582,19 @@ static void alarm_remove(uint8_t door1based, uint8_t idx, door_alarm_reason_t re
 static void applyNormal(uint8_t door1based, bool physClosed, uint8_t idx)
 {
     bool wantLock = (s_doors[idx].locked != 0U);
+    bool wasLocked = wantLock;
 
     /* Инвариант безопасности: нельзя LOCK при открытой двери */
     if (!physClosed)
         wantLock = false;
+
+    /* ЛОГИРОВАНИЕ: изменение состояния замка на аппаратном уровне */
+    if (wasLocked != wantLock)
+    {
+        printf("DOORS_HAL: Door%u HARDWARE %s (closed=%u locked_state=%u)\r\n",
+               (unsigned)door1based, wantLock ? "LOCK" : "UNLOCK",
+               (unsigned)physClosed, (unsigned)s_doors[idx].locked);
+    }
 
     DoorHAL_SetLock(door1based, wantLock);
     DoorHAL_SetLed(door1based, wantLock ? DOOR_LED_RED : DOOR_LED_GREEN);
@@ -528,8 +761,11 @@ static void updateOneDoor(uint8_t door1based)
             if (s_doors[idx].openSinceMs == 0U)
                 s_doors[idx].openSinceMs = now;
 
-            if ((now - s_doors[idx].openSinceMs) >= t)
+            uint32_t elapsed = now - s_doors[idx].openSinceMs;
+            if (elapsed >= t)
             {
+                printf("DOORS: Door%u OPEN_TIMEOUT! elapsed=%lu ms, timeout=%lu ms\r\n", 
+                       (unsigned)door1based, (unsigned long)elapsed, (unsigned long)t);
                 alarm_add(door1based, idx, DOOR_ALARM_OPEN_TIMEOUT);
                 publish_event(EVT_DOOR_OPEN_TIMEOUT, door1based, 0U);
             }
@@ -551,10 +787,13 @@ static void updateOneDoor(uint8_t door1based)
         }
         else
         {
-            if ((now - s_doors[idx].postCloseStartMs) >= t)
+            uint32_t elapsed = now - s_doors[idx].postCloseStartMs;
+            if (elapsed >= t)
             {
                 s_doors[idx].postClosePending = 0U;
                 publish_event(EVT_DOOR_POST_CLOSE_READY, door1based, 0U);
+                printf("DOORS: Door%u POST_CLOSE_READY elapsed=%lu ms, timeout=%lu ms\r\n", 
+                       (unsigned)door1based, (unsigned long)elapsed, (unsigned long)t);
             }
         }
     }
@@ -565,6 +804,10 @@ static void updateOneDoor(uint8_t door1based)
      * Правило:
      * - пока сигнализация активна (любая причина) — внешние lock команды отбрасываем.
      * - это обеспечивает “Alarm выше внешних команд” и предсказуемость.
+     * 
+     * ВАЖНО: команда блокировки для открытой двери не применяется сразу,
+     * но сохраняется, чтобы применить её сразу после закрытия двери.
+     * Это предотвращает "дергание" замка при открытой двери.
      */
     if (!s_doors[idx].alarming)
     {
@@ -577,10 +820,49 @@ static void updateOneDoor(uint8_t door1based)
             }
             else
             {
-                /* Apply request to the model. Invariants are enforced below. */
-                s_doors[idx].locked = s_lockReq[idx].lock_on ? 1U : 0U;
-                s_doors[idx].lastChangeMs = now;
-                s_lockReq[idx].pending = 0U;
+                /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: предотвращение "дергания" дверей
+                 * 
+                 * Проблема: MASTER отправляет UNLOCK для всех дверей, которые не в lockRequired,
+                 * даже если они уже разблокированы. Это создает постоянные переключения,
+                 * так как команда UNLOCK применяется всегда, даже если дверь уже разблокирована.
+                 * 
+                 * Решение: не применяем команду UNLOCK, если дверь уже разблокирована
+                 * и нет pending команды LOCK. Это предотвращает ненужные переключения.
+                 */
+                if (!s_lockReq[idx].lock_on)
+                {
+                    /* Команда unlock: применяем только если дверь заблокирована
+                     * или есть pending команда LOCK (чтобы отменить её)
+                     */
+                    if (s_doors[idx].locked != 0U)
+                    {
+                        /* Дверь заблокирована - разблокируем */
+                        printf("DOORS_UPDATE: Door%u UNLOCK APPLY (was locked)\r\n", (unsigned)door1based);
+                        s_doors[idx].locked = 0U;
+                        s_doors[idx].lastChangeMs = now;
+                        s_lockReq[idx].pending = 0U;
+                    }
+                    else
+                    {
+                        /* Дверь уже разблокирована - просто сбрасываем pending команду
+                         * без изменения состояния. Это предотвращает "дергание".
+                         */
+                        printf("DOORS_UPDATE: Door%u UNLOCK SKIP (already unlocked, clear pending)\r\n", (unsigned)door1based);
+                        s_lockReq[idx].pending = 0U;
+                    }
+                }
+                /* Команда lock применяется только если дверь закрыта */
+                else if (closed)
+                {
+                    printf("DOORS_UPDATE: Door%u LOCK APPLY (closed)\r\n", (unsigned)door1based);
+                    s_doors[idx].locked = 1U;
+                    s_doors[idx].lastChangeMs = now;
+                    s_lockReq[idx].pending = 0U;
+                }
+                /* Если дверь открыта и команда lock - сохраняем команду,
+                 * но не применяем её до закрытия двери (предотвращает "дергание")
+                 */
+                /* else: дверь открыта, команда lock остается pending до закрытия */
             }
         }
     }
@@ -601,8 +883,43 @@ static void updateOneDoor(uint8_t door1based)
     /* Hard safety invariant: if open -> always unlock (поверх всего) */
     if (!closed)
     {
+        if (s_doors[idx].locked != 0U)
+        {
+            printf("DOORS_UPDATE: Door%u SAFETY UNLOCK (door open)\r\n", (unsigned)door1based);
+        }
         DoorHAL_SetLock(door1based, false);
         s_doors[idx].locked = 0U;
+        
+        /* Команда блокировки для открытой двери остается pending,
+         * чтобы применить её сразу после закрытия двери.
+         * Это предотвращает задержку блокировки до следующего CAN обновления.
+         */
+    }
+    else
+    {
+        /* Дверь закрылась - проверяем, есть ли pending команда блокировки */
+        if (s_lockReq[idx].pending && s_lockReq[idx].lock_on && !s_doors[idx].alarming)
+        {
+            /* Применяем команду блокировки, которая была отложена */
+            printf("DOORS_UPDATE: Door%u LOCK APPLY (door closed, pending)\r\n", (unsigned)door1based);
+            s_doors[idx].locked = 1U;
+            s_doors[idx].lastChangeMs = now;
+            s_lockReq[idx].pending = 0U;
+        }
+    }
+    
+    /* ЛОГИРОВАНИЕ: финальное состояние после обработки */
+    if (s_doors[idx].locked != 0U)
+    {
+        printf("DOORS_UPDATE: Door%u FINAL STATE: LOCKED closed=%u\r\n", 
+               (unsigned)door1based, (unsigned)closed);
+    }
+    else
+    {
+        printf("DOORS_UPDATE: Door%u FINAL STATE: UNLOCKED closed=%u pending=%u pendingLock=%u\r\n",
+               (unsigned)door1based, (unsigned)closed,
+               (unsigned)s_lockReq[idx].pending, 
+               s_lockReq[idx].pending ? (unsigned)s_lockReq[idx].lock_on : 999U);
     }
 
     /* Освобождаем мьютекс */
@@ -619,6 +936,29 @@ void DoorsTask_Run(void const *argument)
 
     /* ЭТАП 3: аппаратная модель двери */
     DoorHAL_Init();
+
+    /* ВАЖНО: Инициализируем physClosed правильным значением для всех дверей
+     * ДО первого вызова updateOneDoor(). Это предотвращает ложное срабатывание
+     * post-close таймаута для уже закрытых дверей при старте.
+     * 
+     * Если не сделать это, то при первом updateOneDoor() для закрытой двери
+     * система увидит переход 0->1 и запустит post-close таймаут, даже если
+     * дверь уже была закрыта до старта.
+     */
+    for (uint8_t d = 1; d <= APP_DOOR_MAX; d++) {
+        uint8_t idx = (uint8_t)(d - 1U);
+        bool closed = DoorHAL_IsClosed(d);
+        s_doors[idx].physClosed = (uint8_t)closed;
+        /* Не публикуем события при инициализации - это не реальные переходы */
+    }
+
+    /* Применяем конфигурацию после инициализации задачи
+     * Это гарантирует, что таймауты установлены даже если конфигурация
+     * применялась ДО запуска этой задачи (и была сохранена в Doors_TaskInit)
+     * или если конфигурация применяется ПОСЛЕ запуска задачи.
+     */
+    extern project_config_t g_project_cfg;
+    ConfigService_ApplyRuntime(&g_project_cfg);
 
     for (;;)
     {

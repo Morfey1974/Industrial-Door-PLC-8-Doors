@@ -1,12 +1,12 @@
 /**
- * DoorsOverview компонент - краткий обзор дверей
+ * DoorsOverview компонент - краткий обзор дверей с группировкой по платам
  */
 
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
 import { getDoorStatusColor, getDoorStatusText } from '../../utils/formatters';
 
-const DoorsOverview = ({ doors, maxDoors = 8 }) => {
+const DoorsOverview = ({ doors }) => {
   if (!doors) {
     return <p>Нет данных о дверях</p>;
   }
@@ -15,32 +15,51 @@ const DoorsOverview = ({ doors, maxDoors = 8 }) => {
     return <p>Нет данных о дверях</p>;
   }
 
-  // Берем первые maxDoors дверей
-  const displayedDoors = doors.doors.slice(0, maxDoors);
+  // Группируем двери по платам (nodeId)
+  const doorsByNode = {};
+  doors.doors.forEach((door) => {
+    const nodeId = door.nodeId || 1; // По умолчанию плата 1
+    if (!doorsByNode[nodeId]) {
+      doorsByNode[nodeId] = [];
+    }
+    doorsByNode[nodeId].push(door);
+  });
+
+  // Сортируем платы по nodeId
+  const sortedNodeIds = Object.keys(doorsByNode).sort((a, b) => parseInt(a) - parseInt(b));
 
   const columns = [
-    { key: 'id', label: 'ID' },
+    { key: 'localDoor', label: 'Дверь' },
     { key: 'status', label: 'Статус' },
     { key: 'locked', label: 'Замок' },
     { key: 'openSeconds', label: 'Открыта (сек)' },
   ];
 
-  const tableData = displayedDoors.map((door) => ({
-    id: door.id,
-    status: (
-      <StatusBadge
-        status={door.alarming ? 'alarm' : door.physClosed ? 'normal' : 'open'}
-        label={getDoorStatusText(door)}
-      />
-    ),
-    locked: door.locked ? 'Заблокирована' : 'Разблокирована',
-    openSeconds: door.openSeconds > 0 ? door.openSeconds : '—',
-  }));
-
   return (
     <div className="doors-overview">
-      <h3>Обзор дверей (первые {displayedDoors.length})</h3>
-      <Table columns={columns} data={tableData} />
+      {sortedNodeIds.map((nodeId) => {
+        const nodeDoors = doorsByNode[nodeId];
+        const tableData = nodeDoors.map((door) => ({
+          localDoor: door.localDoor || door.id || '—',
+          status: (
+            <StatusBadge
+              status={door.alarming ? 'alarm' : door.physClosed ? 'normal' : 'open'}
+              label={getDoorStatusText(door)}
+            />
+          ),
+          locked: door.locked ? 'Заблокирована' : 'Разблокирована',
+          openSeconds: door.openSeconds > 0 ? door.openSeconds : '—',
+        }));
+
+        return (
+          <div key={nodeId} style={{ marginBottom: '30px' }}>
+            <h3 style={{ marginBottom: '10px', fontSize: '16px', fontWeight: '600' }}>
+              Плата {nodeId} ({nodeDoors.length} {nodeDoors.length === 1 ? 'дверь' : 'дверей'})
+            </h3>
+            <Table columns={columns} data={tableData} />
+          </div>
+        );
+      })}
     </div>
   );
 };

@@ -101,8 +101,11 @@ void CommsTask_Run(void const *argument)
         app_event_t evt;
         if (AppEvents_Wait(&evt, pdMS_TO_TICKS(200)) != pdTRUE)
         {
-            /* Нет событий — ничего не делаем.
-               (Tick() не нужен, т.к. post-close таймер живёт в DoorTask.) */
+            /* Нет событий — проверяем таймауты разблокировки целевых дверей.
+             * Это нужно, чтобы разблокировать двери после истечения post-close таймаута,
+             * даже если нет других событий.
+             */
+            LogicCore_RecomputeAndApply(&g_lc);
             continue;
         }
 

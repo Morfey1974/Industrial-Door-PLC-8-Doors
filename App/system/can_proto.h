@@ -25,7 +25,8 @@ typedef enum
 
 typedef enum
 {
-    CAN_SVC_HEARTBEAT = 1
+    CAN_SVC_HEARTBEAT = 1,
+    CAN_SVC_CONFIG_PARAM = 2  /* Передача параметров конфигурации (openTimeoutMs) от MASTER к SLAVE */
 } can_service_code_t;
 
 /* ---------------- CAN ID helpers ---------------- */

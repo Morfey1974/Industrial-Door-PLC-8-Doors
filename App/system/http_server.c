@@ -34,9 +34,10 @@
 
 #ifndef HTTP_BODY_MAX
 /* Max JSON body size for PUT /api/config (draft merge upload).
- * Keep small to protect RAM and avoid long blocking RX.
+ * Увеличено до 8192 для поддержки конфигураций на 16 дверей (MASTER + SLAVE).
+ * Конфигурация на 16 дверей может занимать ~2500-3000 байт JSON.
  */
-#define HTTP_BODY_MAX 2048
+#define HTTP_BODY_MAX 8192
 #endif
 
 static int s_listen_fd = -1;
@@ -393,8 +394,18 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     (void)lwip_ioctl(cfd, FIONBIO, &flags); /* non-blocking mode */
 
     struct timeval tv_timeout;
-    tv_timeout.tv_sec = 0;
-    tv_timeout.tv_usec = 200000; /* 200ms таймаут вместо 2 секунд */
+    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: увеличен таймаут сокета для поддержки больших конфигураций
+     * 
+     * Проблема: при конфигурации на 12+ дверей JSON может быть >3000 байт.
+     * Таймаут 200ms может быть слишком коротким для чтения больших запросов,
+     * особенно при медленной сети или задержках.
+     * 
+     * Решение: увеличен таймаут до 2 секунд для поддержки больших запросов.
+     * Это не блокирует задачу, так как мы используем select с меньшими таймаутами
+     * для проверки готовности сокета.
+     */
+    tv_timeout.tv_sec = 2;
+    tv_timeout.tv_usec = 0; /* 2 секунды таймаут для больших запросов */
     (void)lwip_setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv_timeout, sizeof(tv_timeout));
     (void)lwip_setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv_timeout, sizeof(tv_timeout));
 
@@ -575,20 +586,92 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             memcpy(req_body, body_start, (size_t)copied);
         }
 
+        /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: улучшенное чтение тела запроса для больших конфигураций
+         * 
+         * Проблема: при конфигурации на 12+ дверей JSON может быть >3000 байт.
+         * Чтение по 256 байт за раз с таймаутом 200ms может не успеть, особенно
+         * при медленной сети или задержках, что приводит к ошибке "Bad Body".
+         * 
+         * Решение:
+         * 1. Проверяем готовность сокета через select перед каждым recv
+         * 2. Увеличиваем таймаут select для больших запросов
+         * 3. Добавляем повторные попытки при временных ошибках
+         * 4. Увеличиваем размер чанка для более эффективного чтения
+         */
+        int recv_attempts = 0;
+        const int max_recv_attempts = 200; /* больше попыток для больших запросов */
+        const uint32_t recv_start_ms = HAL_GetTick();
+        const uint32_t recv_timeout_ms = 30000U; /* 30 секунд общий таймаут */
+        
         while (copied < content_len) {
+            /* Проверяем общий таймаут */
+            if ((HAL_GetTick() - recv_start_ms) > recv_timeout_ms) {
+                AppLog("HTTP: body recv timeout (copied=%d/%d)", copied, content_len);
+                break;
+            }
+            
+            /* Проверяем готовность сокета к чтению через select */
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(cfd, &rfds);
+            struct timeval tv_recv;
+            tv_recv.tv_sec = 0;
+            tv_recv.tv_usec = 500000; /* 500ms таймаут (увеличен для больших запросов) */
+            int sel_recv = lwip_select(cfd + 1, &rfds, NULL, NULL, &tv_recv);
+            
+            if (sel_recv <= 0) {
+                recv_attempts++;
+                if (recv_attempts >= max_recv_attempts) {
+                    AppLog("HTTP: body recv max attempts reached (copied=%d/%d)", copied, content_len);
+                    break;
+                }
+                /* Небольшая задержка перед повторной попыткой */
+                osDelay(10);
+                continue;
+            }
+            
+            /* Сокет готов - читаем данные */
+            recv_attempts = 0; /* Сбрасываем счетчик при успешной готовности */
             const int need = content_len - copied;
-            const int chunk = (need > 256) ? 256 : need;
+            const int chunk = (need > 512) ? 512 : need; /* Увеличен размер чанка до 512 байт */
             int rr = (int)lwip_recv(cfd, &req_body[copied], (size_t)chunk, 0);
-            if (rr <= 0) break;
-            copied += rr;
+            
+            if (rr > 0) {
+                copied += rr;
+            } else if (rr == 0) {
+                /* Соединение закрыто */
+                AppLog("HTTP: body recv connection closed (copied=%d/%d)", copied, content_len);
+                break;
+            } else {
+                /* Ошибка чтения - проверяем errno */
+                int err = errno;
+                if (err == EAGAIN || err == EWOULDBLOCK) {
+                    /* Временная ошибка - продолжаем попытки */
+                    recv_attempts++;
+                    if (recv_attempts < max_recv_attempts) {
+                        osDelay(10);
+                        continue;
+                    }
+                }
+                AppLog("HTTP: body recv error errno=%d (copied=%d/%d)", err, copied, content_len);
+                break;
+            }
         }
+        
         if (copied != content_len) {
+            AppLog("HTTP: body incomplete (copied=%d/%d, attempts=%d)", copied, content_len, recv_attempts);
             http_send_simple(cfd, 400, "text/plain", "Bad Body\n");
             (void)lwip_close(cfd);
             return;
         }
+        
+        AppLog("HTTP: body received OK (%d bytes)", copied);
 
-        char resp[768];
+        /* Буфер ответа увеличен до 1024 байт для поддержки больших ответов
+         * при загрузке конфигураций с большим количеством дверей и зависимостей.
+         * Ответы могут содержать детальные сообщения об ошибках валидации.
+         */
+        char resp[1024];
         const int api_code = HttpApi_HandlePut(path, req_body, (size_t)content_len, resp, sizeof(resp));
         if (api_code == 200) {
             http_send_simple(cfd, 200, "application/json", resp);
@@ -611,6 +694,139 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             osDelay(200);
             HAL_NVIC_SystemReset();
         }
+        return;
+    }
+
+    if (strcmp(method, "POST") == 0) {
+        /* POST запросы (аутентификация) */
+        printf("HTTP_SERVER: POST %s\r\n", path);
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_REQUESTS
+        AppLog("HTTP: POST %s", path);
+#endif
+        if (!hdr_start_orig) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: POST Bad Headers - no header start found");
+#endif
+            http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
+            (void)lwip_close(cfd);
+            return;
+        }
+        
+        const char *hdr_start = hdr_start_orig;
+        const char *hdr_end = strstr(hdr_start, "\r\n\r\n");
+        int hdr_end_len = 4;
+        if (!hdr_end) {
+            hdr_end = strstr(hdr_start, "\n\n");
+            hdr_end_len = 2;
+        }
+        if (!hdr_end) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: POST Bad Headers - cannot find header end");
+#endif
+            http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
+            (void)lwip_close(cfd);
+            return;
+        }
+
+        const int content_len = header_find_content_length(hdr_start);
+        if (content_len < 0 || content_len > HTTP_BODY_MAX) {
+            http_send_simple(cfd, 411, "text/plain", "Length Required\n");
+            (void)lwip_close(cfd);
+            return;
+        }
+
+        /* Читаем body (аналогично PUT) */
+        char req_body[HTTP_BODY_MAX + 1];
+        memset(req_body, 0, sizeof(req_body));
+        
+        const char *body_start = hdr_end + hdr_end_len;
+        int body_in_rx = (int)(r - (body_start - rx));
+        
+        if (body_in_rx > 0) {
+            int copy_len = (body_in_rx < content_len) ? body_in_rx : content_len;
+            memcpy(req_body, body_start, copy_len);
+            if (copy_len < content_len) {
+                /* Дочитываем остаток body */
+                int copied = copy_len;
+                int recv_attempts = 0;
+                const int max_recv_attempts = 200;
+                
+                while (copied < content_len && recv_attempts < max_recv_attempts) {
+                    fd_set rfds_post;
+                    FD_ZERO(&rfds_post);
+                    FD_SET(cfd, &rfds_post);
+                    struct timeval tv_post;
+                    tv_post.tv_sec = 0;
+                    tv_post.tv_usec = 500000; /* 500ms */
+                    int sel_post = lwip_select(cfd + 1, &rfds_post, NULL, NULL, &tv_post);
+                    if (sel_post <= 0) break;
+                    
+                    int rr = (int)lwip_recv(cfd, req_body + copied, content_len - copied, 0);
+                    if (rr > 0) {
+                        copied += rr;
+                    } else if (rr == 0) {
+                        break;
+                    } else {
+                        int err = errno;
+                        if (err == EAGAIN || err == EWOULDBLOCK) {
+                            recv_attempts++;
+                            osDelay(10);
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+        } else {
+            /* Body полностью в отдельном запросе */
+            int copied = 0;
+            int recv_attempts = 0;
+            const int max_recv_attempts = 200;
+            
+            while (copied < content_len && recv_attempts < max_recv_attempts) {
+                fd_set rfds_post;
+                FD_ZERO(&rfds_post);
+                FD_SET(cfd, &rfds_post);
+                struct timeval tv_post;
+                tv_post.tv_sec = 0;
+                tv_post.tv_usec = 500000; /* 500ms */
+                int sel_post = lwip_select(cfd + 1, &rfds_post, NULL, NULL, &tv_post);
+                if (sel_post <= 0) break;
+                
+                int rr = (int)lwip_recv(cfd, req_body + copied, content_len - copied, 0);
+                if (rr > 0) {
+                    copied += rr;
+                } else if (rr == 0) {
+                    break;
+                } else {
+                    int err = errno;
+                    if (err == EAGAIN || err == EWOULDBLOCK) {
+                        recv_attempts++;
+                        osDelay(10);
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        req_body[content_len] = 0; /* null-terminate */
+        
+        char resp[512];
+        const int api_code = HttpApi_HandlePost(path, req_body, (size_t)content_len, resp, sizeof(resp));
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
+        AppLog("HTTP: POST response code=%d path=%s", api_code, path);
+#endif
+        if (api_code == 200) {
+            http_send_simple(cfd, 200, "application/json", resp);
+        } else if (api_code == 401) {
+            http_send_simple(cfd, 401, "application/json", resp);
+        } else if (api_code == 404) {
+            http_send_simple(cfd, 404, "application/json", resp);
+        } else {
+            http_send_simple(cfd, api_code, "application/json", resp);
+        }
+        (void)lwip_close(cfd);
         return;
     }
 

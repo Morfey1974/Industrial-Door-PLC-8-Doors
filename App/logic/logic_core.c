@@ -10,6 +10,11 @@
 /* ЭТАП 5.4/6.5: выдача команд на удалённые двери через CAN-task (MASTER) */
 #include "system/can_task.h"
 
+/* Для проверки роли системы (MASTER/SLAVE) */
+#include "system/system_node.h"
+
+#include <stdio.h>
+
 /* Активный конфиг (загружается на старте в main.c через ConfigService_InitOnBoot).
  * Используем его как источник зависимостей по Этапу 5.1.
  *
@@ -24,7 +29,15 @@ extern project_config_t g_project_cfg;
 
 static void recompute_lock_required(logic_core_t *lc)
 {
-    /* Пересчитываем lockRequired как OR по deps[src] для всех src с depActive=1 */
+    /* Пересчитываем lockRequired как OR по deps[src] для всех src с depActive=1
+     * ВАЖНО: НЕ добавляем физически открытые двери в lockRequired.
+     * Это предотвращает конфликт между командой LOCK от MASTER и Safety Layer на SLAVE,
+     * который принудительно разблокирует открытые двери.
+     * 
+     * Для локальных дверей MASTER это уже обрабатывается в apply_to_master_local_doors,
+     * но для удаленных дверей (SLAVE) нужно исключить их здесь, чтобы не отправлять
+     * команду LOCK через CAN для открытых дверей.
+     */
     DoorBitset_Clear(&lc->lockRequired);
 
     for (uint8_t src = 1; src <= APP_MAX_DOORS; src++)
@@ -33,7 +46,77 @@ static void recompute_lock_required(logic_core_t *lc)
         {
             const door_bitset_t *targets = LogicDeps_GetTargets(&lc->deps, src);
             if (targets)
-                DoorBitset_Or(&lc->lockRequired, targets);
+            {
+                /* Добавляем только закрытые целевые двери */
+                for (uint8_t target = 1; target <= APP_MAX_DOORS; target++)
+                {
+                    if (DoorBitset_Test(targets, target))
+                    {
+                        /* Добавляем в lockRequired только если дверь НЕ открыта */
+                        if (!lc->physOpen[target - 1U])
+                        {
+                            DoorBitset_Set(&lc->lockRequired, target, 1U);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /* Также блокируем целевые двери, которые ждут разблокировки (post-close delay)
+     * НО только если они закрыты. Если дверь открыта, она все равно будет разблокирована
+     * Safety Layer, и мы начнем блокировку после её закрытия.
+     */
+    for (uint8_t target = 1; target <= APP_MAX_DOORS; target++)
+    {
+        if (lc->targetUnlockPending[target - 1U])
+        {
+            /* Добавляем в lockRequired только если дверь НЕ открыта */
+            if (!lc->physOpen[target - 1U])
+            {
+                DoorBitset_Set(&lc->lockRequired, target, 1U);
+            }
+        }
+    }
+
+    /* 3) Apply door type: NC doors should be locked by default when closed
+     * According to plan section 3.9.2: NC doors should be locked in safe state
+     * ВАЖНО: Применяем только для локальных дверей MASTER, чтобы избежать проблем
+     * с синхронизацией состояния удаленных дверей на SLAVE.
+     * Для удаленных дверей (SLAVE) команды LOCK будут отправляться только если
+     * они действительно закрыты (проверка physOpen в send_master_command_to_node).
+     */
+    extern project_config_t g_project_cfg;
+    for (uint8_t door = 1; door <= APP_MAX_DOORS; door++)
+    {
+        /* Check if door is already in lockRequired */
+        if (DoorBitset_Test(&lc->lockRequired, door))
+            continue;
+        
+        /* Check if door is open - NC doors should not be locked if open */
+        if (lc->physOpen[door - 1U])
+            continue;
+        
+        /* Find door in configuration to check its type and nodeId */
+        for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
+        {
+            const cfg_door_t *d = &g_project_cfg.doors[i];
+            uint8_t gid = Config_MakeGlobalDoorId(d->nodeId, d->localDoor);
+            if (gid == door && d->type == DOOR_TYPE_NC)
+            {
+                /* Применяем NC логику только для локальных дверей MASTER (nodeId=1)
+                 * Для удаленных дверей (SLAVE) не добавляем в lockRequired здесь,
+                 * чтобы избежать проблем с синхронизацией состояния.
+                 * Команды для SLAVE будут формироваться в send_master_command_to_node
+                 * на основе актуального physOpen.
+                 */
+                if (d->nodeId == 1U)
+                {
+                    /* NC door on MASTER is closed and not in lockRequired - add it */
+                    DoorBitset_Set(&lc->lockRequired, door, 1U);
+                }
+                break;
+            }
         }
     }
 }
@@ -95,6 +178,8 @@ void LogicCore_Init(logic_core_t *lc)
         lc->physOpen[i]    = 0U;
         lc->depActive[i]   = 0U;
         lc->closePending[i]= 0U;
+        lc->targetUnlockPending[i] = 0U;
+        lc->targetUnlockStartMs[i] = 0U;
     }
 
     DoorBitset_Clear(&lc->lockRequired);
@@ -126,17 +211,85 @@ void LogicCore_Init(logic_core_t *lc)
     }
 }
 
+/* Проверить таймауты целевых дверей и разблокировать те, у которых таймаут истек */
+static void check_target_unlock_timeouts(logic_core_t *lc)
+{
+    extern uint32_t HAL_GetTick(void);
+    uint32_t now = HAL_GetTick();
+    uint8_t anyChanged = 0U;
+
+    for (uint8_t target = 1; target <= APP_MAX_DOORS; target++)
+    {
+        if (lc->targetUnlockPending[target - 1U])
+        {
+            /* Получаем post-close таймаут для целевой двери по globalDoorId */
+            /* Используем g_project_cfg.postCloseTimeoutMs[globalDoorId - 1] для всех дверей */
+            uint32_t timeout = 0U;
+            if (target >= 1U && target <= CFG_MAX_DOORS)
+            {
+                timeout = g_project_cfg.postCloseTimeoutMs[target - 1U];
+            }
+            
+            if (timeout == 0U)
+            {
+                /* Таймаут = 0, разблокируем сразу */
+                lc->targetUnlockPending[target - 1U] = 0U;
+                lc->targetUnlockStartMs[target - 1U] = 0U;
+                anyChanged = 1U;
+            }
+            else
+            {
+                /* Проверяем, что таймаут был инициализирован */
+                if (lc->targetUnlockStartMs[target - 1U] == 0U)
+                {
+                    /* Таймаут не был инициализирован - разблокируем сразу */
+                    lc->targetUnlockPending[target - 1U] = 0U;
+                    anyChanged = 1U;
+                }
+                else
+                {
+                    uint32_t elapsed = now - lc->targetUnlockStartMs[target - 1U];
+                    if (elapsed >= timeout)
+                    {
+                        /* Таймаут истек, разблокируем */
+                        lc->targetUnlockPending[target - 1U] = 0U;
+                        lc->targetUnlockStartMs[target - 1U] = 0U;
+                        anyChanged = 1U;
+                    }
+                }
+            }
+        }
+    }
+
+    if (anyChanged)
+    {
+        recompute_lock_required(lc);
+        apply_to_master_local_doors(lc);
+    }
+}
+
 void LogicCore_RecomputeAndApply(logic_core_t *lc)
 {
     if (!lc) return;
+
+    /* Сначала проверяем таймауты целевых дверей */
+    check_target_unlock_timeouts(lc);
 
     recompute_lock_required(lc);
 
     /* ЭТАП 5.4: выдача команд
      * Сейчас — только локальные двери Master (nodeId=1).
      * Удалённые двери будут раздаваться по CAN на этапе 6.
+     * 
+     * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: apply_to_master_local_doors должна вызываться
+     * ТОЛЬКО на MASTER, а не на SLAVE. На SLAVE все команды должны приходить
+     * от MASTER через CAN, а не от локальной логики. Это предотвращает конфликт
+     * между локальными командами LOCK на SLAVE и командами UNLOCK от MASTER.
      */
-    apply_to_master_local_doors(lc);
+    if (System_GetRole() == APP_ROLE_MASTER)
+    {
+        apply_to_master_local_doors(lc);
+    }
 
     /* ============================================================
      * ЭТАП 5.4: локальные и удалённые двери
@@ -225,6 +378,23 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt)
             /* Если была стадия “close pending”, то повторное OPEN её отменяет */
             lc->closePending[gid - 1U] = 0U;
 
+            /* Если источник снова открывается, сбрасываем таймауты разблокировки целевых дверей */
+            const door_bitset_t *targets = LogicDeps_GetTargets(&lc->deps, gid);
+            if (targets)
+            {
+                for (uint8_t target = 1; target <= APP_MAX_DOORS; target++)
+                {
+                    if (DoorBitset_Test(targets, target))
+                    {
+                        if (lc->targetUnlockPending[target - 1U])
+                        {
+                            lc->targetUnlockPending[target - 1U] = 0U;
+                            lc->targetUnlockStartMs[target - 1U] = 0U;
+                        }
+                    }
+                }
+            }
+
             LogicCore_RecomputeAndApply(lc);
             break;
 
@@ -253,11 +423,43 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt)
              * ============================================================ */
             if (lc->depActive[gid - 1U] != 0U)
             {
-                lc->closePending[gid - 1U] = 1U;
+                /* Источник был открыт и блокировал целевые двери */
+                /* Снимаем depActive источника сразу */
+                lc->depActive[gid - 1U] = 0U;
+                lc->closePending[gid - 1U] = 0U;
 
-                /* Пересчёт НЕ делаем — иначе зависимость снимется сразу (против 2.4.6).
-                 * Пересчёт произойдёт при EVT_DOOR_POST_CLOSE_READY.
-                 */
+                /* Для каждой целевой двери запускаем отсчет её post-close таймаута */
+                const door_bitset_t *targets = LogicDeps_GetTargets(&lc->deps, gid);
+                if (targets)
+                {
+                    extern uint32_t HAL_GetTick(void);
+                    uint32_t now = HAL_GetTick();
+                    
+                    for (uint8_t target = 1; target <= APP_MAX_DOORS; target++)
+                    {
+                        if (DoorBitset_Test(targets, target))
+                        {
+                            /* Получаем post-close таймаут для целевой двери по globalDoorId
+                             * Работает для всех дверей (локальных и удаленных)
+                             */
+                            uint32_t timeout = 0U;
+                            if (target >= 1U && target <= CFG_MAX_DOORS)
+                            {
+                                timeout = g_project_cfg.postCloseTimeoutMs[target - 1U];
+                            }
+                            
+                            if (timeout > 0U)
+                            {
+                                /* Запускаем отсчет post-close таймаута для целевой двери */
+                                lc->targetUnlockPending[target - 1U] = 1U;
+                                lc->targetUnlockStartMs[target - 1U] = now;
+                            }
+                        }
+                    }
+                }
+
+                /* Пересчитываем и применяем изменения */
+                LogicCore_RecomputeAndApply(lc);
             }
             else
             {
@@ -267,14 +469,10 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt)
             break;
 
         case EVT_DOOR_POST_CLOSE_READY:
-            /* Дверь была закрыта достаточно долго -> можно снять эффект её зависимостей */
-            if (lc->closePending[gid - 1U])
-            {
-                lc->closePending[gid - 1U] = 0U;
-                lc->depActive[gid - 1U]    = 0U;
-
-                LogicCore_RecomputeAndApply(lc);
-            }
+            /* Это событие теперь не используется для снятия зависимостей источника,
+             * так как мы снимаем depActive сразу при EVT_DOOR_CLOSE.
+             * Оставляем обработку для совместимости.
+             */
             break;
 
         default:

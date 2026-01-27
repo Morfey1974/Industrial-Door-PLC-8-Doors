@@ -14,7 +14,7 @@ import Button from '../../../components/common/Button';
 import { calculateGlobalDoorId, validateDoor } from '../../../utils/configValidator';
 import DoorEditModal from './DoorEditModal';
 
-const DoorsTab = ({ config, updateConfig, loading }) => {
+const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
   const [editingDoor, setEditingDoor] = useState(null);
   const [filterNodeId, setFilterNodeId] = useState('all');
   
@@ -47,7 +47,12 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
     }
     
     if (!found) {
-      alert('Достигнут максимум дверей (80). Удалите существующие двери перед добавлением новых.');
+      // Используем showConfirm для показа сообщения (как alert)
+      if (showConfirm) {
+        showConfirm('Достигнут максимум дверей (80). Удалите существующие двери перед добавлением новых.', 'Ошибка');
+      } else {
+        alert('Достигнут максимум дверей (80). Удалите существующие двери перед добавлением новых.');
+      }
       return;
     }
     
@@ -57,8 +62,8 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
       nodeId: newNodeId,
       localDoor: newLocalDoor,
       globalDoorId: calculateGlobalDoorId(newNodeId, newLocalDoor),
-      type: 'NC',
-      typeCode: 0,
+      type: 'NO',
+      typeCode: 1,
       comment: '',
     };
     
@@ -127,9 +132,16 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
   };
   
   // Удаление двери
-  const handleDeleteDoor = (door) => {
-    if (!window.confirm(`Удалить дверь ID-${door.nodeId}-${door.localDoor}?`)) {
-      return;
+  const handleDeleteDoor = async (door) => {
+    if (!showConfirm) {
+      if (!window.confirm(`Удалить дверь ID-${door.nodeId}-${door.localDoor}?`)) {
+        return;
+      }
+    } else {
+      const confirmed = await showConfirm(`Удалить дверь ID-${door.nodeId}-${door.localDoor}?`, 'Удаление двери');
+      if (!confirmed) {
+        return;
+      }
     }
     
     // Проверяем, нет ли зависимостей
@@ -139,8 +151,15 @@ const DoorsTab = ({ config, updateConfig, loading }) => {
     );
     
     if (hasDependencies) {
-      if (!window.confirm('У этой двери есть зависимости. Удалить их тоже?')) {
-        return;
+      if (!showConfirm) {
+        if (!window.confirm('У этой двери есть зависимости. Удалить их тоже?')) {
+          return;
+        }
+      } else {
+        const confirmedDeps = await showConfirm('У этой двери есть зависимости. Удалить их тоже?', 'Удаление зависимостей');
+        if (!confirmedDeps) {
+          return;
+        }
       }
       // Удаляем зависимости
       const updatedEdges = (config.edges || []).filter(

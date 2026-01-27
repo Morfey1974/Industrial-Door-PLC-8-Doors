@@ -12,7 +12,8 @@
  */
 
 #ifndef APP_NODE_ID
-#define APP_NODE_ID 1
+#define APP_NODE_ID 1 /*Оставить для платы MASTER*/
+//#define APP_NODE_ID 2 /*Оставить для платы SLAVE*/
 #endif
 
 uint8_t System_GetNodeId(void)

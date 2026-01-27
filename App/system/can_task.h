@@ -22,6 +22,14 @@ void CanTask_Run(void const *argument);
  * ========================================================= */
 void CanTask_MasterSetLockRequired(const door_bitset_t *lockRequired);
 
+/* =========================================================
+ * Передача параметров конфигурации от MASTER к SLAVE
+ *
+ * Отправляет openTimeoutMs всем онлайн SLAVE узлам через CAN SERVICE кадр.
+ * Вызывается после применения конфигурации на MASTER.
+ * ========================================================= */
+void CanTask_SendConfigParams(void);
+
 #ifdef __cplusplus
 }
 #endif

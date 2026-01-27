@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, AuthContext } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import Layout from './components/layout/Layout';
 import Header from './components/layout/Header';
@@ -21,8 +21,11 @@ import './styles/main.css';
 // Компонент для управления навигацией
 function AppContent() {
   try {
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Все хуки должны вызываться ДО любых условных возвратов
+    // Это правило React Hooks - хуки должны вызываться в одном и том же порядке на каждом рендере
     const navigate = useNavigate();
     const location = useLocation();
+    const { isAuthenticated, loading } = useContext(AuthContext);
 
     // Определяем активную вкладку на основе текущего пути
     const getActiveTab = () => {
@@ -45,6 +48,7 @@ function AppContent() {
       return 'doors';
     };
 
+    // ВСЕ хуки вызываются ДО условных возвратов
     const [activeTab, setActiveTab] = useState(getActiveTab());
     const [activeSidebarItem, setActiveSidebarItem] = useState(getActiveSidebarItem());
 
@@ -53,6 +57,27 @@ function AppContent() {
       setActiveTab(getActiveTab());
       setActiveSidebarItem(getActiveSidebarItem());
     }, [location.pathname]);
+
+    // Показываем загрузку при проверке аутентификации
+    if (loading) {
+      return (
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh',
+          flexDirection: 'column',
+          gap: '20px'
+        }}>
+          <div>Загрузка...</div>
+        </div>
+      );
+    }
+
+    // Если не аутентифицирован, показываем страницу входа
+    if (!isAuthenticated) {
+      return <Login />;
+    }
 
     const tabs = [
       { id: 'monitoring', label: 'Мониторинг' },
@@ -97,35 +122,37 @@ function AppContent() {
     };
 
     return (
-      <Layout>
-        <Header />
-        <div className="layout-main">
-          <Sidebar 
-            items={sidebarItems[activeTab] || sidebarItems.monitoring} 
-            activeItem={activeSidebarItem}
-            onItemClick={handleSidebarItemClick}
-          />
-          <div className="layout-content">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/monitoring/doors" element={<Doors />} />
-              <Route path="/monitoring/events" element={<Events />} />
-              <Route path="/monitoring/alarms" element={<Alarms />} />
-              <Route path="/monitoring/statistics" element={<Statistics />} />
-              <Route path="/configuration/doors" element={<DoorsConfig />} />
-              <Route path="/configuration/network" element={<NetworkConfig />} />
-              <Route path="/configuration/system" element={<SystemParams />} />
-              <Route path="/settings/profile" element={<Profile />} />
-            </Routes>
+      <AppProvider>
+        <Layout>
+          <Header />
+          <div className="layout-main">
+            <Sidebar 
+              items={sidebarItems[activeTab] || sidebarItems.monitoring} 
+              activeItem={activeSidebarItem}
+              onItemClick={handleSidebarItemClick}
+            />
+            <div className="layout-content">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/monitoring/doors" element={<Doors />} />
+                <Route path="/monitoring/events" element={<Events />} />
+                <Route path="/monitoring/alarms" element={<Alarms />} />
+                <Route path="/monitoring/statistics" element={<Statistics />} />
+                <Route path="/configuration/doors" element={<DoorsConfig />} />
+                <Route path="/configuration/network" element={<NetworkConfig />} />
+                <Route path="/configuration/system" element={<SystemParams />} />
+                <Route path="/settings/profile" element={<Profile />} />
+              </Routes>
+            </div>
           </div>
-        </div>
-        <Tabs 
-          tabs={tabs}
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-        />
-      </Layout>
+          <Tabs 
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+          />
+        </Layout>
+      </AppProvider>
     );
   } catch (error) {
     console.error('Ошибка в AppContent:', error);
@@ -141,30 +168,17 @@ function AppContent() {
 
 function App() {
   try {
-    // TODO: Добавить проверку аутентификации после этапа 9.5
-    const isAuthenticated = true; // Временно всегда true
-
-    if (!isAuthenticated) {
-      return (
-        <AuthProvider>
-          <Login />
-        </AuthProvider>
-      );
-    }
-
     return (
-      <AuthProvider>
-        <AppProvider>
-          <Router
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true,
-            }}
-          >
-            <AppContent />
-          </Router>
-        </AppProvider>
-      </AuthProvider>
+      <Router
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </Router>
     );
   } catch (error) {
     console.error('Ошибка в App:', error);

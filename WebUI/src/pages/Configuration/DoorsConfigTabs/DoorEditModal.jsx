@@ -12,7 +12,7 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
     drawingId: '',
     nodeId: 1,
     localDoor: 1,
-    type: 'NC',
+    type: 'NO',
     comment: '',
   });
   
@@ -26,7 +26,7 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
         drawingId: door.drawingId || '',
         nodeId: door.nodeId || 1,
         localDoor: door.localDoor || 1,
-        type: door.type || 'NC',
+        type: door.type || 'NO',
         comment: door.comment || '',
       });
     }

@@ -2,7 +2,10 @@
  * Header компонент - верхний хедер приложения
  */
 
+import { useContext } from 'react';
 import { Link } from 'react-router-dom';
+import { AuthContext } from '../../context/AuthContext';
+import Button from '../common/Button';
 
 let logoImage;
 try {
@@ -13,6 +16,12 @@ try {
 }
 
 const Header = () => {
+  const { user, logout } = useContext(AuthContext);
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
     <header className="header">
       <div className="header-left">
@@ -32,8 +41,21 @@ const Header = () => {
         </Link>
       </div>
       <div className="header-right">
-        <div className="user-profile">
-          <span className="user-name">Пользователь</span>
+        <div className="user-profile" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <span className="user-name" style={{ fontSize: '14px' }}>
+            {user ? user.username : 'Пользователь'}
+            {user && user.role === 'super_admin' && (
+              <span style={{ marginLeft: '8px', fontSize: '12px', opacity: 0.8 }}>(Super Admin)</span>
+            )}
+          </span>
+          <Button 
+            variant="secondary" 
+            size="small"
+            onClick={handleLogout}
+            style={{ padding: '5px 15px', fontSize: '12px' }}
+          >
+            Выход
+          </Button>
         </div>
       </div>
     </header>

@@ -30,6 +30,16 @@ int HttpApi_HandlePut(const char *path,
                       const char *body, size_t body_len,
                       char *out_body, size_t out_sz);
 
+/* POST is used for authentication:
+ *  - POST /api/auth/login
+ *
+ * On success: returns 200 and JSON body {"ok":1,"role":"super_admin","token":"..."}
+ * On error: returns 401 and JSON body {"ok":0,"error":"Invalid credentials"}
+ */
+int HttpApi_HandlePost(const char *path,
+                       const char *body, size_t body_len,
+                       char *out_body, size_t out_sz);
+
 /* После успешной записи конфигурации (PUT /api/config или /api/config/full)
  * API выставляет флаг. HTTP‑сервер после отправки 200 проверяет его и при
  * необходимости выполняет HAL_NVIC_SystemReset. Сброс очищает флаг. */
