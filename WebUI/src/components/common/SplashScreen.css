@@ -1,0 +1,314 @@
+/**
+ * Стили для компонента SplashScreen
+ */
+
+.splash-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  overflow: hidden;
+}
+
+/* Контейнер для вихря */
+.splash-whirlwind {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Частицы вихря */
+.whirlwind-particles {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.particle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: particle-spin 3s linear infinite;
+}
+
+.particle-1 {
+  top: 10%;
+  left: 50%;
+  background: #3A6577;
+  animation-duration: 2s;
+  animation-delay: 0s;
+}
+
+.particle-2 {
+  top: 50%;
+  right: 10%;
+  background: #E6332A;
+  animation-duration: 2.2s;
+  animation-delay: 0.3s;
+}
+
+.particle-3 {
+  bottom: 10%;
+  left: 50%;
+  background: #3A6577;
+  animation-duration: 2.4s;
+  animation-delay: 0.6s;
+}
+
+.particle-4 {
+  top: 50%;
+  left: 10%;
+  background: #E6332A;
+  animation-duration: 2.1s;
+  animation-delay: 0.9s;
+}
+
+.particle-5 {
+  top: 20%;
+  right: 20%;
+  background: #3A6577;
+  animation-duration: 2.3s;
+  animation-delay: 0.2s;
+}
+
+.particle-6 {
+  bottom: 20%;
+  left: 20%;
+  background: #E6332A;
+  animation-duration: 2.5s;
+  animation-delay: 0.5s;
+}
+
+@keyframes particle-spin {
+  0% {
+    transform: rotate(0deg) translateX(150px) rotate(0deg);
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(360deg) translateX(150px) rotate(-360deg);
+    opacity: 0.8;
+  }
+}
+
+/* Кольца вихря */
+.whirlwind-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 6px solid transparent;
+  animation: whirlwind-spin 2s linear infinite;
+  box-shadow: 0 0 20px rgba(58, 101, 119, 0.3);
+}
+
+.whirlwind-ring-1 {
+  width: 180px;
+  height: 180px;
+  border-top-color: #3A6577;
+  border-right-color: #E6332A;
+  border-width: 6px;
+  animation-duration: 1.2s;
+  animation-timing-function: linear;
+}
+
+.whirlwind-ring-2 {
+  width: 240px;
+  height: 240px;
+  border-bottom-color: #3A6577;
+  border-left-color: #E6332A;
+  border-width: 8px;
+  animation-duration: 1.5s;
+  animation-direction: reverse;
+}
+
+.whirlwind-ring-3 {
+  width: 300px;
+  height: 300px;
+  border-top-color: #E6332A;
+  border-right-color: #3A6577;
+  border-width: 10px;
+  animation-duration: 1.8s;
+}
+
+.whirlwind-ring-4 {
+  width: 360px;
+  height: 360px;
+  border-bottom-color: #E6332A;
+  border-left-color: #3A6577;
+  border-width: 12px;
+  animation-duration: 2.1s;
+  animation-direction: reverse;
+}
+
+/* Анимация вращения вихря */
+@keyframes whirlwind-spin {
+  0% {
+    transform: rotate(0deg) scale(0.7);
+    opacity: 0.6;
+  }
+  50% {
+    transform: rotate(180deg) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(360deg) scale(0.7);
+    opacity: 0.6;
+  }
+}
+
+/* Контейнер логотипа */
+.splash-logo-container {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+.splash-logo {
+  height: 400px;
+  width: auto;
+  object-fit: contain;
+}
+
+.splash-logo-text-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.splash-logo-text {
+  font-size: 48px;
+  font-weight: 700;
+  color: #3A6577;
+  letter-spacing: 2px;
+}
+
+.splash-logo-subtitle {
+  font-size: 14px;
+  color: #666;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* Этап 1: Вихрь закручивается */
+.splash-screen.whirlwind .splash-whirlwind {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.splash-screen.whirlwind .splash-logo-container {
+  opacity: 0;
+  transform: scale(0.3);
+}
+
+/* Этап 2: Логотип появляется, вихрь улетает */
+.splash-screen.logo-appear .splash-whirlwind {
+  animation: whirlwind-fly-away 1.5s ease-out forwards;
+  opacity: 1;
+}
+
+.splash-screen.logo-appear .particle {
+  animation: particle-fly-away 1.5s ease-out forwards;
+}
+
+@keyframes particle-fly-away {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0) translateX(300px);
+  }
+}
+
+.splash-screen.logo-appear .splash-logo-container {
+  animation: logo-appear 1.5s ease-out forwards;
+}
+
+@keyframes whirlwind-fly-away {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(2) rotate(360deg);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(4) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+@keyframes logo-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Этап 3: Логотип стоит */
+.splash-screen.logo-hold .splash-whirlwind {
+  display: none;
+}
+
+.splash-screen.logo-hold .splash-logo-container {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Этап 4: Логотип тает и уплывает вдаль */
+.splash-screen.logo-fade .splash-logo-container {
+  animation: logo-fade-out 2s ease-in forwards;
+}
+
+@keyframes logo-fade-out {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.5) translateY(-50px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.2) translateY(-150px);
+  }
+}
+
+/* Этап 5: Заставка скрыта */
+.splash-screen.complete {
+  animation: splash-fade-out 0.5s ease-out forwards;
+}
+
+@keyframes splash-fade-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}

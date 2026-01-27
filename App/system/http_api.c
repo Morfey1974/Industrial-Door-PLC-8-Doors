@@ -1235,6 +1235,103 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
 }
 
 /* =========================================================
+ * POST /api/auth/forgot-password - запрос токена восстановления пароля
+ * Только для Super Admin (для генерации токена)
+ * ========================================================= */
+static int post_auth_forgot_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* Парсим username и currentUser (для проверки прав) */
+    char username[32];
+    char current_user[32];
+    
+    if (!Json_GetString(body, "username", username, sizeof(username))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"username required\"}");
+        return 400;
+    }
+    
+    /* Проверка прав доступа - только Super Admin может генерировать токены */
+    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
+        return 403;
+    }
+    
+    if (!check_super_admin_access(current_user)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    
+    /* Генерируем токен восстановления */
+    char token[64];
+    if (!UsersService_GenerateResetToken(username, token, sizeof(token))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to generate reset token\"}");
+        return 500;
+    }
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"token\":\"%s\",\"message\":\"Reset token generated. Token expires in 15 minutes.\"}", token);
+    AppLog("AUTH: reset token generated for %s by %s", username, current_user);
+    return 200;
+}
+
+/* =========================================================
+ * POST /api/auth/reset-password - сброс пароля по токену
+ * Доступно всем (кто имеет валидный токен)
+ * ========================================================= */
+static int post_auth_reset_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    
+    if (!body || body_len == 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    
+    /* Парсим token и newPassword */
+    char token[64];
+    char newPassword[64];
+    
+    if (!Json_GetString(body, "token", token, sizeof(token))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"token required\"}");
+        return 400;
+    }
+    
+    if (!Json_GetString(body, "newPassword", newPassword, sizeof(newPassword))) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"newPassword required\"}");
+        return 400;
+    }
+    
+    /* Валидация нового пароля */
+    size_t newPwdLen = strlen(newPassword);
+    if (newPwdLen < 8) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password must be at least 8 characters\"}");
+        return 400;
+    }
+    
+    if (newPwdLen > 64) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"New password too long\"}");
+        return 400;
+    }
+    
+    /* Сбрасываем пароль по токену */
+    if (!UsersService_ResetPasswordByToken(token, newPassword)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Invalid or expired token\"}");
+        return 400;
+    }
+    
+    (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"Password reset successfully\"}");
+    AppLog("AUTH: password reset via token");
+    return 200;
+}
+
+/* =========================================================
  * POST /api/users - создание пользователя
  * Только для Super Admin
  * ========================================================= */
@@ -1458,6 +1555,14 @@ int HttpApi_HandlePost(const char *path,
     
     if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
         return post_auth_change_password(body, body_len, out_body, out_sz);
+    }
+    
+    if (strcmp(path, "/api/auth/forgot-password") == 0 || strcmp(path, "/auth/forgot-password") == 0) {
+        return post_auth_forgot_password(body, body_len, out_body, out_sz);
+    }
+    
+    if (strcmp(path, "/api/auth/reset-password") == 0 || strcmp(path, "/auth/reset-password") == 0) {
+        return post_auth_reset_password(body, body_len, out_body, out_sz);
     }
     
     /* POST /api/users - создание пользователя (только Super Admin) */

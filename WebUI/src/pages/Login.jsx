@@ -7,12 +7,25 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
+import SplashScreen from '../components/common/SplashScreen';
+import ForgotPasswordModal from '../components/common/ForgotPasswordModal';
+import '../styles/layout.css';
+
+let logoImage;
+try {
+  logoImage = new URL('../assets/logo/Logo.png', import.meta.url).href;
+} catch (error) {
+  console.warn('Не удалось загрузить логотип:', error);
+  logoImage = null;
+}
 
 const Login = () => {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -35,13 +48,35 @@ const Login = () => {
     }
   };
 
+  const handleSplashComplete = () => {
+    setShowSplash(false);
+  };
+
   return (
     <div className="login-page">
-      <div className="login-container">
+      {showSplash && <SplashScreen onComplete={handleSplashComplete} />}
+      <ForgotPasswordModal 
+        isOpen={showForgotPasswordModal} 
+        onClose={() => setShowForgotPasswordModal(false)} 
+      />
+      <div 
+        className={`login-container ${showSplash ? 'login-container-hidden' : 'login-container-visible'}`}
+        style={{ 
+          pointerEvents: showSplash ? 'none' : 'auto'
+        }}
+      >
         <div className="login-header">
           <div className="logo">
-            <span className="logo-text">DCM</span>
-            <span className="logo-subtitle">DOORS CONTROL MAKING</span>
+            {logoImage && (
+              <img src={logoImage} alt="DCM Logo" className="logo-image" onError={(e) => {
+                console.error('Ошибка загрузки изображения логотипа');
+                e.target.style.display = 'none';
+              }} />
+            )}
+            <div className="logo-text-container">
+              <span className="logo-text">DCM</span>
+              <span className="logo-subtitle">DOORS CONTROL MAKING</span>
+            </div>
           </div>
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
@@ -79,7 +114,7 @@ const Login = () => {
             disabled={loading}
             showForgotPassword={true}
             onForgotPassword={() => {
-              alert('Обратитесь к администратору для восстановления пароля');
+              setShowForgotPasswordModal(true);
             }}
           />
           <Button 

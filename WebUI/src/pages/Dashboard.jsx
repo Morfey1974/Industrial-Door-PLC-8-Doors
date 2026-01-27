@@ -27,21 +27,21 @@ const Dashboard = () => {
     <div className="dashboard" style={{ position: 'relative' }}>
       <h1>Главная страница</h1>
       
-      {/* Состояние системы - в правом верхнем углу */}
+      {/* Состояние системы - в правом верхнем углу, в одну строчку */}
       {!stateLoading && !stateError && state && (
         <div style={{ 
           position: 'absolute',
           top: '0',
           right: '0',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          alignItems: 'flex-end',
+          flexDirection: 'row',
+          gap: '20px',
+          alignItems: 'center',
           padding: '10px',
-          minWidth: '150px'
+          flexWrap: 'wrap'
         }}>
           {/* Индикаторы Сеть и Link в виде кружков */}
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
             {/* Индикатор Сеть */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <div

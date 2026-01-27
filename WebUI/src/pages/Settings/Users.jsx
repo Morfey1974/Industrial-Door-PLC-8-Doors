@@ -267,7 +267,7 @@ const Users = () => {
           )}
           
           <div className="form-group">
-            <label>Имя пользователя *</label>
+            <label style={{ color: '#333' }}>Имя пользователя *</label>
             <input
               type="text"
               className="form-control"
@@ -291,7 +291,7 @@ const Users = () => {
           />
 
           <div className="form-group">
-            <label>Роль *</label>
+            <label style={{ color: '#333' }}>Роль *</label>
             <select
               className="form-control"
               value={formData.role}
@@ -338,7 +338,7 @@ const Users = () => {
           )}
           
           <div className="form-group">
-            <label>Имя пользователя</label>
+            <label style={{ color: '#333' }}>Имя пользователя</label>
             <input
               type="text"
               className="form-control"
@@ -358,12 +358,12 @@ const Users = () => {
             disabled={formLoading}
             showForgotPassword={false}
           />
-          <small className="form-help" style={{ display: 'block', marginTop: '-10px', marginBottom: '15px' }}>
+          <small className="form-help" style={{ display: 'block', marginTop: '-10px', marginBottom: '15px', color: '#333' }}>
             Минимум 8 символов. Оставьте пустым, чтобы не менять пароль.
           </small>
 
           <div className="form-group">
-            <label>Роль *</label>
+            <label style={{ color: '#333' }}>Роль *</label>
             <select
               className="form-control"
               value={formData.role}

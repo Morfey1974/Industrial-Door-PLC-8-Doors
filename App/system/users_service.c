@@ -244,5 +244,145 @@ void UsersService_UpdateLastLogin(const char *username)
     }
 }
 
+/* Структура для хранения токенов восстановления пароля */
+#define RESET_TOKEN_MAX_COUNT 10U
+#define RESET_TOKEN_LEN 32U
+#define RESET_TOKEN_EXPIRY_MS (15U * 60U * 1000U) /* 15 минут */
+
+typedef struct {
+    char token[RESET_TOKEN_LEN + 1];
+    char username[USERNAME_MAX_LEN];
+    uint32_t expiresAt; /* HAL_GetTick() + RESET_TOKEN_EXPIRY_MS */
+    uint8_t used; /* 1 = использован, 0 = активен */
+} reset_token_t;
+
+static reset_token_t g_reset_tokens[RESET_TOKEN_MAX_COUNT];
+static uint32_t g_reset_token_count = 0U;
+
+/* Генерация токена восстановления пароля */
+uint8_t UsersService_GenerateResetToken(const char *username, char *out_token, size_t token_size)
+{
+    if (!username || !out_token || token_size < RESET_TOKEN_LEN + 1 || !g_users_db_loaded)
+        return 0U;
+    
+    /* Проверяем, существует ли пользователь */
+    if (UsersService_FindUser(username) == NULL)
+        return 0U;
+    
+    /* Ищем свободный слот или перезаписываем старый токен для этого пользователя */
+    uint32_t slot = RESET_TOKEN_MAX_COUNT;
+    uint32_t now = HAL_GetTick();
+    
+    /* Сначала ищем существующий неиспользованный токен для этого пользователя */
+    for (uint32_t i = 0; i < g_reset_token_count; i++)
+    {
+        if (!g_reset_tokens[i].used && 
+            strcmp(g_reset_tokens[i].username, username) == 0 &&
+            g_reset_tokens[i].expiresAt > now)
+        {
+            slot = i;
+            break;
+        }
+    }
+    
+    /* Если не нашли, ищем свободный слот или перезаписываем истекший */
+    if (slot >= RESET_TOKEN_MAX_COUNT)
+    {
+        for (uint32_t i = 0; i < RESET_TOKEN_MAX_COUNT; i++)
+        {
+            if (g_reset_tokens[i].used || g_reset_tokens[i].expiresAt <= now)
+            {
+                slot = i;
+                break;
+            }
+        }
+    }
+    
+    if (slot >= RESET_TOKEN_MAX_COUNT)
+        return 0U; /* Нет свободных слотов */
+    
+    /* Генерируем токен на основе username + текущего времени + случайных данных */
+    uint32_t tick = HAL_GetTick();
+    char temp[64];
+    (void)snprintf(temp, sizeof(temp), "%s_%lu_%lu", username, (unsigned long)tick, (unsigned long)(tick ^ 0x12345678));
+    
+    /* Простой хеш для токена */
+    uint32_t hash = 0;
+    for (size_t i = 0; temp[i] && i < sizeof(temp) - 1; i++)
+    {
+        hash = (hash << 5) - hash + (uint32_t)temp[i];
+    }
+    
+    /* Формируем токен в hex формате */
+    (void)snprintf(g_reset_tokens[slot].token, sizeof(g_reset_tokens[slot].token), 
+                   "%08lx%08lx", (unsigned long)hash, (unsigned long)(tick ^ hash));
+    
+    (void)strncpy(g_reset_tokens[slot].username, username, sizeof(g_reset_tokens[slot].username) - 1);
+    g_reset_tokens[slot].username[sizeof(g_reset_tokens[slot].username) - 1] = 0;
+    g_reset_tokens[slot].expiresAt = now + RESET_TOKEN_EXPIRY_MS;
+    g_reset_tokens[slot].used = 0U;
+    
+    if (slot >= g_reset_token_count)
+        g_reset_token_count = slot + 1;
+    
+    (void)strncpy(out_token, g_reset_tokens[slot].token, token_size - 1);
+    out_token[token_size - 1] = 0;
+    
+    AppLog("[USERS] Service: Generated reset token for %s", username);
+    return 1U;
+}
+
+/* Сброс пароля по токену */
+uint8_t UsersService_ResetPasswordByToken(const char *token, const char *new_password)
+{
+    if (!token || !new_password || !g_users_db_loaded)
+        return 0U;
+    
+    /* Валидация нового пароля */
+    size_t pwd_len = strlen(new_password);
+    if (pwd_len < 8 || pwd_len > 64)
+        return 0U;
+    
+    /* Ищем токен */
+    uint32_t now = HAL_GetTick();
+    uint32_t slot = RESET_TOKEN_MAX_COUNT;
+    
+    for (uint32_t i = 0; i < g_reset_token_count; i++)
+    {
+        if (!g_reset_tokens[i].used &&
+            strcmp(g_reset_tokens[i].token, token) == 0 &&
+            g_reset_tokens[i].expiresAt > now)
+        {
+            slot = i;
+            break;
+        }
+    }
+    
+    if (slot >= RESET_TOKEN_MAX_COUNT)
+        return 0U; /* Токен не найден или истек */
+    
+    /* Сбрасываем пароль */
+    const char *username = g_reset_tokens[slot].username;
+    user_record_t *user = (user_record_t*)UsersService_FindUser(username);
+    if (!user)
+        return 0U;
+    
+    /* Обновляем пароль */
+    PasswordHash_GenerateSalt(user->passwordSalt, sizeof(user->passwordSalt));
+    PasswordHash_HashPassword(new_password, user->passwordSalt, user->passwordHash, sizeof(user->passwordHash));
+    
+    /* Пересчитываем CRC и сохраняем */
+    g_users_db_header.crc32 = users_db_crc32(&g_users_db_header, g_users_db, g_users_db_header.userCount);
+    
+    if (!save_users_db())
+        return 0U;
+    
+    /* Помечаем токен как использованный */
+    g_reset_tokens[slot].used = 1U;
+    
+    AppLog("[USERS] Service: Password reset for %s via token", username);
+    return 1U;
+}
+
 /* Вспомогательная функция для вычисления CRC */
 #include "config/users_storage_qspi.h"

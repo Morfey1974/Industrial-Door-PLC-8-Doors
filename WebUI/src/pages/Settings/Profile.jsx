@@ -11,6 +11,7 @@ import { useState, useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
+import ForgotPasswordModal from '../../components/common/ForgotPasswordModal';
 import './Profile.css';
 
 const Profile = () => {
@@ -21,6 +22,7 @@ const Profile = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   // Получаем название роли для отображения
   const getRoleName = (role) => {
@@ -79,6 +81,10 @@ const Profile = () => {
 
   return (
     <div className="settings-profile">
+      <ForgotPasswordModal 
+        isOpen={showForgotPasswordModal} 
+        onClose={() => setShowForgotPasswordModal(false)} 
+      />
       <h1>Профиль пользователя</h1>
 
       {/* Информация о пользователе */}
@@ -135,7 +141,7 @@ const Profile = () => {
             disabled={loading}
             showForgotPassword={true}
             onForgotPassword={() => {
-              alert('Обратитесь к администратору для восстановления пароля');
+              setShowForgotPasswordModal(true);
             }}
           />
 

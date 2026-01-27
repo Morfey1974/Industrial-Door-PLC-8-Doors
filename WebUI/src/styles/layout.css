@@ -42,6 +42,7 @@
 .logo-text-container {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
 }
 
 .logo-text {
@@ -53,6 +54,12 @@
 .logo-subtitle {
   font-size: var(--font-size-xs);
   opacity: 0.9;
+}
+
+/* Стили для логотипа в форме входа */
+.login-header .logo-subtitle {
+  color: var(--color-text-light);
+  opacity: 1;
 }
 
 .header-right {
@@ -182,6 +189,34 @@
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 400px;
+  transition: opacity 1.2s ease-out, transform 1.2s ease-out;
+}
+
+.login-container-hidden {
+  opacity: 0;
+  transform: translateY(30px) scale(0.95);
+  pointer-events: none;
+}
+
+.login-container-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: login-appear 1.2s ease-out forwards;
+}
+
+@keyframes login-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translateY(-5px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .login-header {
@@ -205,6 +240,19 @@
   color: var(--color-text-light);
   font-size: var(--font-size-sm);
   font-weight: 600;
+}
+
+/* Стили для PasswordInput в форме входа */
+.login-form .password-input-label {
+  color: var(--color-text-light);
+}
+
+.login-form .password-forgot-btn {
+  color: var(--color-text-light);
+}
+
+.login-form .password-forgot-btn:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .form-control {

@@ -41,6 +41,12 @@ uint8_t UsersService_DeleteUser(const char *username);
 /* Обновление времени последнего входа */
 void UsersService_UpdateLastLogin(const char *username);
 
+/* Генерация токена восстановления пароля (только для Super Admin) */
+uint8_t UsersService_GenerateResetToken(const char *username, char *out_token, size_t token_size);
+
+/* Сброс пароля по токену */
+uint8_t UsersService_ResetPasswordByToken(const char *token, const char *new_password);
+
 #ifdef __cplusplus
 }
 #endif

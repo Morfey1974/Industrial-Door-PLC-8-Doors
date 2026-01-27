@@ -39,3 +39,19 @@ export const changePassword = async (currentPassword, newPassword) => {
   });
   return response.data;
 };
+
+export const requestPasswordReset = async (username, currentUser) => {
+  const response = await apiClient.post('/auth/forgot-password', {
+    username,
+    currentUser,
+  });
+  return response.data;
+};
+
+export const resetPassword = async (token, newPassword) => {
+  const response = await apiClient.post('/auth/reset-password', {
+    token,
+    newPassword,
+  });
+  return response.data;
+};

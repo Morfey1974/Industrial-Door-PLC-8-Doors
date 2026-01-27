@@ -18,6 +18,7 @@ import SystemParams from './pages/Configuration/SystemParams';
 import Profile from './pages/Settings/Profile';
 import Users from './pages/Settings/Users';
 import Permissions from './pages/Settings/Permissions';
+import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import './styles/main.css';
 
@@ -63,8 +64,12 @@ function AppContent() {
       setActiveSidebarItem(getActiveSidebarItem());
     }, [location.pathname]);
 
-    // Показываем загрузку при проверке аутентификации
-    if (loading) {
+    // Страницы, доступные без авторизации
+    const publicPaths = ['/reset-password'];
+    const isPublicPath = publicPaths.some(path => location.pathname.startsWith(path));
+    
+    // Показываем загрузку при проверке аутентификации (только для защищенных страниц)
+    if (loading && !isPublicPath) {
       return (
         <div style={{ 
           display: 'flex', 
@@ -79,9 +84,18 @@ function AppContent() {
       );
     }
 
-    // Если не аутентифицирован, показываем страницу входа
-    if (!isAuthenticated) {
+    // Если не аутентифицирован и это не публичная страница, показываем страницу входа
+    if (!isAuthenticated && !isPublicPath) {
       return <Login />;
+    }
+    
+    // Если это публичная страница, рендерим её без Layout
+    if (isPublicPath) {
+      return (
+        <Routes>
+          <Route path="/reset-password" element={<ResetPassword />} />
+        </Routes>
+      );
     }
 
     // Вкладки - скрываем Конфигурацию для операторов
@@ -224,6 +238,7 @@ function AppContent() {
                     </ProtectedRoute>
                   } 
                 />
+                
               </Routes>
             </div>
           </div>
