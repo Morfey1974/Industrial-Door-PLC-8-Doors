@@ -47,11 +47,10 @@ function AppContent() {
       if (location.pathname === '/monitoring/events') return 'events';
       if (location.pathname === '/monitoring/alarms') return 'alarms';
       if (location.pathname === '/monitoring/statistics') return 'statistics';
-      if (location.pathname === '/monitoring/mapping') return 'mapping';
       if (location.pathname === '/configuration/doors') return 'doors-config';
+      if (location.pathname === '/configuration/mapping') return 'doors-config';
       if (location.pathname === '/configuration/network') return 'network-config';
       if (location.pathname === '/configuration/system') return 'system-params';
-      if (location.pathname === '/configuration/mapping') return 'mapping-config';
       if (location.pathname === '/settings/profile') return 'profile';
       if (location.pathname === '/settings/permissions') return 'permissions';
       if (location.pathname === '/settings/users') return 'users';
@@ -120,21 +119,19 @@ function AppContent() {
     const getSidebarItems = () => {
       const role = user?.role;
       
-      // Мониторинг доступен всем ролям
+      // Мониторинг доступен всем ролям (Маппинг открывается из конфигурации)
       const monitoring = [
         { id: 'doors', label: 'Двери', path: '/monitoring/doors' },
         { id: 'events', label: 'События', path: '/monitoring/events' },
         { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
         { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
-        { id: 'mapping', label: 'Маппинг', path: '/monitoring/mapping' },
       ];
 
-      // Конфигурация доступна только администраторам и супер-администраторам
+      // Конфигурация: Маппинг открывается кнопкой «Маппинг» в загруженной конфигурации
       const configuration = role === 'operator' ? [] : [
         { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
         { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
         { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
-        { id: 'mapping-config', label: 'Маппинг', path: '/configuration/mapping' },
       ];
 
       // Настройки
@@ -226,6 +223,7 @@ function AppContent() {
                     </ProtectedRoute>
                   } 
                 />
+                {/* Маппинг открывается из Конфигурации → Настройка дверей (кнопка «Маппинг») */}
                 <Route 
                   path="/configuration/mapping" 
                   element={
@@ -234,9 +232,6 @@ function AppContent() {
                     </ProtectedRoute>
                   } 
                 />
-                
-                {/* Мониторинг - Маппинг доступен всем для просмотра */}
-                <Route path="/monitoring/mapping" element={<ProtectedRoute><Mapping /></ProtectedRoute>} />
                 
                 {/* Настройки - профиль доступен всем, пользователи только super_admin, права доступа для admin и super_admin */}
                 <Route path="/settings/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

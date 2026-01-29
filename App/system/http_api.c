@@ -15,6 +15,7 @@
 #include "net_service.h"
 
 #include "config/config_format.h"
+#include "config/mapping_storage_qspi.h"
 
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
@@ -677,6 +678,52 @@ static uint8_t build_users_list(jsonw_t *w)
     return 1U;
 }
 
+/* =========================================================
+ * Карта маппинга (редактор схемы): GET/PUT /api/config/mapping
+ * Хранится в QSPI Flash (сектор 4 КБ); в RAM — копия для быстрого GET.
+ * Формат: { "version": 1, "projectName": "", "viewport": { "x", "y", "zoom" }, "objects": [] }
+ * ========================================================= */
+
+static uint8_t build_mapping(jsonw_t *w)
+{
+    if (!w || !w->buf || w->cap == 0U) return 0U;
+    /* При первом GET загружаем из QSPI, если в RAM ещё пусто */
+    if (MappingStorage_GetLen() == 0U)
+        MappingStorage_LoadFromQspi();
+    size_t len = MappingStorage_GetLen();
+    const char *data = MappingStorage_GetData();
+    if (len > 0U && data && (len + 1U) <= w->cap) {
+        memcpy(w->buf, data, len + 1U);
+        w->len = len;
+        return 1U;
+    }
+    if (len == 0U) {
+        return jw_appendf(w, "{\"version\":1,\"projectName\":\"\",\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"objects\":[]}") ? 1U : 0U;
+    }
+    return 0U;
+}
+
+static int put_mapping(const char *body, size_t body_len, char *out_body, size_t out_sz)
+{
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    if (!out_body || out_sz == 0U) return 500;
+    if (!body) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
+        return 400;
+    }
+    size_t to_copy = body_len;
+    if (to_copy > MAPPING_STORAGE_MAX_LEN)
+        to_copy = MAPPING_STORAGE_MAX_LEN;
+    MappingStorage_SetData(body, to_copy);
+    if (MappingStorage_SaveToQspi() != 0) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"QSPI write failed\"}");
+        return 500;
+    }
+    (void)jw_appendf(&w, "{\"ok\":1}");
+    return 200;
+}
+
 int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
@@ -704,6 +751,10 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
     {
         /* Полная конфигурация для Web UI (все двери, зависимости, таймауты) */
         return build_config_full(&w) ? 200 : 500;
+    }
+    if (strcmp(path, "/api/config/mapping") == 0)
+    {
+        return build_mapping(&w) ? 200 : 500;
     }
     if (strcmp(path, "/api/journal/stat") == 0)
     {
@@ -1085,6 +1136,9 @@ int HttpApi_HandlePut(const char *path,
     if (strcmp(path, "/api/config/full") == 0) {
         /* Полная конфигурация для Web UI */
         return put_config_full(body, body_len, out_body, out_sz);
+    }
+    if (strcmp(path, "/api/config/mapping") == 0) {
+        return put_mapping(body, body_len, out_body, out_sz);
     }
     
     /* PUT /api/users/:username - обновление пользователя (только Super Admin) */

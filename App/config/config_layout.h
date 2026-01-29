@@ -12,11 +12,12 @@
  *  - Используем верхнюю часть Flash, чтобы не мешать
  *    возможным будущим сценариям (XIP, ресурсы, дампы).
  *
- * Карта:
- *  0x000000 .. 0xF5FFFF   Резерв / не используется модулем хранения
+ * Карта (все области разделены, не пересекаются):
+ *  0x000000 .. 0xF5EFFF   Резерв / не используется модулем хранения
+ *  0xF5F000 .. 0xF5FFFF   MAPPING (4 KiB)       [карта маппинга редактора схем]
  *  0xF60000 .. 0xF7FFFF   USERS DB (128 KiB)    [Этап Auth]
  *  0xF80000 .. 0xFDFFFF   EVENT LOG (512 KiB)   [Этап 7B]
- *  0xFE0000 .. 0xFEFFFF   CONFIG SLOT A (64 KiB)
+ *  0xFE0000 .. 0xFEFFFF   CONFIG SLOT A (64 KiB) [рабочая конфигурация дверей]
  *  0xFF0000 .. 0xFFFFFF   CONFIG SLOT B (64 KiB)
  * ========================================================= */
 
@@ -57,15 +58,16 @@ typedef struct
 #define QSPI_USERS_DB_BASE         0xF60000UL
 #define QSPI_USERS_DB_SIZE         (128U * 1024U)
 
-/* Область базы данных пользователей: */
-#define QSPI_USERS_DB_BASE         0xF60000UL
-#define QSPI_USERS_DB_SIZE         (128U * 1024U)
+/* Область карты маппинга (редактор схем): 4 KiB, один сектор.
+ * Отдельная «полка» от конфигурации (CONFIG SLOT A/B) и от USERS/EVENT_LOG. */
+#define QSPI_MAPPING_BASE          0xF5F000UL
+#define QSPI_MAPPING_SIZE          (4U * 1024U)
 
 /* Область журнала событий (добавим в Этапе 7B): */
 #define QSPI_EVENT_LOG_BASE        0xF80000UL
 #define QSPI_EVENT_LOG_SIZE        (512U * 1024U)
 
-/* Область конфигурации: */
+/* Область конфигурации (двери, зависимости, таймауты): отдельная от MAPPING. */
 #define QSPI_CFG_SLOT_SIZE         (64U * 1024U)
 #define QSPI_CFG_SLOT_A_BASE       0xFE0000UL
 #define QSPI_CFG_SLOT_B_BASE       0xFF0000UL
@@ -78,3 +80,8 @@ typedef struct
 
 /* Максимальный размер payload в пределах слота */
 #define QSPI_CFG_MAX_PAYLOAD       (QSPI_CFG_SLOT_SIZE - QSPI_CFG_PAYLOAD_OFFSET)
+
+/* Проверка на этапе компиляции: конфигурация и карта маппинга не пересекаются. */
+#define QSPI_MAPPING_END           (QSPI_MAPPING_BASE + QSPI_MAPPING_SIZE)
+_Static_assert(QSPI_MAPPING_END <= QSPI_CFG_SLOT_A_BASE,
+               "QSPI: MAPPING must end before CONFIG SLOT A");

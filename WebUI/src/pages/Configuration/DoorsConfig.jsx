@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { getConfigFull, putConfigFull } from '../../services/api';
 import { 
@@ -38,6 +39,8 @@ import DependenciesTab from './DoorsConfigTabs/DependenciesTab';
 import TimeoutsTab from './DoorsConfigTabs/TimeoutsTab';
 
 const DoorsConfig = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   // Режим отображения: 'list' - список конфигураций, 'edit' - редактирование
   const [viewMode, setViewMode] = useState('list');
   
@@ -313,6 +316,24 @@ const DoorsConfig = () => {
       setHasDraft(false);
     }
   }, []);
+
+  // Возврат из маппинга: открыть редактор той конфигурации, в которой работали
+  useEffect(() => {
+    const openConfigName = location.state?.openConfigName;
+    if (!openConfigName) return;
+    const loadedConfig = loadNamedConfig(openConfigName);
+    if (loadedConfig) {
+      setConfig(loadedConfig);
+      setCurrentConfigNameState(openConfigName);
+      setCurrentConfigName(openConfigName);
+      setHasUnsavedChanges(false);
+      setHasDraft(false);
+      clearDraft();
+      setViewMode('edit');
+      setActiveTab('general');
+    }
+    navigate('/configuration/doors', { replace: true, state: {} });
+  }, [location.state?.openConfigName, navigate]);
   
   // Автосохранение при изменении конфигурации (только в режиме редактирования)
   useEffect(() => {
@@ -541,11 +562,10 @@ const DoorsConfig = () => {
     }
   }, [config, validateCurrentConfig]);
   
-  // Экспорт конфигурации (открывается окно выбора пути, если браузер поддерживает)
+  // Экспорт конфигурации: ИМЯ_conf.json (карта той же конфигурации — ИМЯ_map.json)
   const handleExport = useCallback(async () => {
-    const filename = config.projectName
-      ? `config_${config.projectName.replace(/[^a-zA-Z0-9]/g, '_')}.json`
-      : 'config.json';
+    const base = currentConfigName || config.projectName || 'config';
+    const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
     const result = await exportConfigToFile(config, filename);
     if (result.ok) {
       setSuccess('Конфигурация экспортирована');
@@ -553,7 +573,7 @@ const DoorsConfig = () => {
     } else if (!result.cancelled) {
       setError('Ошибка экспорта конфигурации');
     }
-  }, [config]);
+  }, [config, currentConfigName]);
   
   // Импорт конфигурации
   const handleImport = useCallback(() => {
@@ -1045,6 +1065,13 @@ const DoorsConfig = () => {
           </Button>
           <Button onClick={handleImport} variant="secondary">
             📥 Импорт
+          </Button>
+          <Button
+            onClick={() => navigate('/configuration/mapping', { state: { configBaseName: currentConfigName || config.projectName || '' } })}
+            variant="secondary"
+            title="Редактор карты маппинга для этой конфигурации (ИМЯ_map.json)"
+          >
+            <span className="mapping-btn-icon" aria-hidden>🗺</span> Маппинг
           </Button>
         </div>
         <div className="toolbar-right">

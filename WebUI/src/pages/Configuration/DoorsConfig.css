@@ -48,6 +48,14 @@
   gap: var(--spacing-sm);
 }
 
+/* Иконка карты на кнопке «Маппинг» — чуть крупнее */
+.mapping-btn-icon {
+  display: inline-block;
+  font-size: 1.35em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 /* Список сохраненных конфигураций */
 .saved-configs-list {
   margin-bottom: var(--spacing-md);

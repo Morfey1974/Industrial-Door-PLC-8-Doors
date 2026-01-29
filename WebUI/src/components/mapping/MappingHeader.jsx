@@ -6,14 +6,17 @@ import Button from '../common/Button';
 import './MappingHeader.css';
 
 const MappingHeader = ({
-  projectName,
+  mapDisplayName,
+  onSaveAndExit,
   mode,
   onModeChange,
   canEdit,
-  onSave,
-  onLoad,
+  onSaveToFile,
+  onLoadFromFile,
+  onUploadToController,
+  onLoadFromController,
   onClear,
-  isDirty,
+  canUploadToController = true,
   canUndo,
   canRedo,
   onUndo,
@@ -22,10 +25,13 @@ const MappingHeader = ({
 }) => {
   return (
     <div className="mapping-header">
-      <div className="mapping-header-left">
-        <h2 className="mapping-title">Маппинг</h2>
-        {projectName && <span className="mapping-project-name">{projectName}</span>}
+      <div className="mapping-header-name-row">
+        <span className="mapping-header-title">Маппинг:</span>
+        <span className="mapping-header-map-name" title="Название карты (привязана к конфигурации с тем же именем)">
+          {mapDisplayName}
+        </span>
       </div>
+      <div className="mapping-header-buttons-row">
       <div className="mapping-header-center">
         {canEdit && (
           <div className="mapping-header-center-row">
@@ -81,22 +87,35 @@ const MappingHeader = ({
       <div className="mapping-header-right">
         {canEdit && mode === 'edit' && (
           <>
-            <Button
-              onClick={onSave}
-              variant="primary"
-              size="small"
-              disabled={!isDirty}
-            >
+            <Button onClick={onSaveToFile} variant="primary" size="small" title="Сохранить карту в файл на компьютере">
               Сохранить карту
             </Button>
-            <Button onClick={onLoad} variant="secondary" size="small">
+            <Button onClick={onLoadFromFile} variant="secondary" size="small" title="Загрузить карту из файла с компьютера">
               Загрузить карту
+            </Button>
+            <Button
+              onClick={onUploadToController}
+              variant="secondary"
+              size="small"
+              disabled={!canUploadToController}
+              title={canUploadToController ? 'Выгрузить текущую карту в QSPI контроллера' : 'Сначала сохраните карту в файл (Сохранить карту)'}
+            >
+              Выгрузить карту в контроллер
+            </Button>
+            <Button onClick={onLoadFromController} variant="secondary" size="small" title="Загрузить карту из QSPI контроллера">
+              Загрузить карту из контроллера
             </Button>
             <Button onClick={onClear} variant="secondary" size="small">
               Очистить карту
             </Button>
+            {onSaveAndExit && (
+              <Button onClick={onSaveAndExit} variant="primary" size="small" title="Сохранить карту в файл и вернуться в редактор конфигурации">
+                Сохранить и выйти в конфигуратор
+              </Button>
+            )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

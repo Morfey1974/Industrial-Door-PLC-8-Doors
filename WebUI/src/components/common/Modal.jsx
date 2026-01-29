@@ -12,6 +12,7 @@ const Modal = ({
   placeholder = '',
   confirmText = 'OK',
   cancelText = 'Отмена',
+  singleButton = false, // один блок «Понятно» (информационное окно)
   onConfirm,
   onCancel,
   onClose, // Новый проп для закрытия модалки с произвольным содержимым
@@ -135,9 +136,11 @@ const Modal = ({
         </div>
         {!hasCustomContent && (
           <div className="modal-footer">
-            <Button onClick={onCancel || (() => {})} variant="secondary">
-              {cancelText}
-            </Button>
+            {!singleButton && (
+              <Button onClick={onCancel || (() => {})} variant="secondary">
+                {cancelText}
+              </Button>
+            )}
             <Button onClick={handleConfirm} variant="primary">
               {confirmText}
             </Button>
