@@ -15,6 +15,7 @@ import Statistics from './pages/Monitoring/Statistics';
 import DoorsConfig from './pages/Configuration/DoorsConfig';
 import NetworkConfig from './pages/Configuration/NetworkConfig';
 import SystemParams from './pages/Configuration/SystemParams';
+import Mapping from './pages/Mapping';
 import Profile from './pages/Settings/Profile';
 import Users from './pages/Settings/Users';
 import Permissions from './pages/Settings/Permissions';
@@ -36,6 +37,7 @@ function AppContent() {
       if (location.pathname.startsWith('/monitoring')) return 'monitoring';
       if (location.pathname.startsWith('/configuration')) return 'configuration';
       if (location.pathname.startsWith('/settings')) return 'settings';
+      if (location.pathname === '/' || location.pathname === '/dashboard') return 'monitoring';
       return 'monitoring'; // По умолчанию
     };
 
@@ -45,9 +47,11 @@ function AppContent() {
       if (location.pathname === '/monitoring/events') return 'events';
       if (location.pathname === '/monitoring/alarms') return 'alarms';
       if (location.pathname === '/monitoring/statistics') return 'statistics';
+      if (location.pathname === '/monitoring/mapping') return 'mapping';
       if (location.pathname === '/configuration/doors') return 'doors-config';
       if (location.pathname === '/configuration/network') return 'network-config';
       if (location.pathname === '/configuration/system') return 'system-params';
+      if (location.pathname === '/configuration/mapping') return 'mapping-config';
       if (location.pathname === '/settings/profile') return 'profile';
       if (location.pathname === '/settings/permissions') return 'permissions';
       if (location.pathname === '/settings/users') return 'users';
@@ -122,6 +126,7 @@ function AppContent() {
         { id: 'events', label: 'События', path: '/monitoring/events' },
         { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
         { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
+        { id: 'mapping', label: 'Маппинг', path: '/monitoring/mapping' },
       ];
 
       // Конфигурация доступна только администраторам и супер-администраторам
@@ -129,6 +134,7 @@ function AppContent() {
         { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
         { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
         { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
+        { id: 'mapping-config', label: 'Маппинг', path: '/configuration/mapping' },
       ];
 
       // Настройки
@@ -185,7 +191,8 @@ function AppContent() {
               onItemClick={handleSidebarItemClick}
             />
             <div className="layout-content">
-              <Routes>
+              <div className="layout-content-inner">
+                <Routes>
                 {/* Мониторинг - доступен всем ролям */}
                 <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -219,6 +226,17 @@ function AppContent() {
                     </ProtectedRoute>
                   } 
                 />
+                <Route 
+                  path="/configuration/mapping" 
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <Mapping />
+                    </ProtectedRoute>
+                  } 
+                />
+                
+                {/* Мониторинг - Маппинг доступен всем для просмотра */}
+                <Route path="/monitoring/mapping" element={<ProtectedRoute><Mapping /></ProtectedRoute>} />
                 
                 {/* Настройки - профиль доступен всем, пользователи только super_admin, права доступа для admin и super_admin */}
                 <Route path="/settings/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
@@ -239,7 +257,8 @@ function AppContent() {
                   } 
                 />
                 
-              </Routes>
+                </Routes>
+              </div>
             </div>
           </div>
           <Tabs 

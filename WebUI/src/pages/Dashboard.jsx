@@ -82,7 +82,7 @@ const Dashboard = () => {
           </div>
           
           {/* IP адрес */}
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '12px', color: '#666', marginBottom: '2px' }}>IP адрес</div>
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
               {state.ip ? formatIpAddress(state.ip) : '—'}
@@ -90,7 +90,7 @@ const Dashboard = () => {
           </div>
           
           {/* Время работы */}
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '12px', color: '#666', marginBottom: '2px' }}>Время работы</div>
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
               {state.uptimeSeconds !== undefined ? formatUptime(state.uptimeSeconds) : '—'}

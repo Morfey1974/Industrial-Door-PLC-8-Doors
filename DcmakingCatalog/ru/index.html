@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCM – Системы контроля доступа</title>
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../css/site.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo"><img src="../img/logo-header.png" alt="" class="site-logo-img" /><span>DCM</span></a>
+      <nav>
+        <ul class="nav-list">
+          <li class="lang-switcher">
+            <a href="../en/index.html">EN</a>
+            <a href="index.html" class="active" aria-current="page">RU</a>
+            <a href="../he/index.html">HE</a>
+          </li>
+          <li><a href="index.html" aria-current="page">Главная</a></li>
+          <li><a href="products.html">Товары</a></li>
+          <li><a href="about.html">О нас</a></li>
+          <li><a href="contact.html">Контакты</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="layout-main">
+    <section class="hero-wrap">
+      <div class="hero-bg"></div>
+      <div class="hero">
+        <h1 class="hero-content animate-in">DCM – Системы контроля доступа</h1>
+        <p class="animate-in">Разработка и производство электронных систем запирания для чистых помещений в фармацевтической, химической, пищевой и микроэлектронной отраслях.</p>
+        <a href="products.html" class="btn-request animate-in">Все товары</a>
+      </div>
+    </section>
+    <h2 class="section-title" data-animate>Товары</h2>
+    <p class="section-subtitle" data-animate>Электронные системы запирания и аксессуары для чистых помещений.</p>
+    <div class="product-grid" id="home-products"></div>
+    <section class="section-band" data-animate>
+      <h2 class="section-title">О нас</h2>
+      <div class="about-content">
+        <p>Doors Control Making — молодая и динамично развивающаяся компания, специализирующаяся на разработке и производстве электронных систем запирания для дверей в чистых помещениях фармацевтической, химической, пищевой и микроэлектронной промышленности.</p>
+        <p>Идея создания наших устройств — надёжность и простота установки. В процессе разработки были изучены аналогичные продукты и устранены типичные проблемы. Один из принципов компании — безупречная репутация и открытость в работе с партнёрами.</p>
+        <p>Мы постоянно развиваем продукцию и новые направления в устройствах контроля дверей. Цены на продукцию существенно отличаются от рыночных благодаря грамотной разработке и современным технологиям производства. Готовы к долгосрочному сотрудничеству и качественному сервису.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <p>DCM – Doors Control Making &middot; Хайфа, Израиль &middot; <a href="contact.html">Контакты</a></p>
+  </footer>
+  <script src="../js/products-data.js"></script>
+  <script src="../js/animate.js"></script>
+  <script>
+    (function () {
+      var lang = 'ru';
+      var products = typeof getProducts === 'function' ? getProducts(lang) : [];
+      var grid = document.getElementById('home-products');
+      if (!grid) return;
+      grid.innerHTML = products.slice(0, 6).map(function (p) {
+        return '<article class="product-card" data-animate>' +
+          '<a class="product-card-link" href="product.html#' + p.id + '">' +
+            '<div class="product-card-img-wrap">' +
+              '<img class="product-card-img" src="' + (p.image || '../img/placeholder.jpg') + '" alt="" onerror="this.parentElement.style.background=\'linear-gradient(145deg,#cbd5e1,#94a3b8)\';this.style.display=\'none\'">' +
+            '</div>' +
+            '<div class="product-card-body">' +
+              '<h3 class="product-card-title">' + p.name + '</h3>' +
+              '<p class="product-card-desc">' + p.shortDesc + '</p>' +
+              '<span class="product-card-price">' + p.price + '</span>' +
+            '</div>' +
+          '</a>' +
+        '</article>';
+      }).join('');
+      grid.querySelectorAll('.product-card').forEach(function (el, i) {
+        el.style.animationDelay = (i * 0.06) + 's';
+        el.classList.add('animate-in');
+      });
+    })();
+  </script>
+</body>
+</html>

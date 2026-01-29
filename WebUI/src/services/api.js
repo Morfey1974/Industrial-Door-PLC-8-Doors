@@ -156,6 +156,23 @@ export const getConfigFull = async (signal = null) => {
   return response.data;
 };
 
+// Получить карту маппинга (GET /api/config/mapping)
+export const getMapping = async (signal = null) => {
+  const config = signal ? { signal } : {};
+  const response = await apiClient.get('/config/mapping', config);
+  return response.data;
+};
+
+// Сохранить карту маппинга (PUT /api/config/mapping)
+export const putMapping = async (mappingData, signal = null) => {
+  const requestConfig = {
+    timeout: 90000,
+    ...(signal ? { signal } : {}),
+  };
+  const response = await apiClient.put('/config/mapping', mappingData, requestConfig);
+  return response.data;
+};
+
 // Сохранить полную конфигурацию
 // ВАЖНО: Операция сохранения конфигурации в QSPI Flash может занять до 90 секунд
 // (стирание сектора ~5-10 сек + запись данных ~5-10 сек + возможные задержки)

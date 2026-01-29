@@ -1,0 +1,33 @@
+/* Страница маппинга: заполняет всю область контента, без прокрутки общего окна */
+.mapping-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: absolute;
+  inset: 0;
+  background: #fff;
+}
+
+.mapping-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: #fafafa;
+}
+
+/* Канвас — единственная область, где масштабируется карта; панель и кнопки не двигаются */
+.mapping-content .mapping-canvas-container {
+  flex: 1;
+  min-height: 0;
+}
+
+.mapping-content .mapping-toolbar {
+  flex-shrink: 0;
+  overflow-y: auto;
+}

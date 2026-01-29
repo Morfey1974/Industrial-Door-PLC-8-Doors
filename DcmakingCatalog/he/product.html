@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>מוצר – DCM</title>
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../css/site.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="lang-he">
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo"><img src="../img/logo-header.png" alt="" class="site-logo-img" /><span>DCM</span></a>
+      <nav>
+        <ul class="nav-list">
+          <li class="lang-switcher">
+            <a href="../en/product.html">EN</a>
+            <a href="../ru/product.html">RU</a>
+            <a href="product.html" class="active">HE</a>
+          </li>
+          <li><a href="index.html">בית</a></li>
+          <li><a href="products.html">מוצרים</a></li>
+          <li><a href="about.html">אודות</a></li>
+          <li><a href="contact.html">צור קשר</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="layout-main">
+    <div class="product-page" id="product-root"></div>
+  </main>
+  <footer class="site-footer">
+    <p>DCM – Doors Control Making &middot; <a href="contact.html" style="color: var(--color-accent);">צור קשר</a></p>
+  </footer>
+  <div class="modal-overlay" id="request-modal">
+    <div class="modal">
+      <h3>לבקש מוצר זה</h3>
+      <p class="product-name-field" id="request-product-label">מוצר:</p>
+      <form id="request-form" action="mailto:info@dcmaking.co.il" method="get">
+        <input type="hidden" id="request-product-name" name="product">
+        <div class="form-group">
+          <label for="request-name">שמך</label>
+          <input type="text" id="request-name" name="name" required>
+        </div>
+        <div class="form-group">
+          <label for="request-email">אימייל</label>
+          <input type="email" id="request-email" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="request-phone">טלפון</label>
+          <input type="tel" id="request-phone" name="phone">
+        </div>
+        <div class="form-group">
+          <label for="request-message">הודעה</label>
+          <textarea id="request-message" name="message"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="request-modal-cancel" class="btn-cancel">ביטול</button>
+          <button type="submit" class="btn-submit">שליחת בקשה</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="../js/products-data.js"></script>
+  <script src="../js/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+.mapping-canvas-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: white;
+  cursor: crosshair;
+  user-select: none;
+}
+
+/* При инструменте «Выбор» — стрелка для удобного выбора объектов */
+.mapping-canvas-container.select-tool {
+  cursor: default;
+}
+
+.mapping-canvas-container.panning {
+  cursor: grab;
+}
+
+.mapping-canvas-container.panning:active {
+  cursor: grabbing;
+}
+
+.mapping-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.grid-layer {
+  pointer-events: none;
+}
+
+.objects-layer {
+  pointer-events: stroke;
+}
+
+.objects-layer line.selected {
+  stroke: #007bff;
+  stroke-width: 7;
+}
+
+.drawing-preview {
+  pointer-events: none;
+}
+
+.snap-indicator {
+  pointer-events: none;
+}
+
+/* Анимация при аларме: периодическая смена зелёного на красный; якорь — левый нижний угол створки (анимация не меняет место расположения) */
+.door-leaf-alarm {
+  animation: door-alarm-blink 2s ease-in-out infinite;
+  transform-origin: 0 100%;
+}
+
+@keyframes door-alarm-blink {
+  0%, 100% {
+    fill: #00c853;
+  }
+  50% {
+    fill: #d32f2f;
+  }
+}
+
+/* Поле ввода комментария в канвасе (foreignObject) */
+.mapping-comment-input {
+  user-select: text;
+}

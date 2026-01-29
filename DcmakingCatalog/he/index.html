@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCM – Doors Control Making</title>
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../css/site.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="lang-he">
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo"><img src="../img/logo-header.png" alt="" class="site-logo-img" /><span>DCM</span></a>
+      <nav>
+        <ul class="nav-list">
+          <li class="lang-switcher">
+            <a href="../en/index.html">EN</a>
+            <a href="../ru/index.html">RU</a>
+            <a href="index.html" class="active" aria-current="page">HE</a>
+          </li>
+          <li><a href="index.html" aria-current="page">בית</a></li>
+          <li><a href="products.html">מוצרים</a></li>
+          <li><a href="about.html">אודות</a></li>
+          <li><a href="contact.html">צור קשר</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="layout-main">
+    <section class="hero-wrap">
+      <div class="hero-bg"></div>
+      <div class="hero">
+        <h1 class="hero-content animate-in">DCM – Doors Control Making</h1>
+        <p class="animate-in">פיתוח וייצור מערכות נעילה אלקטרוניות לחדרים נקיים בתעשיית התרופות, הכימיה, המזון והמיקרו-אלקטרוניקה.</p>
+        <a href="products.html" class="btn-request animate-in">כל המוצרים</a>
+      </div>
+    </section>
+    <h2 class="section-title" data-animate>מוצרים</h2>
+    <p class="section-subtitle" data-animate>מערכות נעילה אלקטרוניות ואביזרים לחדרים נקיים.</p>
+    <div class="product-grid" id="home-products"></div>
+    <section class="section-band" data-animate>
+      <h2 class="section-title">אודותינו</h2>
+      <div class="about-content">
+        <p>Doors Control Making היא חברה צעירה ומתפתחת, המתמחה בפיתוח וייצור מערכות נעילה אלקטרוניות לדלתות בחדרים נקיים בתעשיות התרופות, הכימיה, המזון והמיקרו-אלקטרוניקה.</p>
+        <p>הרעיון המרכזי של המכשירים שלנו הוא אמינות וקלות התקנה. בתהליך הפיתוח נבדקו מוצרים דומים וטופלו בעיות. אחד העקרונות שלנו הוא מוניטין ללא דופי ופתיחות בשותפויות.</p>
+        <p>אנחנו מפתחים כל הזמן מוצרים וכיוונים חדשים בבקרת דלתות. המחירים שלנו נמוכים משמעותית מהשוק הודות לגישה מקצועית ולטכנולוגיות ייצור מודרניות. מוכנים לשיתוף פעולה ארוך טווח ולשירות איכותי.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <p>DCM – Doors Control Making &middot; חיפה, ישראל &middot; <a href="contact.html">צור קשר</a></p>
+  </footer>
+  <script src="../js/products-data.js"></script>
+  <script src="../js/animate.js"></script>
+  <script>
+    (function () {
+      var lang = 'he';
+      var products = typeof getProducts === 'function' ? getProducts(lang) : [];
+      var grid = document.getElementById('home-products');
+      if (!grid) return;
+      grid.innerHTML = products.slice(0, 6).map(function (p) {
+        return '<article class="product-card" data-animate>' +
+          '<a class="product-card-link" href="product.html#' + p.id + '">' +
+            '<div class="product-card-img-wrap">' +
+              '<img class="product-card-img" src="' + (p.image || '../img/placeholder.jpg') + '" alt="" onerror="this.parentElement.style.background=\'linear-gradient(145deg,#cbd5e1,#94a3b8)\';this.style.display=\'none\'">' +
+            '</div>' +
+            '<div class="product-card-body">' +
+              '<h3 class="product-card-title">' + p.name + '</h3>' +
+              '<p class="product-card-desc">' + p.shortDesc + '</p>' +
+              '<span class="product-card-price">' + p.price + '</span>' +
+            '</div>' +
+          '</a>' +
+        '</article>';
+      }).join('');
+      grid.querySelectorAll('.product-card').forEach(function (el, i) {
+        el.style.animationDelay = (i * 0.06) + 's';
+        el.classList.add('animate-in');
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>מוצרים – DCM</title>
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../css/site.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="lang-he">
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo"><img src="../img/logo-header.png" alt="" class="site-logo-img" /><span>DCM</span></a>
+      <nav>
+        <ul class="nav-list">
+          <li class="lang-switcher">
+            <a href="../en/products.html">EN</a>
+            <a href="../ru/products.html">RU</a>
+            <a href="products.html" class="active">HE</a>
+          </li>
+          <li><a href="index.html">בית</a></li>
+          <li><a href="products.html" aria-current="page">מוצרים</a></li>
+          <li><a href="about.html">אודות</a></li>
+          <li><a href="contact.html">צור קשר</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="layout-main">
+    <h1 class="section-title" data-animate>מוצרים</h1>
+    <p class="section-subtitle" data-animate>מערכות נעילה אלקטרוניות ואביזרים לחדרים נקיים.</p>
+    <div class="categories">
+      <a href="products.html" class="active">כל המוצרים</a>
+      <a href="products.html?cat=controllers">בקרים</a>
+      <a href="products.html?cat=accessories">אביזרים</a>
+    </div>
+    <div class="product-grid" id="products-grid"></div>
+  </main>
+  <footer class="site-footer">
+    <p>DCM – Doors Control Making &middot; <a href="contact.html">צור קשר</a></p>
+  </footer>
+  <script src="../js/products-data.js"></script>
+  <script src="../js/animate.js"></script>
+  <script>
+    (function () {
+      var lang = 'he';
+      var products = typeof getProducts === 'function' ? getProducts(lang) : [];
+      var params = new URLSearchParams(window.location.search);
+      var cat = params.get('cat');
+      if (cat) products = products.filter(function (p) { return p.category === cat; });
+      var grid = document.getElementById('products-grid');
+      if (!grid) return;
+      grid.innerHTML = products.map(function (p) {
+        return '<article class="product-card" data-animate>' +
+          '<a class="product-card-link" href="product.html#' + p.id + '">' +
+            '<div class="product-card-img-wrap">' +
+              '<img class="product-card-img" src="' + (p.image || '../img/placeholder.jpg') + '" alt="" onerror="this.parentElement.style.background=\'linear-gradient(145deg,#cbd5e1,#94a3b8)\';this.style.display=\'none\'">' +
+            '</div>' +
+            '<div class="product-card-body">' +
+              '<h3 class="product-card-title">' + p.name + '</h3>' +
+              '<p class="product-card-desc">' + p.shortDesc + '</p>' +
+              '<span class="product-card-price">' + p.price + '</span>' +
+            '</div>' +
+          '</a>' +
+        '</article>';
+      }).join('');
+      grid.querySelectorAll('.product-card').forEach(function (el, i) {
+        el.style.animationDelay = (i * 0.06) + 's';
+        el.classList.add('animate-in');
+      });
+    })();
+  </script>
+</body>
+</html>

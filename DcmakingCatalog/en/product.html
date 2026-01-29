@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product – DCM</title>
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../css/site.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo"><img src="../img/logo-header.png" alt="" class="site-logo-img" /><span>DCM</span></a>
+      <nav>
+        <ul class="nav-list">
+          <li class="lang-switcher">
+            <a href="../en/product.html" class="active">EN</a>
+            <a href="../ru/product.html">RU</a>
+            <a href="../he/product.html">HE</a>
+          </li>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="products.html">Products</a></li>
+          <li><a href="about.html">About Us</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="layout-main">
+    <div class="product-page" id="product-root"></div>
+  </main>
+  <footer class="site-footer">
+    <p>DCM – Doors Control Making &middot; <a href="contact.html" style="color: var(--color-accent);">Contact</a></p>
+  </footer>
+  <div class="modal-overlay" id="request-modal">
+    <div class="modal">
+      <h3 id="request-modal-title">Request this product</h3>
+      <p class="product-name-field" id="request-product-label">Product:</p>
+      <form id="request-form" action="mailto:info@dcmaking.co.il" method="get">
+        <input type="hidden" id="request-product-name" name="product">
+        <div class="form-group">
+          <label for="request-name">Your name</label>
+          <input type="text" id="request-name" name="name" required>
+        </div>
+        <div class="form-group">
+          <label for="request-email">Email</label>
+          <input type="email" id="request-email" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="request-phone">Phone</label>
+          <input type="tel" id="request-phone" name="phone">
+        </div>
+        <div class="form-group">
+          <label for="request-message">Message</label>
+          <textarea id="request-message" name="message"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="request-modal-cancel" class="btn-cancel">Cancel</button>
+          <button type="submit" class="btn-submit">Send request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="../js/products-data.js"></script>
+  <script src="../js/site.js"></script>
+</body>
+</html>

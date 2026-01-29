@@ -124,12 +124,11 @@
  * ========================================================= */
 .sidebar {
   width: 280px;
-  flex-shrink: 0;
   background: var(--gradient-primary);
+  min-height: calc(100vh - 80px);
   padding: var(--spacing-lg);
   box-shadow: 4px 0 24px rgba(58, 101, 119, 0.15);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
-  overflow-y: auto;
 }
 
 .sidebar-nav {
@@ -264,32 +263,24 @@
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   min-height: 100vh;
-  overflow: hidden;
   background: linear-gradient(135deg, #f5f7fa 0%, #EDEDED 100%);
 }
 
 .layout-main {
   display: flex;
   flex: 1;
-  min-height: 0;
-  overflow: hidden;
   padding-bottom: 80px; /* Отступ для закрепленных вкладок */
 }
 
 .layout-content {
   flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   padding: var(--spacing-xl);
-  margin: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
   background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+  margin: var(--spacing-lg);
+  margin-bottom: calc(var(--spacing-lg) + 80px);
   border-radius: var(--radius-xl);
   box-shadow: 0 8px 32px rgba(58, 101, 119, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.5);
@@ -300,36 +291,52 @@
   box-shadow: 0 12px 48px rgba(58, 101, 119, 0.18);
 }
 
-/* Область контента страницы: заполняет высоту до вкладок, вертикальная прокрутка при переполнении */
-.layout-content-inner {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  position: relative;
-}
-
 /* =========================================================
- * Login Page — оставляем как было (из бэкапа)
+ * Login Page - Страница входа с современным дизайном
  * ========================================================= */
 .login-page {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: var(--color-secondary);
+  background: linear-gradient(135deg, #3A6577 0%, #2a4d5a 50%, #EDEDED 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-page::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(230, 51, 42, 0.1) 0%, transparent 70%);
+  animation: rotate 20s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .login-container {
-  background-color: var(--color-primary);
-  padding: var(--spacing-xl);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  padding: var(--spacing-2xl);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.2);
   width: 100%;
-  max-width: 400px;
-  transition: opacity 1.2s ease-out, transform 1.2s ease-out;
+  max-width: 450px;
+  transition: all var(--transition-base);
+  position: relative;
+  z-index: 1;
+}
+
+.login-container:hover {
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.3);
+  transform: translateY(-4px);
 }
 
 .login-container-hidden {
@@ -341,7 +348,7 @@
 .login-container-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
-  animation: login-appear 1.2s ease-out forwards;
+  animation: login-appear 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes login-appear {
@@ -350,7 +357,7 @@
     transform: translateY(30px) scale(0.95);
   }
   60% {
-    opacity: 0.8;
+    opacity: 0.9;
     transform: translateY(-5px) scale(1.02);
   }
   100% {
@@ -361,13 +368,13 @@
 
 .login-header {
   text-align: center;
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: var(--spacing-2xl);
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
 }
 
 .form-group {
@@ -379,10 +386,10 @@
 .form-group label {
   color: var(--color-text-light);
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.3px;
 }
 
-/* Стили для PasswordInput в форме входа */
 .login-form .password-input-label {
   color: var(--color-text-light);
 }
@@ -392,15 +399,29 @@
 }
 
 .login-form .password-forgot-btn:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .form-control {
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-lg);
   font-size: var(--font-size-base);
-  background-color: var(--color-white);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  color: var(--color-text-light);
+  transition: all var(--transition-base);
+}
+
+.form-control::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 4px rgba(230, 51, 42, 0.1);
 }
 
 /* =========================================================
