@@ -40,6 +40,15 @@
   stroke-width: 7;
 }
 
+/* Маркеры концов стены при выборе: за них тянем для изменения длины/положения */
+.wall-endpoint-handle {
+  cursor: grab;
+}
+
+.wall-endpoint-handle:active {
+  cursor: grabbing;
+}
+
 .drawing-preview {
   pointer-events: none;
 }

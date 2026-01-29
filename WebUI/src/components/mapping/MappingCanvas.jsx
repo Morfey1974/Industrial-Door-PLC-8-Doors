@@ -61,6 +61,8 @@ const MappingCanvas = forwardRef(({
   const [isResizingDoor, setIsResizingDoor] = useState(false);
   const [resizeHandle, setResizeHandle] = useState(null);
   const [resizeStart, setResizeStart] = useState(null);
+  const [isResizingWall, setIsResizingWall] = useState(false);
+  const [wallResizeEnd, setWallResizeEnd] = useState(null); // 'start' | 'end'
   const lastMovedObjectsRef = useRef(null);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const commentInputRef = useRef(null);
@@ -190,6 +192,19 @@ const MappingCanvas = forwardRef(({
     return null;
   }, [selectedObject, objects, worldToDoorLocal, getDoorLeafBounds]);
 
+  // Проверка попадания в маркер конца стены (при выбранной стене в режиме редактирования)
+  // Радиус маркеров концов стены (мм); за них тянем для изменения длины/положения стены
+  const WALL_HANDLE_R = 10;
+  const hitTestWallEndpoint = useCallback((worldX, worldY) => {
+    if (!selectedObject || selectedObject.type !== 'wall') return null;
+    const w = selectedObject;
+    const d1 = Math.sqrt((worldX - w.x1) ** 2 + (worldY - w.y1) ** 2);
+    const d2 = Math.sqrt((worldX - w.x2) ** 2 + (worldY - w.y2) ** 2);
+    if (d1 <= WALL_HANDLE_R) return 'start';
+    if (d2 <= WALL_HANDLE_R) return 'end';
+    return null;
+  }, [selectedObject]);
+
   // Обработка движения мыши
   const handleMouseMove = useCallback((e) => {
     const svgPoint = getSVGPoint(e.clientX, e.clientY);
@@ -290,6 +305,21 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
+    // Ресайз стены за маркеры концов: тянем начало или конец стены в новую точку (с привязкой)
+    if (isResizingWall && wallResizeEnd && selectedObject?.type === 'wall') {
+      const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
+      const wall = selectedObject;
+      const next = objects.map(o => {
+        if (o.id !== wall.id) return o;
+        if (wallResizeEnd === 'start') {
+          return { ...o, x1: pt.x, y1: pt.y };
+        }
+        return { ...o, x2: pt.x, y2: pt.y };
+      });
+      onObjectsChange(next, { addToHistory: false });
+      return;
+    }
+
     // Перемещение объекта (без добавления в историю на каждый кадр)
     if (isMovingObject && moveStart && selectedObject) {
       const dx = (e.clientX - moveStart.clientX) / viewport.zoom;
@@ -347,6 +377,8 @@ const MappingCanvas = forwardRef(({
     isResizingDoor,
     resizeStart,
     resizeHandle,
+    isResizingWall,
+    wallResizeEnd,
     isMovingObject,
     moveStart,
     selectedObject,
@@ -427,8 +459,15 @@ const MappingCanvas = forwardRef(({
 
     const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
 
-    // Выбор и перемещение (или ресайз двери за углы)
+    // Выбор и перемещение (или ресайз двери за углы, или ресайз стены за концы)
     if (selectedTool === 'select' && mode === 'edit') {
+      const wallEnd = hitTestWallEndpoint(svgPoint.x, svgPoint.y);
+      if (wallEnd && selectedObject?.type === 'wall') {
+        e.stopPropagation();
+        setIsResizingWall(true);
+        setWallResizeEnd(wallEnd);
+        return;
+      }
       const handle = hitTestResizeHandle(svgPoint.x, svgPoint.y);
       if (handle && selectedObject?.type === 'door') {
         e.stopPropagation();
@@ -551,6 +590,7 @@ const MappingCanvas = forwardRef(({
     defaultShowNumberOnDrawing,
     hitTest,
     hitTestResizeHandle,
+    hitTestWallEndpoint,
     selectedObject,
   ]);
 
@@ -569,6 +609,8 @@ const MappingCanvas = forwardRef(({
     setIsResizingDoor(false);
     setResizeHandle(null);
     setResizeStart(null);
+    setIsResizingWall(false);
+    setWallResizeEnd(null);
   }, [isMovingObject, onMoveEnd]);
 
   // Обработка контекстного меню (отключение для правой кнопки мыши)
@@ -681,6 +723,8 @@ const MappingCanvas = forwardRef(({
     const leafColor = getDoorLeafColor(obj);
     const state = getDoorState(obj);
     const selected = selectedObject?.id === obj.id;
+    // Маркеры редактирования показываем только в режиме редактирования; в режиме просмотра объект показывается без маркеров
+    const showEditHandles = selected && selectedTool === 'select' && mode === 'edit';
     const strokeW = selected ? 2 : 1;
     const alarmClass = state.alarming ? 'door-leaf-alarm' : '';
     const isOpen = state.open && !state.locked;
@@ -696,8 +740,8 @@ const MappingCanvas = forwardRef(({
     const { leafX, leafY, leafW: lw, leafH: lh } = getDoorLeafBounds(obj);
     const leafW = lw; // длина створки: 60 мм для single/electric, w/2 для double, 0.35w для sliding
     const arcR = lw;
-    // Маркеры — по углам закрашенного прямоугольника створки (leaf), чтобы совпадали с видимой дверью
-    const handleCorners = selected ? [
+    // Маркеры — по углам закрашенного прямоугольника створки (leaf); только в режиме редактирования
+    const handleCorners = showEditHandles ? [
       { key: 'nw', x: leafX - half, y: leafY - half },
       { key: 'ne', x: leafX + lw - half, y: leafY - half },
       { key: 'sw', x: leafX - half, y: leafY + lh - half },
@@ -877,18 +921,45 @@ const MappingCanvas = forwardRef(({
   const renderObjects = () => {
     return objects.map(obj => {
       if (obj.type === 'wall') {
+        // В режиме выбора/редактирования — два маркера по концам стены; тянем за них для изменения длины/положения
+        const selected = selectedObject?.id === obj.id && selectedTool === 'select' && mode === 'edit';
         return (
-          <line
-            key={obj.id}
-            x1={obj.x1}
-            y1={obj.y1}
-            x2={obj.x2}
-            y2={obj.y2}
-            stroke={obj.color || '#333333'}
-            strokeWidth={obj.thickness || 5}
-            className={selectedObject?.id === obj.id ? 'selected' : ''}
-            onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
-          />
+          <g key={obj.id}>
+            <line
+              x1={obj.x1}
+              y1={obj.y1}
+              x2={obj.x2}
+              y2={obj.y2}
+              stroke={obj.color || '#333333'}
+              strokeWidth={obj.thickness || 5}
+              className={selected ? 'selected' : ''}
+              onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
+            />
+            {selected && (
+              <>
+                <circle
+                  cx={obj.x1}
+                  cy={obj.y1}
+                  r={WALL_HANDLE_R}
+                  fill="none"
+                  stroke="#007bff"
+                  strokeWidth={2}
+                  className="wall-endpoint-handle"
+                  onClick={(ev) => ev.stopPropagation()}
+                />
+                <circle
+                  cx={obj.x2}
+                  cy={obj.y2}
+                  r={WALL_HANDLE_R}
+                  fill="none"
+                  stroke="#007bff"
+                  strokeWidth={2}
+                  className="wall-endpoint-handle"
+                  onClick={(ev) => ev.stopPropagation()}
+                />
+              </>
+            )}
+          </g>
         );
       }
       if (obj.type === 'door') {
