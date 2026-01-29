@@ -113,14 +113,21 @@ const Mapping = () => {
     }
   }, []);
 
-  // Добавление объекта в историю для Undo/Redo
+  // Добавление объекта в историю для Undo/Redo (не вызывать setState внутри другого setState)
   const addToHistory = useCallback((newObjects) => {
+    let snapshot;
+    try {
+      snapshot = JSON.parse(JSON.stringify(newObjects));
+    } catch (_) {
+      return;
+    }
+    const nextIndex = historyIndex + 1;
     setHistory(prevHistory => {
-      const newHistory = prevHistory.slice(0, historyIndex + 1);
-      newHistory.push(JSON.parse(JSON.stringify(newObjects)));
-      setHistoryIndex(newHistory.length - 1);
+      const newHistory = prevHistory.slice(0, nextIndex);
+      newHistory.push(snapshot);
       return newHistory;
     });
+    setHistoryIndex(nextIndex);
   }, [historyIndex]);
 
   // Undo

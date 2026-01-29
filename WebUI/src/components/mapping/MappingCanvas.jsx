@@ -5,8 +5,10 @@
 import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import './MappingCanvas.css';
 
-const DOOR_WIDTH = 60;
 const DOOR_HEIGHT = 10;
+/** Ширина двери по умолчанию по типам (мм): одностворчатая 90, двустворчатая 120, раздвижная 120, электрическая 90 */
+const DEFAULT_DOOR_WIDTH = { single: 90, double: 120, sliding: 120, electric: 90 };
+const DOOR_WIDTH = 80; // fallback для объектов без типа или старых данных
 /** Максимум символов в поле комментария (включая переносы строк) */
 const COMMENT_MAX_LENGTH = 500;
 
@@ -71,7 +73,7 @@ const MappingCanvas = forwardRef(({
 
   const DOOR_HANDLE_SIZE = 8;
   const MIN_DOOR_SIZE = 12;
-  const LEAF_WIDTH_RATIO = 0.35; // для раздвижной: панель = 0.35 от проёма
+  const LEAF_WIDTH_RATIO = 0.35; // не используется для раздвижной (панель = вся ширина проёма, как у одностворчатой)
   const DOUBLE_LEAF_MAIN_RATIO = 0.6; // двустворчатая: основная (открывающаяся) створка 60%, вторая 40%
 
   // Границы: для single/electric — одна створка; для double — весь проём (маркеры по углам двери); для sliding — панель
@@ -85,9 +87,9 @@ const MappingCanvas = forwardRef(({
       leafY = o.y;
       leafW = w;
     } else if (type === 'sliding') {
-      leafX = o.x + w * 0.1;
+      leafX = o.x;
       leafY = o.y;
-      leafW = w * LEAF_WIDTH_RATIO;
+      leafW = w; // длина панели как у одностворчатой (на всю ширину проёма)
     } else {
       // double: маркеры по углам всего проёма (x, y) — (x+w, y+h)
       leafX = o.x;
@@ -248,12 +250,10 @@ const MappingCanvas = forwardRef(({
       const { leafX, leafY, leafW: prevLeafW, leafH: prevLeafH } = getDoorLeafBounds(obj);
       let newX = x, newY = y, newW = w, newH = h;
 
-      // double: маркеры по углам всего проёма (как single); single/sliding/electric — по створке
+      // double: маркеры по углам всего проёма (как single); single/sliding/electric — по створке (длина панели = ширина двери)
       if (type !== 'double') {
-        // single / electric: leafW = w (длина створки = ширина двери); sliding: leafW = w * LEAF_WIDTH_RATIO
-        const isSliding = type === 'sliding';
-        const newLeafWFromRight = (v) => (isSliding ? Math.max(MIN_DOOR_SIZE * LEAF_WIDTH_RATIO, v) / LEAF_WIDTH_RATIO : Math.max(MIN_DOOR_SIZE, v));
-        const newLeafWFromLeft = (v) => (isSliding ? Math.max(MIN_DOOR_SIZE * LEAF_WIDTH_RATIO, v) / LEAF_WIDTH_RATIO : Math.max(MIN_DOOR_SIZE, v));
+        const newLeafWFromRight = (v) => Math.max(MIN_DOOR_SIZE, v);
+        const newLeafWFromLeft = (v) => Math.max(MIN_DOOR_SIZE, v);
         if (resizeHandle === 'se') {
           newX = x;
           newY = y;
@@ -424,13 +424,15 @@ const MappingCanvas = forwardRef(({
           hitMinY = o.y - Math.max(leftLeafW, rightLeafW);
           hitMaxY = o.y + h;
         } else {
+          // Зона выделения = размер створки (без расширения влево/вверх)
           const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
-          hitMinX = leafX - leafW;
-          hitMinY = leafY - leafW;
+          hitMinX = leafX;
+          hitMinY = leafY;
           hitMaxX = leafX + leafW;
           hitMaxY = leafY + leafH;
         }
-        if (localX >= hitMinX - tolerance && localX <= hitMaxX + tolerance && localY >= hitMinY - tolerance && localY <= hitMaxY + tolerance) return o;
+        const doorTolerance = 0; // зона выделения двери совпадает с размером объекта
+        if (localX >= hitMinX - doorTolerance && localX <= hitMaxX + doorTolerance && localY >= hitMinY - doorTolerance && localY <= hitMaxY + doorTolerance) return o;
       }
       if (o.type === 'label' || o.type === 'comment') {
         const w = 60;
@@ -534,29 +536,31 @@ const MappingCanvas = forwardRef(({
 
     // Вставка двери
     if (selectedTool === 'door' && mode === 'edit') {
-      const gid = selectedDoorId != null ? selectedDoorId : (doors && doors[0] ? (doors[0].id ?? doors[0].doorId ?? doors[0].globalDoorId) : undefined);
+      if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
+      const doorType = selectedDoorType || 'single';
+      const defaultW = DEFAULT_DOOR_WIDTH[doorType] ?? DOOR_WIDTH;
+      const gid = selectedDoorId != null ? selectedDoorId : (Array.isArray(doors) && doors[0] ? (doors[0].id ?? doors[0].doorId ?? doors[0].globalDoorId) : undefined);
       const doorId = `door_${Date.now()}`;
-      const x = pt.x - DOOR_WIDTH / 2;
+      const x = pt.x - defaultW / 2;
       const y = pt.y - DOOR_HEIGHT / 2;
-      const newObjects = [...objects,
-        {
-          id: doorId,
-          type: 'door',
-          x,
-          y,
-          width: DOOR_WIDTH,
-          height: DOOR_HEIGHT,
-          globalDoorId: gid ?? 0,
-          doorType: selectedDoorType || 'single',
-          flipH: defaultDoorFlipH ?? false,
-          flipV: defaultDoorFlipV ?? false,
-          rotation: defaultDoorRotation ?? 0,
-          drawNumber: defaultDrawNumber ?? '',
-          showNumberOnDrawing: defaultShowNumberOnDrawing ?? false,
-        },
-      ];
+      const newDoor = {
+        id: doorId,
+        type: 'door',
+        x,
+        y,
+        width: defaultW,
+        height: DOOR_HEIGHT,
+        globalDoorId: gid ?? 0,
+        doorType,
+        flipH: defaultDoorFlipH ?? false,
+        flipV: defaultDoorFlipV ?? false,
+        rotation: defaultDoorRotation ?? 0,
+        drawNumber: defaultDrawNumber ?? '',
+        showNumberOnDrawing: defaultShowNumberOnDrawing ?? false,
+      };
+      const newObjects = Array.isArray(objects) ? [...objects, newDoor] : [newDoor];
       onObjectsChange(newObjects);
-      onObjectSelect(newObjects[newObjects.length - 1]);
+      onObjectSelect(newDoor);
       return;
     }
 
@@ -700,8 +704,8 @@ const MappingCanvas = forwardRef(({
 
   // Цвет створки двери по состоянию (зелёный — разблокирована, красный — заблокирована/аларм)
   const getDoorLeafColor = (doorObj) => {
-    if (!Array.isArray(doors) || doors.length === 0) return '#00c853';
-    const d = doors.find(dr => dr.id === doorObj.globalDoorId);
+    if (!doors || !Array.isArray(doors) || doors.length === 0) return '#00c853';
+    const d = doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (doorObj?.globalDoorId ?? 0));
     if (!d) return '#00c853';
     if (d.alarming || d.locked) return '#d32f2f';
     return '#00c853';
@@ -709,8 +713,8 @@ const MappingCanvas = forwardRef(({
 
   // Состояние двери: открыта (physClosed=false), заблокирована, аларм (долго открыта)
   const getDoorState = (doorObj) => {
-    if (!Array.isArray(doors) || doors.length === 0) return { locked: false, alarming: false, open: false };
-    const d = doors.find(dr => dr.id === doorObj.globalDoorId);
+    if (!doors || !Array.isArray(doors) || doors.length === 0) return { locked: false, alarming: false, open: false };
+    const d = doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (doorObj?.globalDoorId ?? 0));
     if (!d) return { locked: false, alarming: false, open: false };
     return { locked: !!d.locked, alarming: !!d.alarming, open: !d.physClosed };
   };
@@ -764,48 +768,77 @@ const MappingCanvas = forwardRef(({
     }
     const LABEL_OFFSET = 10;
     const r = ((Math.round(rotation / 90) % 4) + 4) % 4; // 0, 1, 2, 3 -> 0°, 90°, 180°, 270°
-    // ========== РАСПОЛОЖЕНИЕ НОМЕРА ДВЕРИ И ID (ЗАФИКСИРОВАНО КАК ПРАВИЛЬНОЕ) ==========
-    // Позиции и ориентация для всех углов поворота (0°, 90°, 180°, 270°) и отражений (flipH/flipV)
-    // считаются правильными. В локальных координатах двери: ID и номер в зависимости от r.
-    const idPosByRotation = [
-        { x: leafCenterX, y: leafBottomY + LABEL_OFFSET },           // 0°: ID под створкой
-      { x: leafCenterX, y: leafBottomY + lh },                       // 90°: ID слева от двери (вертикально)
-      { x: leafCenterX, y: leafY+lh/2+LABEL_OFFSET },                  // 180°: ID над створкой
-      { x: leafCenterX, y: leafY+lh+LABEL_OFFSET },         // 270°: ID справа от двери
-    ];
-    const numPosByRotation = [
-      { x: leafX - LABEL_OFFSET, y: boundaryLineCenterY },         // 0°: номер слева от линии границы
-      { x: leafX - LABEL_OFFSET/2, y: leafBottomY - lw/2-LABEL_OFFSET},   // 90°: номер чуть выше синей линии, сдвиг вправо +12
-      { x: leafX-LABEL_OFFSET/2, y: boundaryLineCenterY },      // 180°: номер справа от створки
-      { x: leafCenterX-lw/2-LABEL_OFFSET, y: leafY-lw/2},                  // 270°: номер над створкой
-    ];
-    const { x: idX, y: idY } = idPosByRotation[r];
     const isReflected = flipH || flipV;
-    // Позиция номера: для 90° и 180° в отражённом состоянии — отодвинуть от синей линии на LABEL_OFFSET/2
-    let numX = numPosByRotation[r].x;
-    let numY = numPosByRotation[r].y;
-    if (r === 1 && isReflected) {
-      numX = leafX - LABEL_OFFSET / 2 - LABEL_OFFSET / 2;
-      numY = leafBottomY - lw / 2 - LABEL_OFFSET;
-    } else if (r === 2 && isReflected) {
-      numX = leafX - LABEL_OFFSET / 2 - LABEL_OFFSET / 2;
-      numY = boundaryLineCenterY;
+
+    let idX, idY, numX, numY, idVertical, numVertical, idRotationAngle, numRotationAngle;
+
+    if (type === 'sliding') {
+      // Раздвижная: ID и Номер параллельно створке с двух сторон от неё; при повороте/отражении остаются по сторонам створки; текст всегда читаемый
+      const leafCenterY = leafY + lh / 2;
+      const slidingIdPos = [
+        { x: leafCenterX, y: leafY-lh/2 },           // 0°: ID выше створки
+        { x: leafX+lw/2, y: leafCenterY - LABEL_OFFSET-lh/2 },           // 90°: ID слева от створки
+        { x: leafCenterX, y: leafY - LABEL_OFFSET },     // 180°: ID ниже створки
+        { x: leafX+lw/2, y: leafCenterY -LABEL_OFFSET },      // 270°: ID справа от створки
+      ];
+      const slidingNumPos = [
+        { x: leafCenterX, y: leafY + lh + LABEL_OFFSET },     // 0°: Номер ниже створки
+        { x: leafX+lw/2, y: leafCenterY+LABEL_OFFSET+lh/2 },     // 90°: Номер справа от створки
+        { x: leafCenterX, y: leafY +lh/2+ LABEL_OFFSET },          // 180°: Номер выше створки
+        { x: leafX+lw/2, y: leafCenterY+lh/2+LABEL_OFFSET },          // 270°: Номер слева от створки
+      ];
+      idX = slidingIdPos[r].x;
+      idY = slidingIdPos[r].y;
+      numX = slidingNumPos[r].x;
+      numY = slidingNumPos[r].y;
+      idVertical = r === 1 || r === 3; // вертикальный текст при вертикальной створке (параллельно створке)
+      // invRotateScale уже отменяет поворот/отражение двери — текст не зеркалится; только направление вдоль створки (0°/90°/270°)
+      idRotationAngle = idVertical ? (isReflected ? 90 : 270) : 0;
+      numRotationAngle = idVertical ? (isReflected ? 270 : 90) : 0;
+      if (r === 1) idRotationAngle = (idRotationAngle + 180) % 360; // раздвижная 90°: ID повёрнут на 180°
+      if (r === 3) numRotationAngle = (numRotationAngle + 180) % 360; // раздвижная 270°: Номер повёрнут на 180°
+    } else {
+      // ========== РАСПОЛОЖЕНИЕ НОМЕРА ДВЕРИ И ID (single, double, electric) ==========
+      const idPosByRotation = [
+        { x: leafCenterX, y: leafBottomY + LABEL_OFFSET },           // 0°: ID под створкой
+        { x: leafCenterX, y: leafBottomY + lh },                       // 90°: ID слева от двери (вертикально)
+        { x: leafCenterX, y: leafY+lh/2+LABEL_OFFSET },                  // 180°: ID над створкой
+        { x: leafCenterX, y: leafY+lh+LABEL_OFFSET },         // 270°: ID справа от двери
+      ];
+      const numPosByRotation = [
+        { x: leafX - LABEL_OFFSET, y: boundaryLineCenterY },         // 0°: номер слева от линии границы
+        { x: leafX - LABEL_OFFSET/2, y: leafBottomY - lw/2-LABEL_OFFSET},   // 90°: номер чуть выше синей линии
+        { x: leafX-LABEL_OFFSET/2, y: boundaryLineCenterY },      // 180°: номер справа от створки
+        { x: leafCenterX-lw/2-LABEL_OFFSET, y: leafY-lw/2},                  // 270°: номер над створкой
+      ];
+      idX = idPosByRotation[r].x;
+      idY = idPosByRotation[r].y;
+      numX = numPosByRotation[r].x;
+      numY = numPosByRotation[r].y;
+      if (r === 1 && isReflected) {
+        numX = leafX - LABEL_OFFSET / 2 - LABEL_OFFSET / 2;
+        numY = leafBottomY - lw / 2 - LABEL_OFFSET;
+      } else if (r === 2 && isReflected) {
+        numX = leafX - LABEL_OFFSET / 2 - LABEL_OFFSET / 2;
+        numY = boundaryLineCenterY;
+      }
+      idVertical = r === 1 || r === 3;
+      idRotationAngle = idVertical ? ((r === 3 && isReflected) ? 90 : 270) : undefined;
+      numVertical = r === 0 || r === 2;
+      numRotationAngle = (r === 0 && isReflected) ? 270 : (r === 1 && isReflected) ? 180 : (r === 3 && isReflected) ? 180 : numVertical ? 90 : 0;
     }
+
     // Обратное преобразование к повороту/отражению двери — чтобы подписи оставались читаемыми (не зеркальными, не перевёрнутыми)
     const invRotateScale = (px, py) =>
       `translate(${px},${py}) rotate(${-rotation}) scale(${flipH ? -1 : 1},${flipV ? -1 : 1}) translate(${-px},${-py})`;
     const labelEls = [];
     const showIdForDoor = obj.showDoorIdOnDrawing === true || (showDoorId && obj.showDoorIdOnDrawing !== false);
-    // Ориентация подписей (зафиксировано как правильное для всех поворотов и отражений):
-    // ID параллельно створке; при 270° в отражённом — +180° (rotate 90°)
-    const idVertical = r === 1 || r === 3;
-    const idRotationAngle = idVertical ? ((r === 3 && isReflected) ? 90 : 270) : undefined;
-    // Номер: ориентация и поправки для отражённого состояния (0°, 90°, 270° — повернуть на 180°; 90°, 180° — отступ от синей линии) — зафиксировано как правильное
-    const numVertical = r === 0 || r === 2;
-    const numRotationAngle = (r === 0 && isReflected) ? 270 : (r === 1 && isReflected) ? 180 : (r === 3 && isReflected) ? 180 : numVertical ? 90 : 0;
     if (showIdForDoor) {
-      const doorRec = Array.isArray(doors) ? doors.find(dr => (dr.id ?? dr.doorId ?? dr.globalDoorId) === obj.globalDoorId) : null;
-      const idStr = `ID-${doorRec?.label ?? doorRec?.id ?? obj.globalDoorId ?? '-'}`;
+      const doorRec = doors && Array.isArray(doors) ? doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (obj?.globalDoorId ?? 0)) : null;
+      // ID привязан к плате: ID-{nodeId}-{localDoor}, например ID-1-1 = плата 1 дверь 1
+      const nodeId = doorRec?.nodeId ?? 1;
+      const localDoor = doorRec?.localDoor ?? doorRec?.localDoorId ?? doorRec?.id ?? doorRec?.doorId ?? doorRec?.globalDoorId ?? obj.globalDoorId ?? '-';
+      const idStr = `ID-${nodeId}-${localDoor}`;
       labelEls.push(
         <g key="doorId" transform={invRotateScale(idX, idY)}>
           <text x={idX} y={idY} textAnchor="middle" dominantBaseline={idVertical ? 'middle' : undefined} fontSize={9} fill="#333" transform={idRotationAngle !== undefined ? `rotate(${idRotationAngle} ${idX} ${idY})` : undefined}>{idStr}</text>
@@ -900,7 +933,7 @@ const MappingCanvas = forwardRef(({
         el.push(<path key="arcR" d={`M ${x + w - rightLeafW} ${y} A ${rightLeafW} ${rightLeafW} 0 0 1 ${x + w} ${y - rightLeafW}`} fill="none" stroke={ARC_COLOR} strokeWidth={1} strokeDasharray="4,2" />);
         return wrap(el);
       }
-      // Закрыто: радиусные линии — левая вверх как у одностворчатой, правая вверх от (x+w, y) к (x+w, y-rightLeafW)
+      // Закрыто: синие вертикальные линии (границы проёма) + две створки + дуги открытия
       el.push(<line key="boundaryL" x1={x} y1={y} x2={x} y2={y - leftLeafW} stroke={BOUNDARY_COLOR} strokeWidth={1.5} />);
       el.push(<line key="boundaryR" x1={x + w} y1={y} x2={x + w} y2={y - rightLeafW} stroke={BOUNDARY_COLOR} strokeWidth={1.5} />);
       el.push(<rect key="leafL" className={alarmClass} x={x} y={y} width={leftLeafW} height={h} fill={leafColor} stroke={LEAF_STROKE} strokeWidth={strokeW} />);
@@ -912,11 +945,16 @@ const MappingCanvas = forwardRef(({
       return wrap(el);
     }
 
-    // Раздвижная: проём + панель (прямоугольник)
+    // Раздвижная: при открытии створка сдвигается влево до левого верхнего угла левой опоры (правый край створки = leafX)
     if (type === 'sliding') {
-      el.push(<line key="boundary" x1={x} y1={y} x2={x} y2={y + h} stroke={BOUNDARY_COLOR} strokeWidth={1.5} />);
-      el.push(<line key="boundary2" x1={x + w} y1={y} x2={x + w} y2={y + h} stroke={BOUNDARY_COLOR} strokeWidth={1.5} />);
-      el.push(<rect key="leaf" className={alarmClass} x={x + w * 0.1} y={y} width={leafW} height={h} fill={leafColor} stroke={LEAF_STROKE} strokeWidth={strokeW} />);
+      const leafX = x;
+      const gap = 2;
+      const supportH = h * 0.5;
+      const supportW = Math.max(4, h);
+      const leafOpenX = leafX - leafW; // открыто: створка влево, правый край у левой опоры (leafX)
+      el.push(<rect key="leaf" className={alarmClass} x={isOpen ? leafOpenX : leafX} y={y} width={leafW} height={h} fill={leafColor} stroke={LEAF_STROKE} strokeWidth={strokeW} />);
+      el.push(<rect key="supportL" x={leafX} y={y + h + gap} width={supportW} height={supportH} fill="#fff" stroke={LEAF_STROKE} strokeWidth={strokeW} />);
+      el.push(<rect key="supportR" x={leafX + leafW - supportW} y={y + h + gap} width={supportW} height={supportH} fill="#fff" stroke={LEAF_STROKE} strokeWidth={strokeW} />);
       return wrap(el);
     }
 
@@ -926,11 +964,12 @@ const MappingCanvas = forwardRef(({
   // Рендеринг объектов: стены всегда на заднем плане, двери — на переднем (порядок не зависит от редактирования)
   const LAYER_ORDER = { wall: 0, label: 1, comment: 2, door: 3 };
   const renderObjects = () => {
-    const sorted = [...objects].sort((a, b) => {
+    const valid = (objects || []).filter(o => o && o.type);
+    const sorted = [...valid].sort((a, b) => {
       const la = LAYER_ORDER[a.type] ?? 1;
       const lb = LAYER_ORDER[b.type] ?? 1;
       if (la !== lb) return la - lb;
-      return objects.indexOf(a) - objects.indexOf(b);
+      return valid.indexOf(a) - valid.indexOf(b);
     });
     return sorted.map(obj => {
       if (obj.type === 'wall') {

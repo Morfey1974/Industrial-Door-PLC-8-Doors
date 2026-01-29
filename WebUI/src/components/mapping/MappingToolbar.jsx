@@ -39,7 +39,7 @@ const MappingToolbar = ({
 }) => {
   const doorList = Array.isArray(doors)
     ? doors
-    : (doors && Array.isArray(doors.doors) ? doors.doors : doors && Array.isArray(doors.data) ? doors.data : []);
+    : (doors && Array.isArray(doors.doors) ? doors.doors : doors && Array.isArray(doors.data) ? doors.data : []) || [];
   const getDoorId = (d) => d?.id ?? d?.doorId ?? d?.globalDoorId;
   /** Подпись для выбора двери: Плата{nodeId} Дверь {localDoor} */
   const getDoorOptionLabel = (d) => {
@@ -139,8 +139,8 @@ const MappingToolbar = ({
                 onChange={(e) => onSelectedDoorIdChange(e.target.value ? Number(e.target.value) : null)}
               >
                 <option value="">— не выбрана —</option>
-                {doorList.map((d) => (
-                  <option key={getDoorId(d)} value={getDoorId(d)}>{getDoorOptionLabel(d)}</option>
+                {(doorList || []).map((d) => (
+                  <option key={getDoorId(d) ?? 'noid'} value={getDoorId(d)}>{getDoorOptionLabel(d)}</option>
                 ))}
               </select>
             </label>
@@ -357,15 +357,15 @@ const MappingToolbar = ({
                 <div className="property-item">
                   <span className="property-label">Дверь (плата–дверь):</span>
                   <select
-                    value={selectedObject.globalDoorId ?? ''}
+                    value={selectedObject.globalDoorId === 0 || selectedObject.globalDoorId == null ? '' : String(selectedObject.globalDoorId)}
                     onChange={(e) => onObjectChange({
                       ...selectedObject,
-                      globalDoorId: e.target.value ? Number(e.target.value) : 0,
+                      globalDoorId: e.target.value === '' ? 0 : Number(e.target.value),
                     })}
                   >
-                    <option value={0}>—</option>
-                    {doorList.map((d) => (
-                      <option key={getDoorId(d)} value={getDoorId(d)}>{getDoorOptionLabel(d)}</option>
+                    <option value="">—</option>
+                    {(doorList || []).map((d) => (
+                      <option key={getDoorId(d) ?? 'noid'} value={getDoorId(d)}>{getDoorOptionLabel(d)}</option>
                     ))}
                   </select>
                 </div>
