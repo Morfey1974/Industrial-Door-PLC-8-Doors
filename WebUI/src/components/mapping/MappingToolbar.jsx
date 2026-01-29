@@ -404,11 +404,22 @@ const MappingToolbar = ({
               <>
                 <div className="property-item">
                   <span className="property-label">Текст:</span>
-                  <input
-                    type="text"
-                    value={selectedObject.text ?? ''}
-                    onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value })}
-                  />
+                  {selectedObject.type === 'comment' ? (
+                    <textarea
+                      value={selectedObject.text ?? ''}
+                      onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value.slice(0, 500) })}
+                      maxLength={500}
+                      rows={3}
+                      style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                      title="До 500 символов"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={selectedObject.text ?? ''}
+                      onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value })}
+                    />
+                  )}
                 </div>
                 <div className="property-item">
                   <span className="property-label">Размер шрифта:</span>
@@ -420,6 +431,37 @@ const MappingToolbar = ({
                     max="24"
                   />
                 </div>
+                {selectedObject.type === 'comment' && (
+                  <div className="property-item">
+                    <span className="property-label">Выравнивание:</span>
+                    <div className="toolbar-actions" style={{ flexWrap: 'wrap', gap: 4 }}>
+                      <button
+                        type="button"
+                        className={`toolbar-action ${(selectedObject.textAnchor ?? 'start') === 'start' ? 'active' : ''}`}
+                        onClick={() => onObjectChange({ ...selectedObject, textAnchor: 'start' })}
+                        title="Влево"
+                      >
+                        Влево
+                      </button>
+                      <button
+                        type="button"
+                        className={`toolbar-action ${(selectedObject.textAnchor ?? 'start') === 'middle' ? 'active' : ''}`}
+                        onClick={() => onObjectChange({ ...selectedObject, textAnchor: 'middle' })}
+                        title="По центру"
+                      >
+                        По центру
+                      </button>
+                      <button
+                        type="button"
+                        className={`toolbar-action ${(selectedObject.textAnchor ?? 'start') === 'end' ? 'active' : ''}`}
+                        onClick={() => onObjectChange({ ...selectedObject, textAnchor: 'end' })}
+                        title="Вправо"
+                      >
+                        Вправо
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
             <button

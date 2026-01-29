@@ -174,7 +174,9 @@ const Mapping = () => {
         e.preventDefault();
         handleRedo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (mode === 'edit' && selectedObject) {
+        const active = document.activeElement;
+        const isEditingText = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.closest('.mapping-canvas-container');
+        if (mode === 'edit' && selectedObject && !isEditingText) {
           e.preventDefault();
           const newObjects = objects.filter(o => o.id !== selectedObject.id);
           handleObjectsChange(newObjects);
@@ -254,7 +256,10 @@ const Mapping = () => {
         {mode === 'edit' && (
           <MappingToolbar
             selectedTool={selectedTool}
-            onToolSelect={setSelectedTool}
+            onToolSelect={(toolId) => {
+              setSelectedTool(toolId);
+              setSelectedObject(null); // при смене инструмента сбрасываем выбор — панель «Свойства» показывает настройки выбранного инструмента
+            }}
             selectedObject={selectedObject}
             onObjectChange={(obj) => {
               setSelectedObject(obj);

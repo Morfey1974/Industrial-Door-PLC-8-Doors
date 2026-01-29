@@ -7,6 +7,8 @@ import './MappingCanvas.css';
 
 const DOOR_WIDTH = 60;
 const DOOR_HEIGHT = 10;
+/** Максимум символов в поле комментария (включая переносы строк) */
+const COMMENT_MAX_LENGTH = 500;
 
 // Точка пересечения двух отрезков (x1,y1)-(x2,y2) и (x3,y3)-(x4,y4)
 function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -564,9 +566,13 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Вставка комментария
+    // Вставка комментария: сразу выбираем и открываем поле ввода текста
     if (selectedTool === 'comment' && mode === 'edit') {
-      onObjectsChange([...objects, { id: `comment_${Date.now()}`, type: 'comment', x: pt.x, y: pt.y, text: 'Текст', fontSize: 14 }]);
+      e.preventDefault();
+      e.stopPropagation();
+      const newComment = { id: `comment_${Date.now()}`, type: 'comment', x: pt.x, y: pt.y, text: '', fontSize: 14, textAnchor: 'start' };
+      onObjectsChange([...objects, newComment]);
+      onObjectSelect(newComment);
       return;
     }
   }, [
@@ -644,14 +650,14 @@ const MappingCanvas = forwardRef(({
     return () => el.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
-  // При выборе комментария инструментом «Выбор» — войти в режим редактирования текста в канвасе
+  // При выборе комментария (инструмент «Выбор» или только что вставлен инструментом «Комментарий») — войти в режим редактирования текста в канвасе
   useEffect(() => {
-    if (selectedTool === 'select' && mode === 'edit' && selectedObject?.type === 'comment') {
+    if (mode === 'edit' && selectedObject?.type === 'comment') {
       setEditingCommentId(selectedObject.id);
     } else {
       setEditingCommentId(null);
     }
-  }, [selectedTool, mode, selectedObject?.id, selectedObject?.type]);
+  }, [mode, selectedObject?.id, selectedObject?.type]);
 
   // Фокус в поле комментария и курсор в конец при открытии редактора
   useEffect(() => {
@@ -917,9 +923,16 @@ const MappingCanvas = forwardRef(({
     return wrap(el);
   };
 
-  // Рендеринг объектов
+  // Рендеринг объектов: стены всегда на заднем плане, двери — на переднем (порядок не зависит от редактирования)
+  const LAYER_ORDER = { wall: 0, label: 1, comment: 2, door: 3 };
   const renderObjects = () => {
-    return objects.map(obj => {
+    const sorted = [...objects].sort((a, b) => {
+      const la = LAYER_ORDER[a.type] ?? 1;
+      const lb = LAYER_ORDER[b.type] ?? 1;
+      if (la !== lb) return la - lb;
+      return objects.indexOf(a) - objects.indexOf(b);
+    });
+    return sorted.map(obj => {
       if (obj.type === 'wall') {
         // В режиме выбора/редактирования — два маркера по концам стены; тянем за них для изменения длины/положения
         const selected = selectedObject?.id === obj.id && selectedTool === 'select' && mode === 'edit';
@@ -981,51 +994,67 @@ const MappingCanvas = forwardRef(({
         );
       }
       if (obj.type === 'comment') {
-        const isEditing = editingCommentId === obj.id && selectedTool === 'select' && mode === 'edit';
+        const isEditing = editingCommentId === obj.id && mode === 'edit';
         const fs = obj.fontSize || 14;
         if (isEditing && onObjectChange) {
+          const lineCount = (obj.text || '').split('\n').length;
+          const editHeight = Math.max(60, Math.min(120, lineCount * (fs + 6) + 16));
           return (
             <g key={obj.id}>
               <foreignObject
                 x={obj.x}
                 y={obj.y}
                 width={280}
-                height={Math.max(22, fs + 8)}
+                height={editHeight}
                 style={{ overflow: 'visible' }}
                 onClick={(ev) => ev.stopPropagation()}
               >
-                <input
+                <textarea
                   ref={commentInputRef}
-                  type="text"
                   defaultValue={obj.text || ''}
+                  maxLength={COMMENT_MAX_LENGTH}
+                  title={`До ${COMMENT_MAX_LENGTH} символов. Shift+Enter — новая строка, Enter или Esc — выйти.`}
                   className="mapping-comment-input"
+                  rows={3}
                   style={{
                     width: '100%',
                     height: '100%',
                     boxSizing: 'border-box',
                     fontSize: fs,
-                    padding: '2px 6px',
+                    padding: '4px 6px',
                     border: '1px solid #2196F3',
                     outline: 'none',
                     color: '#333',
                     fontStyle: 'italic',
                     background: '#fff',
+                    resize: 'none',
                   }}
                   onClick={(ev) => ev.stopPropagation()}
                   onPointerDown={(ev) => ev.stopPropagation()}
                   onKeyDown={(ev) => {
-                    if (ev.key === 'Enter') {
+                    ev.stopPropagation(); // Backspace/Delete не должны удалять объект — только стирать текст в поле
+                    if (ev.key === 'Enter' && !ev.shiftKey) {
                       ev.preventDefault();
-                      const value = ev.target.value.trim();
+                      const value = ev.target.value;
                       onObjectChange({ ...obj, text: value || '' });
                       setEditingCommentId(null);
+                    } else if (ev.key === 'Escape') {
+                      ev.preventDefault();
+                      const value = ev.target.value;
+                      onObjectChange({ ...obj, text: value || '' });
+                      setEditingCommentId(null);
+                      onObjectSelect(null); // снять выбор — панель «Свойства» закрывается
                     }
+                    // Shift+Enter — переход на новую строку (стандартное поведение textarea)
                   }}
                 />
               </foreignObject>
             </g>
           );
         }
+        const anchor = obj.textAnchor || 'start';
+        const lines = (obj.text || '').split('\n');
+        const lineHeight = fs + 2;
         return (
           <text
             key={obj.id}
@@ -1034,10 +1063,13 @@ const MappingCanvas = forwardRef(({
             fontSize={fs}
             fill="#666"
             fontStyle="italic"
+            textAnchor={anchor}
             className={selectedObject?.id === obj.id ? 'selected' : ''}
             onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
           >
-            {obj.text || ''}
+            {lines.map((line, i) =>
+              i === 0 ? line : <tspan key={i} x={obj.x} dy={lineHeight}>{line}</tspan>
+            )}
           </text>
         );
       }
