@@ -70,6 +70,9 @@ const MappingCanvas = forwardRef(({
   const lastMovedObjectsRef = useRef(null);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const commentInputRef = useRef(null);
+  const commentMoveByRightRef = useRef(false); // перетаскивание комментария правой кнопкой — подавить контекстное меню
+  const [isMovingByRightButton, setIsMovingByRightButton] = useState(false); // перетаскивание правой кнопкой — не показывать маркеры двери/стены
+  const [isJustFinishedRightDrag, setIsJustFinishedRightDrag] = useState(false); // после отпускания мыши после правого перетаскивания — маркеры не показывать до следующего левого клика
 
   const DOOR_HANDLE_SIZE = 8;
   const MIN_DOOR_SIZE = 12;
@@ -456,6 +459,33 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
+    // Правый клик по объекту (комментарий, дверь, стена, метка) — только перетаскивание; у комментария левый клик — редактирование
+    if (e.button === 2 && selectedTool === 'select' && mode === 'edit') {
+      const hitRight = hitTest(svgPoint.x, svgPoint.y);
+      if (hitRight && (hitRight.type === 'comment' || hitRight.type === 'door' || hitRight.type === 'wall' || hitRight.type === 'label')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsMovingByRightButton(true);
+        if (hitRight.type === 'comment') {
+          commentMoveByRightRef.current = true;
+          setEditingCommentId(null);
+        }
+        onObjectSelect(hitRight);
+        setMoveStart({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          objX: hitRight.x,
+          objY: hitRight.y,
+          objX1: hitRight.x1,
+          objY1: hitRight.y1,
+          objX2: hitRight.x2,
+          objY2: hitRight.y2,
+        });
+        setIsMovingObject(true);
+        return;
+      }
+    }
+
     if (e.button !== 0) return;
 
     // Инструмент «Вид» — только настройки привязки/сетки, клик по канвасу ничего не делает
@@ -463,8 +493,20 @@ const MappingCanvas = forwardRef(({
 
     const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
 
+    // Вставка комментария — обрабатываем до блока «Выбор», чтобы клик по карте всегда добавлял комментарий
+    if (selectedTool === 'comment' && mode === 'edit') {
+      e.preventDefault();
+      e.stopPropagation();
+      const newComment = { id: `comment_${Date.now()}`, type: 'comment', x: pt.x, y: pt.y, text: '', fontSize: 14, textAnchor: 'start' };
+      onObjectsChange([...objects, newComment]);
+      onObjectSelect(newComment);
+      setEditingCommentId(newComment.id);
+      return;
+    }
+
     // Выбор и перемещение (или ресайз двери за углы, или ресайз стены за концы)
     if (selectedTool === 'select' && mode === 'edit') {
+      setIsJustFinishedRightDrag(false); // левый клик — сбрасываем «только что перетащили правой», маркеры можно показывать
       const wallEnd = hitTestWallEndpoint(svgPoint.x, svgPoint.y);
       if (wallEnd && selectedObject?.type === 'wall') {
         e.stopPropagation();
@@ -491,21 +533,29 @@ const MappingCanvas = forwardRef(({
       const hit = hitTest(svgPoint.x, svgPoint.y);
       if (hit) {
         onObjectSelect(hit);
-        if (hit.type !== 'comment') {
-          setMoveStart({
-            clientX: e.clientX,
-            clientY: e.clientY,
-            objX: hit.x,
-            objY: hit.y,
-            objX1: hit.x1,
-            objY1: hit.y1,
-            objX2: hit.x2,
-            objY2: hit.y2,
-          });
-          setIsMovingObject(true);
+        if (hit.type === 'comment') {
+          // Левый клик по комментарию — режим редактирования (перетаскивание — правой кнопкой)
+          setEditingCommentId(hit.id);
+          return;
         }
+        if (hit.type === 'door' || hit.type === 'wall') {
+          // Левый клик по двери/стене — только выбор и редактирование в панели (перетаскивание — правой кнопкой)
+          return;
+        }
+        setMoveStart({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          objX: hit.x,
+          objY: hit.y,
+          objX1: hit.x1,
+          objY1: hit.y1,
+          objX2: hit.x2,
+          objY2: hit.y2,
+        });
+        setIsMovingObject(true);
       } else {
         onObjectSelect(null);
+        setEditingCommentId(null);
       }
       return;
     }
@@ -570,15 +620,6 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Вставка комментария: сразу выбираем и открываем поле ввода текста
-    if (selectedTool === 'comment' && mode === 'edit') {
-      e.preventDefault();
-      e.stopPropagation();
-      const newComment = { id: `comment_${Date.now()}`, type: 'comment', x: pt.x, y: pt.y, text: '', fontSize: 14, textAnchor: 'start' };
-      onObjectsChange([...objects, newComment]);
-      onObjectSelect(newComment);
-      return;
-    }
   }, [
     getSVGPoint,
     selectedTool,
@@ -610,6 +651,9 @@ const MappingCanvas = forwardRef(({
       onMoveEnd(lastMovedObjectsRef.current);
       lastMovedObjectsRef.current = null;
     }
+    commentMoveByRightRef.current = false;
+    if (isMovingByRightButton) setIsJustFinishedRightDrag(true);
+    setIsMovingByRightButton(false);
     setIsDragging(false);
     setDragStart(null);
     setIsPanning(false);
@@ -621,14 +665,18 @@ const MappingCanvas = forwardRef(({
     setResizeStart(null);
     setIsResizingWall(false);
     setWallResizeEnd(null);
-  }, [isMovingObject, onMoveEnd]);
+  }, [isMovingObject, onMoveEnd, isMovingByRightButton]);
 
   // Обработка контекстного меню (отключение для правой кнопки мыши)
   const handleContextMenu = useCallback((e) => {
-    if (isPanning) {
+    // Не показывать контекстное меню браузера на канвасе: при панорамировании, перетаскивании объекта или правом клике по комментарию (перемещение)
+    if (isPanning || isMovingObject || commentMoveByRightRef.current) {
       e.preventDefault();
+      return;
     }
-  }, [isPanning]);
+    // На всей области карты отключаем контекстное меню, чтобы не мешало работе с объектами
+    e.preventDefault();
+  }, [isPanning, isMovingObject]);
 
   // Зум колесиком мыши: центр масштабирования — перекрестие курсора (точка под курсором остаётся на месте)
   const handleWheel = useCallback((e) => {
@@ -654,23 +702,24 @@ const MappingCanvas = forwardRef(({
     return () => el.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
-  // При выборе комментария (инструмент «Выбор» или только что вставлен инструментом «Комментарий») — войти в режим редактирования текста в канвасе
+  // Закрыть редактор комментария при смене объекта/режима; открытие редактора — только по левому клику в handleMouseDown
   useEffect(() => {
-    if (mode === 'edit' && selectedObject?.type === 'comment') {
-      setEditingCommentId(selectedObject.id);
-    } else {
+    if (mode !== 'edit' || selectedObject?.type !== 'comment') {
       setEditingCommentId(null);
     }
   }, [mode, selectedObject?.id, selectedObject?.type]);
 
-  // Фокус в поле комментария и курсор в конец при открытии редактора
+  // Фокус в поле комментария и курсор в конец при открытии редактора (после отрисовки textarea)
   useEffect(() => {
     if (!editingCommentId) return;
-    const input = commentInputRef.current;
-    if (!input) return;
-    input.focus();
-    const len = (input.value || '').length;
-    input.setSelectionRange(len, len);
+    const id = requestAnimationFrame(() => {
+      const input = commentInputRef.current;
+      if (!input) return;
+      input.focus();
+      const len = (input.value || '').length;
+      input.setSelectionRange(len, len);
+    });
+    return () => cancelAnimationFrame(id);
   }, [editingCommentId]);
 
   // Бесконечная сетка в мировой системе координат (рисуем с запасом по видимой области)
@@ -743,8 +792,8 @@ const MappingCanvas = forwardRef(({
     const leafColor = getDoorLeafColor(obj);
     const state = getDoorState(obj);
     const selected = selectedObject?.id === obj.id;
-    // Маркеры редактирования показываем только в режиме редактирования; в режиме просмотра объект показывается без маркеров
-    const showEditHandles = selected && selectedTool === 'select' && mode === 'edit';
+    // Маркеры редактирования — только при левом клике (редактирование); при перетаскивании правой кнопкой и после него маркеры не показываем
+    const showEditHandles = selected && selectedTool === 'select' && mode === 'edit' && !isMovingByRightButton && !isJustFinishedRightDrag;
     const strokeW = selected ? 2 : 1;
     const alarmClass = state.alarming ? 'door-leaf-alarm' : '';
     const isOpen = state.open && !state.locked;
@@ -983,8 +1032,11 @@ const MappingCanvas = forwardRef(({
     });
     return sorted.map(obj => {
       if (obj.type === 'wall') {
-        // В режиме выбора/редактирования — два маркера по концам стены; тянем за них для изменения длины/положения
+        // В режиме выбора/редактирования — два маркера по концам стены; при перетаскивании правой кнопкой маркеры не показываем
         const selected = selectedObject?.id === obj.id && selectedTool === 'select' && mode === 'edit';
+        const showWallHandles = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
+        // Синий цвет выбора не показываем при перетаскивании правой кнопкой и сразу после него
+        const showSelectedStyle = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
         return (
           <g key={obj.id}>
             <line
@@ -994,10 +1046,10 @@ const MappingCanvas = forwardRef(({
               y2={obj.y2}
               stroke={obj.color || '#333333'}
               strokeWidth={obj.thickness || 5}
-              className={selected ? 'selected' : ''}
+              className={showSelectedStyle ? 'selected' : ''}
               onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
             />
-            {selected && (
+            {showWallHandles && (
               <>
                 <circle
                   cx={obj.x1}
@@ -1114,6 +1166,7 @@ const MappingCanvas = forwardRef(({
             fontStyle="italic"
             textAnchor={anchor}
             className={selectedObject?.id === obj.id ? 'selected' : ''}
+            style={{ cursor: 'pointer' }}
             onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
           >
             {lines.map((line, i) =>

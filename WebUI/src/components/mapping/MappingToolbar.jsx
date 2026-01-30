@@ -408,9 +408,10 @@ const MappingToolbar = ({
                     <textarea
                       value={selectedObject.text ?? ''}
                       onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value.slice(0, 500) })}
+                      onKeyDown={(e) => { e.stopPropagation(); }}
                       maxLength={500}
                       rows={3}
-                      style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                      style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '4px 4px' }}
                       title="До 500 символов"
                     />
                   ) : (
@@ -418,6 +419,7 @@ const MappingToolbar = ({
                       type="text"
                       value={selectedObject.text ?? ''}
                       onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value })}
+                      onKeyDown={(e) => { e.stopPropagation(); }}
                     />
                   )}
                 </div>

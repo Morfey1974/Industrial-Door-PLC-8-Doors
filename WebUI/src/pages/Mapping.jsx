@@ -48,6 +48,7 @@ const Mapping = () => {
   const [defaultShowNumberOnDrawing, setDefaultShowNumberOnDrawing] = useState(false);
   const fileInputRef = useRef(null);
   const modalResolveRef = useRef(null);
+  const savedFileHandleRef = useRef(null); // ручка файла после первого сохранения — повторное сохранение без диалога
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -220,6 +221,7 @@ const Mapping = () => {
     if (!confirmed) return;
     const result = await doLoadFromController();
     if (result?.success) {
+      savedFileHandleRef.current = null; // карта из контроллера — следующее сохранение через диалог
       setInfoModal({ isOpen: true, title: 'Готово', message: 'Карта загружена из контроллера.' });
     }
   }, [showConfirm, doLoadFromController]);
@@ -230,7 +232,7 @@ const Mapping = () => {
     return base.endsWith('_map') ? base + '.json' : base + '_map.json';
   }, [configBaseName, projectName]);
 
-  // Сохранение карты в файл на компьютере (окно выбора места сохранения, если API доступен). Возвращает true, если сохранено.
+  // Сохранение карты в файл на компьютере. Первое сохранение — диалог выбора места; повторное — в тот же файл без диалога.
   const handleSaveToFile = useCallback(async () => {
     const data = mappingData();
     const jsonStr = JSON.stringify(data, null, 2);
@@ -238,15 +240,33 @@ const Mapping = () => {
 
     if (typeof window.showSaveFilePicker === 'function') {
       try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: defaultName,
-          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(jsonStr);
-        await writable.close();
-        setMapFileName(handle.name || defaultName);
-        return true;
+        let handle = savedFileHandleRef.current;
+        if (handle) {
+          // Уже сохраняли ранее — пишем в тот же файл без диалога
+          try {
+            const writable = await handle.createWritable();
+            await writable.write(jsonStr);
+            await writable.close();
+            setMapFileName(handle.name || defaultName);
+            return true;
+          } catch (writeErr) {
+            // Права отозваны или файл удалён — открываем диалог заново
+            savedFileHandleRef.current = null;
+            handle = null;
+          }
+        }
+        if (!handle) {
+          handle = await window.showSaveFilePicker({
+            suggestedName: defaultName,
+            types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+          });
+          savedFileHandleRef.current = handle;
+          const writable = await handle.createWritable();
+          await writable.write(jsonStr);
+          await writable.close();
+          setMapFileName(handle.name || defaultName);
+          return true;
+        }
       } catch (err) {
         if (err?.name === 'AbortError') return false;
         console.error('Ошибка сохранения файла:', err);
@@ -255,7 +275,7 @@ const Mapping = () => {
       }
     }
 
-    // Fallback: скачивание в папку по умолчанию
+    // Fallback: скачивание в папку по умолчанию (повторное сохранение всё равно откроет диалог браузера)
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -267,13 +287,17 @@ const Mapping = () => {
     return true;
   }, [mappingData, getDefaultMapFileName]);
 
-  // Сохранить карту в файл и вернуться в редактор конфигурации (при отмене сохранения остаёмся в маппинге)
+  // Сохранить карту в файл и вернуться в редактор конфигурации. Если карта уже сохранена — без диалога; если изменений нет — просто выход.
   const handleSaveAndExit = useCallback(async () => {
+    if (savedFileHandleRef.current && !isDirty) {
+      navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
+      return;
+    }
     const saved = await handleSaveToFile();
     if (saved) {
       navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
     }
-  }, [handleSaveToFile, navigate, configBaseName]);
+  }, [handleSaveToFile, navigate, configBaseName, isDirty]);
 
   // Загрузка карты из файла с компьютера
   const triggerLoadFromFile = useCallback(() => {
@@ -292,6 +316,7 @@ const Mapping = () => {
           if (data.viewport) setViewport({ x: data.viewport.x ?? 0, y: data.viewport.y ?? 0, zoom: data.viewport.zoom ?? 1 });
           if (data.projectName != null) setProjectName(data.projectName);
           setMapFileName(file.name);
+          savedFileHandleRef.current = null; // загрузили из другого файла — следующее сохранение через диалог
           setIsDirty(false);
         } else {
           alert('Неверный формат файла карты.');
@@ -419,7 +444,8 @@ const Mapping = () => {
         handleRedo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const active = document.activeElement;
-        const isEditingText = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.closest('.mapping-canvas-container');
+        // Не удалять объект при редактировании текста: в инлайн-редакторе на карте И в поле «Текст» в панели свойств (тулбар)
+        const isEditingText = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
         if (mode === 'edit' && selectedObject && !isEditingText) {
           e.preventDefault();
           const newObjects = objects.filter(o => o.id !== selectedObject.id);
