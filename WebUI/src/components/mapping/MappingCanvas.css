@@ -46,7 +46,8 @@
   pointer-events: stroke;
 }
 
-.objects-layer line.selected {
+.objects-layer line.selected,
+.objects-layer path.selected {
   stroke: #007bff;
   stroke-width: 7;
 }

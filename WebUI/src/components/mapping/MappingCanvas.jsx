@@ -504,7 +504,12 @@ const MappingCanvas = forwardRef(({
           const rw = o.width ?? 100;
           const rh = o.height ?? 50;
           const t = thickness + tolerance;
-          if (x >= rx - t && x <= rx + rw + t && y >= ry - t && y <= ry + rh + t) return o;
+          // Попадание только по линиям контура (в пределах t от ребра), не внутри прямоугольника
+          const nearTop = y >= ry - t && y <= ry + t && x >= rx - t && x <= rx + rw + t;
+          const nearBottom = y >= ry + rh - t && y <= ry + rh + t && x >= rx - t && x <= rx + rw + t;
+          const nearLeft = x >= rx - t && x <= rx + t && y >= ry - t && y <= ry + rh + t;
+          const nearRight = x >= rx + rw - t && x <= rx + rw + t && y >= ry - t && y <= ry + rh + t;
+          if (nearTop || nearBottom || nearLeft || nearRight) return o;
         } else {
           const thickness = (o.thickness || 5) / 2;
           const dx = o.x2 - o.x1, dy = o.y2 - o.y1;
@@ -527,8 +532,15 @@ const MappingCanvas = forwardRef(({
           hitMaxX = o.x + w;
           hitMinY = o.y - Math.max(leftLeafW, rightLeafW);
           hitMaxY = o.y + h;
+        } else if (type === 'single' || type === 'electric') {
+          // Ширина — по закрашенному прямоугольнику (створка), высота — от верха синей линии (дуги) до низа створки
+          const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
+          hitMinX = leafX;
+          hitMaxX = leafX + leafW;
+          hitMinY = leafY - leafW; // верх синей линии (ось шарнира)
+          hitMaxY = leafY + leafH;
         } else {
-          // Зона выделения = размер створки (без расширения влево/вверх)
+          // Раздвижная: зона по размеру створки (синей дуги над створкой нет)
           const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
           hitMinX = leafX;
           hitMinY = leafY;

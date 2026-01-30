@@ -357,12 +357,13 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt)
     /* Сейчас мы обрабатываем только “дверные” события.
      * Позже сюда добавится деградация по CAN / состояние сети (этап 6.7, 2.4.9).
      */
-    uint8_t door_id = evt->door_id; /* В текущей архитектуре это локальный door_id для Master */
+    uint8_t door_id = evt->door_id; /* локальный номер двери на текущей плате */
     if (door_id == 0U)
         return;
 
-    /* Для Master node=1 локальная дверь = globalDoorId 1..8 */
-    uint8_t gid = GlobalDoorId_Make(1U, door_id);
+    /* globalDoorId по текущей плате (на MASTER 1..8, на SLAVE 9..16 и т.д.), чтобы на SLAVE при открытии ID-2-1 корректно ставился depActive для двери 9 и lockRequired для ID-1-1 в API/маппинге */
+    uint8_t nodeId = System_GetNodeId();
+    uint8_t gid = GlobalDoorId_Make(nodeId, door_id);
     if (!gid)
         return;
 

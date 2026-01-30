@@ -37,20 +37,28 @@ const DoorTable = memo(({ doors, filters = {} }) => {
     }
   }
 
+  // Группируем двери по платам (nodeId), как на главной странице
+  const doorsByNode = {};
+  filteredDoors.forEach((door) => {
+    const nodeId = door.nodeId ?? 1;
+    if (!doorsByNode[nodeId]) doorsByNode[nodeId] = [];
+    doorsByNode[nodeId].push(door);
+  });
+  const sortedNodeIds = Object.keys(doorsByNode).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
   // Определяем колонки таблицы
   const columns = [
     { key: 'id', label: 'ID' },
     { key: 'status', label: 'Статус' },
     { key: 'physClosed', label: 'Физически закрыта' },
     { key: 'locked', label: 'Замок' },
-    { key: 'alarming', label: 'Авария' },
+    { key: 'alarming', label: 'Alarm' },
     { key: 'alarmReasons', label: 'Причины аварии' },
     { key: 'openSeconds', label: 'Открыта (сек)' },
     { key: 'closeDelay', label: 'Задержка закрытия (сек)' },
   ];
 
-  // Формируем данные для таблицы
-  const tableData = filteredDoors.map((door) => ({
+  const rowFromDoor = (door) => ({
     id: formatDoorId(door),
     status: (
       <StatusBadge
@@ -61,21 +69,38 @@ const DoorTable = memo(({ doors, filters = {} }) => {
     physClosed: door.physClosed ? 'Да' : 'Нет',
     locked: door.locked ? 'Заблокирована' : 'Разблокирована',
     alarming: door.alarming ? (
-      <StatusBadge status="alarm" label="Авария" />
+      <StatusBadge status="alarm" label="Alarm" />
     ) : (
       <StatusBadge status="normal" label="Норма" />
     ),
     alarmReasons: door.alarmReasons ? `0x${door.alarmReasons.toString(16)}` : '—',
     openSeconds: door.openSeconds > 0 ? formatUptime(door.openSeconds) : '—',
     closeDelay: door.closeDelayRemainingSeconds > 0 ? door.closeDelayRemainingSeconds : '—',
-  }));
+  });
+
+  if (filteredDoors.length === 0) {
+    return (
+      <div className="door-table">
+        <p className="no-results">Нет дверей, соответствующих выбранным фильтрам</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="door-table">
-      <Table columns={columns} data={tableData} className="doors-table" />
-      {filteredDoors.length === 0 && (
-        <p className="no-results">Нет дверей, соответствующих выбранным фильтрам</p>
-      )}
+    <div className="door-table door-table-by-nodes">
+      {sortedNodeIds.map((nodeId) => {
+        const nodeDoors = doorsByNode[nodeId];
+        const tableData = nodeDoors.map(rowFromDoor);
+        const label = nodeDoors.length === 1 ? 'дверь' : 'дверей';
+        return (
+          <div key={nodeId} className="door-table-node-section" style={{ marginBottom: '24px' }}>
+            <h3 className="door-table-node-title" style={{ marginBottom: '10px', fontSize: '16px', fontWeight: '600' }}>
+              Плата {nodeId} ({nodeDoors.length} {label})
+            </h3>
+            <Table columns={columns} data={tableData} className="doors-table" />
+          </div>
+        );
+      })}
     </div>
   );
 }, (prevProps, nextProps) => {

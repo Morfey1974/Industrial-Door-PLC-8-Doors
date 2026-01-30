@@ -43,6 +43,9 @@ const Mapping = () => {
   const [selectedDoorType, setSelectedDoorType] = useState('single'); // single | double | sliding | electric
   const [defaultWallThickness, setDefaultWallThickness] = useState(5);
   const [selectedWallShape, setSelectedWallShape] = useState('segment'); // 'segment' | 'rectangle'
+  const [defaultWallRectWidth, setDefaultWallRectWidth] = useState(100);
+  const [defaultWallRectHeight, setDefaultWallRectHeight] = useState(50);
+  const [defaultWallSegmentLength, setDefaultWallSegmentLength] = useState(100);
   const [defaultDoorFlipH, setDefaultDoorFlipH] = useState(false);
   const [defaultDoorFlipV, setDefaultDoorFlipV] = useState(false);
   const [defaultDoorRotation, setDefaultDoorRotation] = useState(0);
@@ -580,6 +583,12 @@ const Mapping = () => {
             onDefaultWallThicknessChange={setDefaultWallThickness}
             wallShape={selectedWallShape}
             onWallShapeChange={setSelectedWallShape}
+            defaultWallRectWidth={defaultWallRectWidth}
+            defaultWallRectHeight={defaultWallRectHeight}
+            onDefaultWallRectWidthChange={setDefaultWallRectWidth}
+            onDefaultWallRectHeightChange={setDefaultWallRectHeight}
+            defaultWallSegmentLength={defaultWallSegmentLength}
+            onDefaultWallSegmentLengthChange={setDefaultWallSegmentLength}
             defaultDoorFlipH={defaultDoorFlipH}
             defaultDoorFlipV={defaultDoorFlipV}
             defaultDoorRotation={defaultDoorRotation}

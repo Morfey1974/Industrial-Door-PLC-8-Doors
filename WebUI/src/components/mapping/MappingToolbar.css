@@ -89,6 +89,12 @@
   border-color: var(--primary-color, #007bff);
 }
 
+.toolbar-action.active {
+  background: var(--primary-color, #007bff);
+  color: white;
+  border-color: var(--primary-color, #007bff);
+}
+
 .toolbar-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;

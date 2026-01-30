@@ -27,6 +27,12 @@ const MappingToolbar = ({
   onDefaultWallThicknessChange,
   wallShape,
   onWallShapeChange,
+  defaultWallRectWidth,
+  defaultWallRectHeight,
+  onDefaultWallRectWidthChange,
+  onDefaultWallRectHeightChange,
+  defaultWallSegmentLength,
+  onDefaultWallSegmentLengthChange,
   defaultDoorFlipH,
   defaultDoorFlipV,
   defaultDoorRotation,
@@ -295,10 +301,19 @@ const MappingToolbar = ({
         </>
       )}
 
-      {selectedObject && (
+      {/* Свойства выбранного объекта ИЛИ параметры стены (прямоугольник/отрезок) при выборе инструмента «Стена» */}
+      {(selectedObject || (selectedTool === 'wall' && (wallShape === 'rectangle' || wallShape === 'segment'))) && (
         <div className="toolbar-section toolbar-section-properties">
-          <h3 className="toolbar-section-title">Свойства</h3>
+          <h3 className="toolbar-section-title">
+            {selectedObject
+              ? 'Свойства'
+              : wallShape === 'rectangle'
+                ? 'Параметры прямоугольника'
+                : 'Параметры отрезка'}
+          </h3>
           <div className="toolbar-properties">
+            {selectedObject ? (
+              <>
             <div className="property-item">
               <span className="property-label">Тип:</span>
               <span className="property-value">
@@ -324,6 +339,38 @@ const MappingToolbar = ({
                     max="20"
                   />
                 </div>
+                {/* Стена-отрезок: длина в мм (вычисляется из x1,y1,x2,y2; при изменении пересчитываем конец отрезка) */}
+                {(selectedObject.wallShape !== 'rectangle' && selectedObject.width == null && selectedObject.height == null) && (
+                  <div className="property-item">
+                    <span className="property-label">Длина (мм):</span>
+                    <input
+                      type="number"
+                      value={Math.round(
+                        Math.sqrt(
+                          ((selectedObject.x2 ?? selectedObject.x1) - (selectedObject.x1 ?? 0)) ** 2 +
+                          ((selectedObject.y2 ?? selectedObject.y1) - (selectedObject.y1 ?? 0)) ** 2
+                        )
+                      )}
+                      onChange={(e) => {
+                        const L = Math.max(1, Number(e.target.value));
+                        const x1 = selectedObject.x1 ?? 0;
+                        const y1 = selectedObject.y1 ?? 0;
+                        const x2 = selectedObject.x2 ?? x1;
+                        const y2 = selectedObject.y2 ?? y1;
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const curLen = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const k = L / curLen;
+                        onObjectChange({
+                          ...selectedObject,
+                          x2: x1 + dx * k,
+                          y2: y1 + dy * k,
+                        });
+                      }}
+                      min="1"
+                    />
+                  </div>
+                )}
                 {(selectedObject.wallShape === 'rectangle' || (selectedObject.width != null && selectedObject.height != null)) && (
                   <>
                     <div className="property-item">
@@ -530,6 +577,41 @@ const MappingToolbar = ({
             >
               🗑 Удалить
             </button>
+          </>
+            ) : wallShape === 'rectangle' ? (
+              <>
+                <div className="property-item">
+                  <span className="property-label">Длина (мм):</span>
+                  <input
+                    type="number"
+                    value={defaultWallRectWidth ?? 100}
+                    onChange={(e) => onDefaultWallRectWidthChange?.(Math.max(10, Number(e.target.value)))}
+                    min="10"
+                  />
+                </div>
+                <div className="property-item">
+                  <span className="property-label">Ширина (мм):</span>
+                  <input
+                    type="number"
+                    value={defaultWallRectHeight ?? 50}
+                    onChange={(e) => onDefaultWallRectHeightChange?.(Math.max(10, Number(e.target.value)))}
+                    min="10"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="property-item">
+                  <span className="property-label">Длина (мм):</span>
+                  <input
+                    type="number"
+                    value={defaultWallSegmentLength ?? 100}
+                    onChange={(e) => onDefaultWallSegmentLengthChange?.(Math.max(1, Number(e.target.value)))}
+                    min="1"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

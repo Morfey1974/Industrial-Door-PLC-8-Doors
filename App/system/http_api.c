@@ -196,6 +196,14 @@ static uint8_t build_doors(jsonw_t *w)
                 AppDoorState_t st = local_doors[idx];
                 physClosed = st.physClosed;
                 locked = st.locked;
+                /* Чтобы в маппинге (режим просмотра) корректно показывалась блокировка по зависимостям:
+                 * если зависимость требует блокировку (lockRequired), показываем locked=1 даже при
+                 * возможной задержке применения на железе (например, при опросе с другой платы). */
+                if (lc && !locked && globalDoorId >= 1U && globalDoorId <= APP_MAX_DOORS)
+                {
+                    if (DoorBitset_Test(&lc->lockRequired, globalDoorId))
+                        locked = 1U;
+                }
                 alarming = st.alarming;
                 alarmReasons = st.alarmReasons;
 

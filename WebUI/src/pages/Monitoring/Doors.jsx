@@ -56,7 +56,7 @@ const Doors = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['ID', 'Статус', 'Физически закрыта', 'Замок', 'Авария', 'Открыта (сек)'].map((h) => (
+                  {['ID', 'Статус', 'Физически закрыта', 'Замок', 'Alarm', 'Открыта (сек)'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '0.5rem', borderBottom: '1px solid var(--color-border)' }}>{h}</th>
                   ))}
                 </tr>
