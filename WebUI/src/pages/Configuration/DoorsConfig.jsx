@@ -1002,16 +1002,8 @@ const DoorsConfig = () => {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        const name = item.name;
-                        console.log('Кнопка Удалить нажата, имя:', name);
-                        // Сохраняем имя конфигурации
-                        setDeleteModalName(name);
-                        // Используем flushSync для синхронного обновления DOM
-                        flushSync(() => {
-                          console.log('flushSync: устанавливаем deleteModalVisible = true');
-                          setDeleteModalVisible(true);
-                        });
-                        console.log('После flushSync, deleteModalVisible должен быть true');
+                        setDeleteModalName(item.name);
+                        setDeleteModalVisible(true);
                       }}
                       variant="secondary"
                       size="small"
@@ -1031,6 +1023,37 @@ const DoorsConfig = () => {
             </div>
           )}
         </div>
+
+        {/* Модальное окно удаления — должно быть в дереве и в режиме списка, иначе кнопка «Удалить» не открывает его */}
+        <Modal
+          isOpen={deleteModalVisible}
+          type="confirm"
+          title="Удаление конфигурации"
+          message={deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : ''}
+          confirmText="Да"
+          cancelText="Нет"
+          onConfirm={() => {
+            const name = deleteModalName;
+            const currentName = currentConfigName;
+            setDeleteModalVisible(false);
+            setDeleteModalName(null);
+            if (name && deleteNamedConfig(name)) {
+              setTimeout(() => setSavedConfigsList(getSavedConfigsList()), 0);
+              if (currentName === name) {
+                setCurrentConfigNameState(null);
+                setCurrentConfigName(null);
+              }
+              setSuccess(`Конфигурация "${name}" удалена`);
+              setTimeout(() => setSuccess(null), 3000);
+            } else if (name) {
+              setError('Ошибка удаления конфигурации');
+            }
+          }}
+          onCancel={() => {
+            setDeleteModalVisible(false);
+            setDeleteModalName(null);
+          }}
+        />
       </div>
     );
   }
@@ -1213,7 +1236,10 @@ const DoorsConfig = () => {
           setDeleteModalVisible(false);
           setDeleteModalName(null);
           if (name && deleteNamedConfig(name)) {
-            setSavedConfigsList(getSavedConfigsList());
+            // Обновляем список в следующем тике, чтобы React гарантированно применил обновление (модалка уже закрыта)
+            setTimeout(() => {
+              setSavedConfigsList(getSavedConfigsList());
+            }, 0);
             if (currentName === name) {
               setCurrentConfigNameState(null);
               setCurrentConfigName(null);
