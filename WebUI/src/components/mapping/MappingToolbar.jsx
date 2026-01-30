@@ -41,13 +41,11 @@ const MappingToolbar = ({
     ? doors
     : (doors && Array.isArray(doors.doors) ? doors.doors : doors && Array.isArray(doors.data) ? doors.data : []) || [];
   const getDoorId = (d) => d?.id ?? d?.doorId ?? d?.globalDoorId;
-  /** Подпись для выбора двери: Плата{nodeId} Дверь {localDoor} */
+  /** Подпись для выбора двери: ID-{nodeId}-{localDoor} */
   const getDoorOptionLabel = (d) => {
-    const nodeId = d?.nodeId ?? 1;
-    const localDoor = d?.localDoor ?? d?.localDoorId ?? getDoorId(d);
-    const base = `Плата${nodeId} Дверь ${localDoor != null ? localDoor : '-'}`;
+    const idStr = d ? `ID-${d.nodeId ?? 1}-${d.localDoor ?? d?.localDoorId ?? getDoorId(d) ?? '-'}` : '—';
     const extra = d?.label ?? d?.name ?? d?.comment;
-    return extra ? `${base} (${extra})` : base;
+    return extra ? `${idStr} (${extra})` : idStr;
   };
   const DOOR_TYPES = [
     { id: 'single', label: 'Одностворчатая дверь' },

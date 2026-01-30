@@ -1,12 +1,13 @@
+import { formatDoorId } from '../../utils/formatters';
+
 /**
  * DoorCard компонент - карточка двери
  */
-
 const DoorCard = ({ door }) => {
   return (
     <div className="door-card">
       <div className="door-card-header">
-        <h3>Дверь {door.id}</h3>
+        <h3>{formatDoorId(door)}</h3>
         <span className={`door-status status-${door.alarming ? 'alarm' : door.physClosed ? 'closed' : 'open'}`}>
           {door.alarming ? 'Авария' : door.physClosed ? 'Закрыта' : 'Открыта'}
         </span>

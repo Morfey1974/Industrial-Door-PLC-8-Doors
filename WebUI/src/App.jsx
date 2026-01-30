@@ -2,6 +2,9 @@ import { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
+import { StateDataProvider } from './context/StateDataContext';
+import { LeaveConfirmProvider, useLeaveConfirm } from './context/LeaveConfirmContext';
+import { DoorsDataProvider } from './context/DoorsDataContext';
 import Layout from './components/layout/Layout';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
@@ -31,6 +34,8 @@ function AppContent() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, isAuthenticated, loading } = useContext(AuthContext);
+    const { tryNavigate } = useLeaveConfirm();
+    const doNavigate = tryNavigate || navigate;
 
     // Определяем активную вкладку на основе текущего пути
     const getActiveTab = () => {
@@ -156,29 +161,27 @@ function AppContent() {
 
     const handleTabChange = (tabId) => {
       setActiveTab(tabId);
-      // Переходим на первый элемент выбранной вкладки
+      // Переходим на первый элемент выбранной вкладки (через doNavigate — проверка несохранённых изменений в маппинге)
       const items = sidebarItems[tabId];
       if (items && items.length > 0) {
-        navigate(items[0].path);
+        doNavigate(items[0].path);
       } else {
-        // Если нет доступных элементов (например, оператор пытается открыть Конфигурацию),
-        // перенаправляем на главную страницу
-        navigate('/');
+        doNavigate('/');
       }
     };
 
     const handleSidebarItemClick = (itemId) => {
       setActiveSidebarItem(itemId);
-      // Находим путь для выбранного элемента
       const allItems = [...sidebarItems.monitoring, ...sidebarItems.configuration, ...sidebarItems.settings];
       const item = allItems.find(i => i.id === itemId);
       if (item) {
-        navigate(item.path);
+        doNavigate(item.path);
       }
     };
 
     return (
       <AppProvider>
+        <StateDataProvider>
         <Layout>
           <Header />
           <div className="layout-main">
@@ -189,6 +192,7 @@ function AppContent() {
             />
             <div className="layout-content">
               <div className="layout-content-inner">
+                <DoorsDataProvider>
                 <Routes>
                 {/* Мониторинг - доступен всем ролям */}
                 <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -253,6 +257,7 @@ function AppContent() {
                 />
                 
                 </Routes>
+                </DoorsDataProvider>
               </div>
             </div>
           </div>
@@ -262,6 +267,7 @@ function AppContent() {
             onTabChange={handleTabChange}
           />
         </Layout>
+        </StateDataProvider>
       </AppProvider>
     );
   } catch (error) {
@@ -286,7 +292,9 @@ function App() {
         }}
       >
         <AuthProvider>
-          <AppContent />
+          <LeaveConfirmProvider>
+            <AppContent />
+          </LeaveConfirmProvider>
         </AuthProvider>
       </Router>
     );

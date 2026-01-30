@@ -5,7 +5,7 @@
 
 import { memo } from 'react';
 import Table from '../common/Table';
-import { formatTimestamp, formatRelativeTime } from '../../utils/formatters';
+import { formatTimestamp, formatRelativeTime, formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
 
 const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }) => {
   if (!events || !events.records || events.records.length === 0) {
@@ -77,11 +77,13 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     );
   }
   
-  // Фильтр по двери (если указан)
+  // Фильтр по двери (формат ID-1-1 или 1-1)
   if (filters.doorId) {
-    const doorId = parseInt(filters.doorId, 10);
-    if (!isNaN(doorId)) {
-      filteredEvents = filteredEvents.filter((event) => event.doorId === doorId);
+    const parsed = parseDoorIdFilter(filters.doorId);
+    if (parsed) {
+      filteredEvents = filteredEvents.filter(
+        (event) => (event.nodeId ?? 1) === parsed.nodeId && (event.localDoor ?? event.doorId) === parsed.localDoor
+      );
     }
   }
   
@@ -108,11 +110,10 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     // index - это позиция в массиве eventsToShow (0, 1, 2...)
     const sequentialNumber = offset + index + 1;
     
-    // Форматируем ID двери в формате "ID-1-1" (Board-Door)
-    // Пока используем doorId как локальный номер, в будущем можно расширить
-    const doorIdFormatted = event.doorId !== undefined 
-      ? `ID-1-${event.doorId}` // Пока Board всегда 1, в будущем можно получить из конфига
-      : '—';
+    // ID двери: ID-{nodeId}-{localDoor}; в журнале может быть только doorId (локальный) — тогда ID-1-{doorId}
+    const doorIdFormatted = (event.nodeId != null && event.localDoor != null)
+      ? formatDoorId({ nodeId: event.nodeId, localDoor: event.localDoor })
+      : (event.doorId !== undefined ? `ID-1-${event.doorId}` : '—');
     
     // Упрощаем отображение типа события (скрываем код или делаем менее заметным)
     const typeDisplay = event.type || '—';

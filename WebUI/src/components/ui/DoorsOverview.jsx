@@ -4,7 +4,7 @@
 
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
-import { getDoorStatusColor, getDoorStatusText } from '../../utils/formatters';
+import { getDoorStatusColor, getDoorStatusText, formatDoorId } from '../../utils/formatters';
 
 const DoorsOverview = ({ doors }) => {
   if (!doors) {
@@ -29,7 +29,7 @@ const DoorsOverview = ({ doors }) => {
   const sortedNodeIds = Object.keys(doorsByNode).sort((a, b) => parseInt(a) - parseInt(b));
 
   const columns = [
-    { key: 'localDoor', label: 'Дверь' },
+    { key: 'id', label: 'ID' },
     { key: 'status', label: 'Статус' },
     { key: 'locked', label: 'Замок' },
     { key: 'openSeconds', label: 'Открыта (сек)' },
@@ -40,10 +40,10 @@ const DoorsOverview = ({ doors }) => {
       {sortedNodeIds.map((nodeId) => {
         const nodeDoors = doorsByNode[nodeId];
         const tableData = nodeDoors.map((door) => ({
-          localDoor: door.localDoor || door.id || '—',
+          id: formatDoorId(door),
           status: (
             <StatusBadge
-              status={door.alarming ? 'alarm' : door.physClosed ? 'normal' : 'open'}
+              status={door.alarming ? 'alarm' : !door.physClosed ? 'open' : door.locked ? 'locked' : 'normal'}
               label={getDoorStatusText(door)}
             />
           ),

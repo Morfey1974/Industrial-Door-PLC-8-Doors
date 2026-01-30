@@ -7,6 +7,7 @@ import { useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { AuthContext } from '../context/AuthContext';
+import { useLeaveConfirm } from '../context/LeaveConfirmContext';
 import MappingHeader from '../components/mapping/MappingHeader';
 import MappingCanvas from '../components/mapping/MappingCanvas';
 import MappingToolbar from '../components/mapping/MappingToolbar';
@@ -20,6 +21,7 @@ const Mapping = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
+  const { register, unregister } = useLeaveConfirm();
   const configBaseName = location.state?.configBaseName ?? '';
 
   const [mode, setMode] = useState('edit'); // 'edit' | 'view'
@@ -353,6 +355,13 @@ const Mapping = () => {
       setMode('view');
     }
   }, [canEdit]);
+
+  // Регистрация проверки несохранённых изменений при уходе со страницы (другая вкладка/страница)
+  const MAPPING_PATH = '/configuration/mapping';
+  useEffect(() => {
+    register(MAPPING_PATH, () => isDirty);
+    return () => unregister(MAPPING_PATH);
+  }, [register, unregister, isDirty]);
 
   // Обработка очистки карты (модальное подтверждение)
   const handleClear = useCallback(async () => {

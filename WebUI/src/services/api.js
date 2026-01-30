@@ -105,9 +105,10 @@ export const getState = async (signal = null) => {
   return response.data;
 };
 
-// Получить состояние всех дверей (таймаут по умолчанию API_TIMEOUT, обычно 30 с)
+// Получить состояние всех дверей (таймаут 15 с — быстрее при проблемах с сетью)
+export const DOORS_REQUEST_TIMEOUT = 10000;
 export const getDoors = async (signal = null) => {
-  const config = signal ? { signal } : {};
+  const config = { timeout: DOORS_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
   const response = await apiClient.get('/doors', config);
   return response.data;
 };

@@ -6,7 +6,7 @@
 import { memo } from 'react';
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
-import { getDoorStatusText, formatUptime } from '../../utils/formatters';
+import { getDoorStatusText, formatUptime, formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
 
 const DoorTable = memo(({ doors, filters = {} }) => {
   if (!doors || !doors.doors || doors.doors.length === 0) {
@@ -27,11 +27,13 @@ const DoorTable = memo(({ doors, filters = {} }) => {
     });
   }
 
-  // Фильтр по ID двери
+  // Фильтр по ID двери (формат ID-1-1 или 1-1)
   if (filters.doorId) {
-    const doorId = parseInt(filters.doorId, 10);
-    if (!isNaN(doorId)) {
-      filteredDoors = filteredDoors.filter((door) => door.id === doorId);
+    const parsed = parseDoorIdFilter(filters.doorId);
+    if (parsed) {
+      filteredDoors = filteredDoors.filter(
+        (door) => (door.nodeId ?? 1) === parsed.nodeId && (door.localDoor ?? door.id) === parsed.localDoor
+      );
     }
   }
 
@@ -49,7 +51,7 @@ const DoorTable = memo(({ doors, filters = {} }) => {
 
   // Формируем данные для таблицы
   const tableData = filteredDoors.map((door) => ({
-    id: door.id,
+    id: formatDoorId(door),
     status: (
       <StatusBadge
         status={door.alarming ? 'alarm' : !door.physClosed ? 'open' : door.locked ? 'locked' : 'normal'}

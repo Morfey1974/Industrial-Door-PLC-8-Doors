@@ -109,3 +109,36 @@ export const getDoorStatusText = (door) => {
   if (door.locked) return 'Заблокирована';
   return 'Закрыта';
 };
+
+/**
+ * Формат ID двери с привязкой к плате: ID-{nodeId}-{localDoor}
+ * @param {object} door - Объект двери (nodeId, localDoor или id)
+ * @returns {string} например "ID-1-1"
+ */
+export const formatDoorId = (door) => {
+  if (!door) return '—';
+  const nodeId = door.nodeId ?? 1;
+  const localDoor = door.localDoor ?? door.id ?? '—';
+  return `ID-${nodeId}-${localDoor}`;
+};
+
+/**
+ * Разбор строки фильтра ID двери: "ID-1-1", "1-1" или "1-1" (nodeId-localDoor)
+ * @param {string} value - Введённое значение
+ * @returns {{ nodeId: number, localDoor: number } | null}
+ */
+export const parseDoorIdFilter = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const s = value.trim().toUpperCase().replace(/^ID-/, '');
+  const parts = s.split(/[-,\s]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const nodeId = parseInt(parts[0], 10);
+    const localDoor = parseInt(parts[1], 10);
+    if (!isNaN(nodeId) && !isNaN(localDoor)) return { nodeId, localDoor };
+  }
+  if (parts.length === 1) {
+    const num = parseInt(parts[0], 10);
+    if (!isNaN(num)) return { nodeId: 1, localDoor: num };
+  }
+  return null;
+};

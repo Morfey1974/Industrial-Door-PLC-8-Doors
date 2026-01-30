@@ -5,12 +5,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-const useApi = (apiFunction, dependencies = []) => {
+const useApi = (apiFunction, dependencies = [], options = {}) => {
+  const { enabled = true, consecutiveFailuresForError } = options;
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef(null);
+  const consecutiveFailuresRef = useRef(0);
 
   // Функция для сравнения данных (глубокое сравнение для объектов)
   const isDataEqual = (oldData, newData) => {
@@ -32,6 +34,10 @@ const useApi = (apiFunction, dependencies = []) => {
   };
 
   useEffect(() => {
+    if (enabled === false) {
+      setLoading(false);
+      return;
+    }
     let isMounted = true;
     let timeoutId = null;
 
@@ -75,6 +81,7 @@ const useApi = (apiFunction, dependencies = []) => {
         }
         
         if (isMounted && !abortControllerRef.current?.signal.aborted) {
+          consecutiveFailuresRef.current = 0;
           // Обновляем данные только если они изменились
           setData((prevData) => {
             if (isDataEqual(prevData, result)) {
@@ -143,7 +150,7 @@ const useApi = (apiFunction, dependencies = []) => {
       }
       isFetchingRef.current = false;
     };
-  }, dependencies);
+  }, [...dependencies, enabled]);
 
   // Тихое обновление без показа loading состояния
   const refetch = async (silent = false) => {
@@ -173,26 +180,26 @@ const useApi = (apiFunction, dependencies = []) => {
     try {
       if (!silent) {
         setLoading(true);
+        setError(null);
       }
-      setError(null);
+      // При тихом refetch не сбрасываем error в начале — иначе мигает «нет ошибки», пока запрос висит
       
-      // Передаем signal для возможности отмены запроса
       const result = await apiFunction(abortControllerRef.current.signal);
       
-      // Очищаем таймаут
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
       
       if (!abortControllerRef.current?.signal.aborted) {
-        // Обновляем данные только если они изменились
+        consecutiveFailuresRef.current = 0;
         setData((prevData) => {
           if (isDataEqual(prevData, result)) {
-            return prevData; // Не обновляем, если данные не изменились
+            return prevData;
           }
           return result;
         });
+        setError(null); // Успех — сбрасываем ошибку
       }
     } catch (err) {
       // Очищаем таймаут при ошибке
@@ -207,11 +214,19 @@ const useApi = (apiFunction, dependencies = []) => {
       }
       
       if (!abortControllerRef.current?.signal.aborted) {
-        if (silent) {
-          // При тихом обновлении только логируем ошибку
-          console.warn('Ошибка автообновления данных:', err.message);
+        const msg = err.message || 'Ошибка загрузки данных';
+        if (silent && consecutiveFailuresForError != null) {
+          consecutiveFailuresRef.current += 1;
+          console.warn('Ошибка автообновления данных:', msg, `(${consecutiveFailuresRef.current}/${consecutiveFailuresForError})`);
+          if (consecutiveFailuresRef.current >= consecutiveFailuresForError) {
+            setError(msg);
+          }
+        } else if (silent) {
+          console.warn('Ошибка автообновления данных:', msg);
+          setError(msg);
         } else {
-          setError(err.message || 'Ошибка загрузки данных');
+          consecutiveFailuresRef.current = 0;
+          setError(msg);
         }
       }
     } finally {

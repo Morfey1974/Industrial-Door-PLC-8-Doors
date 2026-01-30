@@ -1,45 +1,48 @@
 /**
  * useAutoRefresh хук - для автообновления данных
- * Оптимизирован для предотвращения множественных одновременных вызовов
+ * Опрос только при видимой вкладке (Page Visibility API).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const getVisible = () => typeof document !== 'undefined' && document.visibilityState === 'visible';
 
 const useAutoRefresh = (callback, interval = 5000) => {
   const callbackRef = useRef(callback);
   const isRunningRef = useRef(false);
   const intervalIdRef = useRef(null);
+  const [visible, setVisible] = useState(getVisible);
 
   useEffect(() => {
     callbackRef.current = callback;
   }, [callback]);
 
   useEffect(() => {
-    // Очищаем предыдущий интервал, если он существует
+    const onVisibilityChange = () => setVisible(getVisible());
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
+  useEffect(() => {
     if (intervalIdRef.current) {
       clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
     }
 
-    intervalIdRef.current = setInterval(() => {
-      // Предотвращаем множественные одновременные вызовы
-      if (isRunningRef.current) {
-        return;
-      }
+    if (!visible || interval <= 0) return;
 
+    const tick = () => {
+      if (!getVisible()) return;
+      if (isRunningRef.current) return;
       isRunningRef.current = true;
-      
-      // Вызываем callback и сбрасываем флаг после завершения
       Promise.resolve(callbackRef.current())
-        .catch((error) => {
-          console.error('Auto refresh callback error:', error);
-        })
+        .catch((err) => console.error('Auto refresh callback error:', err))
         .finally(() => {
-          // Небольшая задержка перед сбросом флага для предотвращения race condition
-          setTimeout(() => {
-            isRunningRef.current = false;
-          }, 100);
+          setTimeout(() => { isRunningRef.current = false; }, 100);
         });
-    }, interval);
+    };
+
+    intervalIdRef.current = setInterval(tick, interval);
 
     return () => {
       if (intervalIdRef.current) {
@@ -48,7 +51,7 @@ const useAutoRefresh = (callback, interval = 5000) => {
       }
       isRunningRef.current = false;
     };
-  }, [interval]);
+  }, [interval, visible]);
 };
 
 export default useAutoRefresh;

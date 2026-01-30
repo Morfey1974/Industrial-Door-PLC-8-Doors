@@ -296,7 +296,7 @@
 }
 
 .status-locked {
-  background: var(--gradient-primary);
+  background: #3A6577;
   color: var(--color-white);
 }
 
@@ -455,6 +455,37 @@
   flex-wrap: wrap;
 }
 
+/* Компактная панель фильтров на странице «Мониторинг дверей» */
+.monitoring-doors .filter-bar {
+  padding: 0.35rem 0.5rem;
+  gap: 0.5rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.monitoring-doors .filter-bar .filter-group {
+  gap: 2px;
+}
+
+.monitoring-doors .filter-bar .filter-group label {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.monitoring-doors .filter-bar .input,
+.monitoring-doors .filter-bar .dropdown {
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  min-height: 22px;
+  height: 22px;
+  border-width: 1px;
+}
+
+.monitoring-doors .filter-bar .btn {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  min-height: 22px;
+}
+
 .filter-group {
   display: flex;
   flex-direction: column;
@@ -467,9 +498,17 @@
   color: var(--color-text-dark);
 }
 
-/* Monitoring Doors Page */
+/* Monitoring Doors Page — компактно, контент выше */
 .monitoring-doors {
-  padding: var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-md);
+}
+
+.monitoring-doors .page-header {
+  margin-bottom: var(--spacing-sm);
+}
+
+.monitoring-doors .page-header h1 {
+  margin-bottom: 2px;
 }
 
 .page-header {
@@ -490,6 +529,78 @@
   margin-bottom: var(--spacing-md);
 }
 
+.monitoring-doors .filters-section {
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Главная страница — то же оформление, что и «Мониторинг дверей» */
+.dashboard-page {
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-md);
+}
+
+.dashboard-page .page-header {
+  margin-bottom: var(--spacing-sm);
+}
+
+.dashboard-page .page-header h1 {
+  margin-bottom: 2px;
+}
+
+.dashboard-page .dashboard-section {
+  margin-top: var(--spacing-sm);
+}
+
+.dashboard-page .doors-info {
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Таблицы обзора дверей на Главной — компактные, как на вкладке «Мониторинг дверей» */
+.dashboard-page .doors-overview {
+  margin-top: 0;
+}
+
+.dashboard-page .doors-overview > div {
+  margin-bottom: var(--spacing-md);
+}
+
+.dashboard-page .doors-overview h3 {
+  margin-bottom: var(--spacing-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-dark);
+}
+
+.dashboard-page .doors-overview .table {
+  margin: 0;
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.dashboard-page .doors-overview th {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  background-color: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.dashboard-page .doors-overview td {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.dashboard-page .doors-overview .status-badge {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.dashboard-page .doors-overview tbody tr:hover {
+  transform: none;
+}
+
 .doors-info {
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-secondary);
@@ -507,6 +618,16 @@
   overflow-x: auto;
 }
 
+/* Скелетон таблицы дверей при первой загрузке */
+.door-table-skeleton .door-skeleton-bar {
+  animation: door-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes door-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+}
+
 .door-table {
   background-color: var(--color-white);
   border: 1px solid var(--color-border);
@@ -522,6 +643,23 @@
 .doors-table th {
   background-color: var(--color-primary);
   color: var(--color-text-light);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.doors-table td {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.doors-table .status-badge {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.doors-table tbody tr:hover {
+  transform: none;
 }
 
 .no-results {

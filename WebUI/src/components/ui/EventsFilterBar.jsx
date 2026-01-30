@@ -66,12 +66,10 @@ const EventsFilterBar = ({ filters, onFilterChange }) => {
         <label htmlFor="door-id-filter">ID двери:</label>
         <Input
           id="door-id-filter"
-          type="number"
+          type="text"
           value={filters.doorId || ''}
           onChange={handleDoorIdChange}
-          placeholder="Все"
-          min="1"
-          max="8"
+          placeholder="ID-1-1 или 1-1"
         />
       </div>
       <div className="filter-group">
