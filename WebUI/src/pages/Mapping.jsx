@@ -2,7 +2,7 @@
  * Страница "Маппинг" - графический редактор карт помещений и дверей
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, startTransition } from 'react';
 import { useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { flushSync } from 'react-dom';
@@ -65,6 +65,8 @@ const Mapping = () => {
     title: '',
     message: '',
   });
+  // Первый кадр в Просмотре — без данных дверей, чтобы переключение не блокировало UI; затем подставляем doors
+  const [viewDoorsDeferred, setViewDoorsDeferred] = useState(false);
 
   // Синхронизация projectName с контекстом конфигурации при открытии из DoorsConfig
   useEffect(() => {
@@ -79,25 +81,84 @@ const Mapping = () => {
     [projectName, viewport, objects]
   );
 
-  // Загружаем данные о дверях; в режиме просмотра — обновляем каждые 3 сек
-  useEffect(() => {
-    const loadDoors = async () => {
-      try {
-        const doorsData = await getDoors();
-        const list = Array.isArray(doorsData)
-          ? doorsData
-          : (doorsData?.doors || doorsData?.data || []);
-        setDoors(Array.isArray(list) ? list : []);
-      } catch (error) {
-        if (mode !== 'view') console.error('Ошибка загрузки дверей:', error);
-      }
-    };
-    loadDoors();
-    if (mode === 'view') {
-      const t = setInterval(loadDoors, 3000);
-      return () => clearInterval(t);
+  // Загружаем данные о дверях; в режиме просмотра — редкий опрос (20 с), без опроса при скрытой вкладке
+  const loadDoors = useCallback(async () => {
+    try {
+      const doorsData = await getDoors();
+      const list = Array.isArray(doorsData)
+        ? doorsData
+        : (doorsData?.doors || doorsData?.data || []);
+      setDoors(Array.isArray(list) ? list : []);
+    } catch (error) {
+      if (mode !== 'view') console.error('Ошибка загрузки дверей:', error);
     }
   }, [mode]);
+
+  // При переходе в Просмотр: первый кадр без doors (лёгкий рендер), затем в idle подставляем данные
+  useEffect(() => {
+    if (mode !== 'view') {
+      setViewDoorsDeferred(false);
+      loadDoors();
+      return;
+    }
+    setViewDoorsDeferred(true);
+    let raf1;
+    let raf2;
+    let idleOrTimeoutId;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (window.requestIdleCallback) {
+          idleOrTimeoutId = window.requestIdleCallback(() => setViewDoorsDeferred(false), { timeout: 150 });
+        } else {
+          idleOrTimeoutId = setTimeout(() => setViewDoorsDeferred(false), 50);
+        }
+      });
+    });
+    return () => {
+      if (raf1 != null) cancelAnimationFrame(raf1);
+      if (raf2 != null) cancelAnimationFrame(raf2);
+      if (window.cancelIdleCallback && typeof idleOrTimeoutId === 'number') window.cancelIdleCallback(idleOrTimeoutId);
+      else if (typeof idleOrTimeoutId === 'number') clearTimeout(idleOrTimeoutId);
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'view') {
+      loadDoors();
+      return;
+    }
+    const VIEW_POLL_MS = 1000;    // 1 с — мгновенная реакция на открытие/закрытие дверей (контроллер не держит мьютекс при /api/doors)
+    const VIEW_FIRST_DELAY_MS = 1000; // первый запрос через 1 с — переключение в Просмотр остаётся быстрым
+    let intervalId = null;
+    let firstId = null;
+    const schedule = () => {
+      if (document.hidden) return; // не опрашивать, когда вкладка в фоне
+      firstId = setTimeout(() => {
+        firstId = null;
+        loadDoors();
+        if (!document.hidden) {
+          intervalId = setInterval(loadDoors, VIEW_POLL_MS);
+        }
+      }, VIEW_FIRST_DELAY_MS);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (firstId) clearTimeout(firstId);
+        firstId = null;
+        if (intervalId) clearInterval(intervalId);
+        intervalId = null;
+      } else {
+        schedule();
+      }
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (firstId) clearTimeout(firstId);
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [mode, loadDoors]);
 
   const showConfirm = useCallback((message, title = 'Подтвердите действие') => {
     return new Promise((resolve) => {
@@ -330,6 +391,15 @@ const Mapping = () => {
     if (opts?.addToHistory !== false) addToHistory(newObjects);
   }, [addToHistory]);
 
+  const handleCanvasObjectChange = useCallback((obj) => {
+    setSelectedObject(obj);
+    handleObjectsChange(objects.map(o => o.id === obj.id ? obj : o));
+  }, [objects, handleObjectsChange]);
+
+  const handleCanvasMoveEnd = useCallback((objs) => {
+    addToHistory(objs);
+  }, [addToHistory]);
+
   // Инициализация истории при первой загрузке
   useEffect(() => {
     if (history.length === 0 && objects.length === 0) {
@@ -391,7 +461,10 @@ const Mapping = () => {
         mapDisplayName={mapFileName || projectName || 'Без имени'}
         onSaveAndExit={handleSaveAndExit}
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={(m) => {
+          if (m === 'view') startTransition(() => setMode(m));
+          else setMode(m);
+        }}
         canEdit={canEdit}
         onSaveToFile={handleSaveToFile}
         onLoadFromFile={triggerLoadFromFile}
@@ -404,6 +477,7 @@ const Mapping = () => {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onFitToView={() => canvasRef.current?.fitToView?.()}
+        onRefreshDoors={mode === 'view' ? loadDoors : undefined}
       />
       <div className="mapping-content">
         <MappingCanvas
@@ -414,10 +488,7 @@ const Mapping = () => {
           selectedObject={selectedObject}
           onObjectSelect={setSelectedObject}
           onObjectsChange={handleObjectsChange}
-          onObjectChange={(obj) => {
-            setSelectedObject(obj);
-            handleObjectsChange(objects.map(o => o.id === obj.id ? obj : o));
-          }}
+          onObjectChange={handleCanvasObjectChange}
           viewport={viewport}
           onViewportChange={setViewport}
           snapEnabled={snapEnabled}
@@ -425,7 +496,7 @@ const Mapping = () => {
           onSnapPointChange={setSnapPoint}
           gridEnabled={gridEnabled}
           gridSize={gridSize}
-          doors={doors}
+          doors={mode === 'view' && viewDoorsDeferred ? [] : doors}
           selectedDoorId={selectedDoorId}
           selectedDoorType={selectedDoorType}
           defaultWallThickness={defaultWallThickness}
@@ -435,7 +506,7 @@ const Mapping = () => {
           showDoorId={showDoorId}
           defaultDrawNumber={defaultDrawNumber}
           defaultShowNumberOnDrawing={defaultShowNumberOnDrawing}
-          onMoveEnd={(objs) => addToHistory(objs)}
+          onMoveEnd={handleCanvasMoveEnd}
         />
         {mode === 'edit' && (
           <MappingToolbar

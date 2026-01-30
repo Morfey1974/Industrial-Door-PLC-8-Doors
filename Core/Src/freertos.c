@@ -92,7 +92,7 @@ osThreadId_t doorsTaskHandle;
 const osThreadAttr_t doorsTask_attributes = {
   .name = "doorsTask",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for supervisorTask */
 osThreadId_t supervisorTaskHandle;

@@ -5,6 +5,9 @@
 #include <string.h>
 
 #include "stm32h7xx_hal.h"
+#include "cmsis_os.h"
+
+extern osThreadId_t httpTaskHandle;
 
 #include "app_log.h"
 #include "http_server.h"
@@ -141,33 +144,30 @@ static uint8_t build_doors(jsonw_t *w)
 
     if (!jw_appendf(w, "{\"doors\":[")) return 0U;
 
-    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: возвращаем все двери всех плат с группировкой
-     * 
-     * Проблема: API /api/doors возвращал только локальные двери (id 1-8) без
-     * информации о nodeId и globalDoorId, что не позволяло группировать двери
-     * по платам на Dashboard.
-     * 
-     * Решение: используем конфигурацию для получения списка всех дверей всех плат,
-     * и LogicCore для получения состояния удаленных дверей (через CAN STATUS).
-     * Для локальных дверей используем Doors_GetStateArrayLocked.
+    /* Копируем состояние локальных дверей под мьютексом и сразу отпускаем мьютекс,
+     * чтобы не блокировать doors_task на время сборки JSON (иначе логика дверей
+     * и зависимостей тормозит при частых запросах /api/doors, например в режиме Просмотр маппинга).
      */
-    
+    AppDoorState_t local_doors[APP_DOOR_MAX];
+    {
+        AppDoorState_t *doors_array = Doors_GetStateArrayLocked();
+        if (!doors_array) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: build_doors mutex timeout!");
+#endif
+            if (!jw_appendf(w, "]}")) return 0U;
+            return 1U;
+        }
+        memcpy(local_doors, doors_array, sizeof(local_doors));
+        Doors_ReleaseStateArray();
+    }
+
     extern project_config_t g_project_cfg;
     extern logic_core_t* CommsTask_GetLogicCore(void);
     logic_core_t *lc = CommsTask_GetLogicCore();
-    
-    /* Получаем состояние локальных дверей */
-    AppDoorState_t *doors_array = Doors_GetStateArrayLocked();
-    if (!doors_array) {
-#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-        AppLog("HTTP: build_doors mutex timeout!");
-#endif
-        if (!jw_appendf(w, "]}")) return 0U;
-        return 1U;
-    }
 
     uint8_t first = 1U;
-    
+
     /* Проходим по всем дверям из конфигурации */
     for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
     {
@@ -175,9 +175,9 @@ static uint8_t build_doors(jsonw_t *w)
         uint8_t nodeId = cfg_door->nodeId;
         uint8_t localDoor = cfg_door->localDoor;
         uint8_t globalDoorId = Config_MakeGlobalDoorId(nodeId, localDoor);
-        
+
         if (!globalDoorId) continue;
-        
+
         /* Определяем состояние двери */
         uint8_t physClosed = 0U;
         uint8_t locked = 0U;
@@ -185,24 +185,24 @@ static uint8_t build_doors(jsonw_t *w)
         uint32_t alarmReasons = 0UL;
         uint32_t open_s = 0U;
         uint32_t close_rem_s = 0U;
-        
+
         if (nodeId == System_GetNodeId())
         {
-            /* Локальная дверь - используем Doors_GetStateArray */
+            /* Локальная дверь - используем копию (мьютекс уже отпущен) */
             if (localDoor >= 1U && localDoor <= APP_DOOR_MAX)
             {
                 uint8_t idx = (uint8_t)(localDoor - 1U);
-                AppDoorState_t st = doors_array[idx];
+                AppDoorState_t st = local_doors[idx];
                 physClosed = st.physClosed;
                 locked = st.locked;
                 alarming = st.alarming;
                 alarmReasons = st.alarmReasons;
-                
+
                 if (st.physClosed == 0U && st.openSinceMs != 0U) {
                     const uint32_t dt = (now - st.openSinceMs);
                     open_s = dt / 1000U;
                 }
-                
+
                 if (st.postClosePending && st.postCloseTimeoutMs != 0U) {
                     const uint32_t passed = (now - st.postCloseStartMs);
                     if (passed < st.postCloseTimeoutMs) {
@@ -218,27 +218,15 @@ static uint8_t build_doors(jsonw_t *w)
             {
                 uint8_t open = lc->physOpen[globalDoorId - 1U];
                 physClosed = open ? 0U : 1U;
-                /* Для удаленных дверей locked и alarming получаем из CAN STATUS,
-                 * но в текущей реализации они не передаются. Оставляем 0.
-                 */
                 locked = 0U;
                 alarming = 0U;
                 alarmReasons = 0UL;
-                
-                if (open) {
-                    /* Для удаленных дверей open_s вычисляется приблизительно
-                     * (нет точного openSinceMs). Можно использовать время последнего обновления.
-                     */
-                    open_s = 0U; /* TODO: добавить отслеживание openSinceMs для удаленных дверей */
-                }
+                if (open) open_s = 0U;
             }
         }
-        
+
         if (!first) {
-            if (!jw_appendf(w, ",")) {
-                Doors_ReleaseStateArray();
-                return 0U;
-            }
+            if (!jw_appendf(w, ",")) return 0U;
         }
         first = 0U;
 
@@ -266,13 +254,9 @@ static uint8_t build_doors(jsonw_t *w)
             (unsigned long)open_s,
             (unsigned long)close_rem_s
         )) {
-            Doors_ReleaseStateArray();
             return 0U;
         }
     }
-
-    /* Освобождаем мьютекс после чтения всех данных */
-    Doors_ReleaseStateArray();
 
     uint8_t result = jw_appendf(w, "]}");
     
@@ -716,9 +700,15 @@ static int put_mapping(const char *body, size_t body_len, char *out_body, size_t
     if (to_copy > MAPPING_STORAGE_MAX_LEN)
         to_copy = MAPPING_STORAGE_MAX_LEN;
     MappingStorage_SetData(body, to_copy);
-    if (MappingStorage_SaveToQspi() != 0) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"QSPI write failed\"}");
-        return 500;
+    {
+        osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
+        (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
+        int qspi_ok = (MappingStorage_SaveToQspi() == 0);
+        (void)osThreadSetPriority(httpTaskHandle, prev_prio);
+        if (!qspi_ok) {
+            (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"QSPI write failed\"}");
+            return 500;
+        }
     }
     (void)jw_appendf(&w, "{\"ok\":1}");
     return 200;
@@ -874,7 +864,13 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     /* printf идёт напрямую в UART — виден даже при краше/обрыве логов */
     printf("CFG: persist start\r\n");
     AppLog("CFG:4 persist");
-    const cfg_storage_status_t st = ConfigService_Persist(&cfg);
+    cfg_storage_status_t st;
+    {
+        osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
+        (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
+        st = ConfigService_Persist(&cfg);
+        (void)osThreadSetPriority(httpTaskHandle, prev_prio);
+    }
     printf("CFG: persist done st=%d\r\n", (int)st);
     if (st != CFGST_OK) {
         AppLog("CFG: persist fail %u", (unsigned)st);
@@ -1103,7 +1099,13 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
 
     printf("CFG full: persist start\r\n");
     AppLog("CFG full: persist");
-    const cfg_storage_status_t st = ConfigService_Persist(&cfg);
+    cfg_storage_status_t st;
+    {
+        osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
+        (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
+        st = ConfigService_Persist(&cfg);
+        (void)osThreadSetPriority(httpTaskHandle, prev_prio);
+    }
     printf("CFG full: persist done st=%d\r\n", (int)st);
     if (st != CFGST_OK) {
         AppLog("CFG full: persist fail %u", (unsigned)st);

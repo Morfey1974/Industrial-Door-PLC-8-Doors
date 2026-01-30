@@ -8,6 +8,17 @@
   user-select: none;
 }
 
+/* В режиме Просмотр — обычный курсор (не крестик), панорамирование — grab */
+.mapping-canvas-container.view-mode {
+  cursor: default;
+}
+.mapping-canvas-container.view-mode.panning {
+  cursor: grab;
+}
+.mapping-canvas-container.view-mode.panning:active {
+  cursor: grabbing;
+}
+
 /* При инструменте «Выбор» — стрелка для удобного выбора объектов */
 .mapping-canvas-container.select-tool {
   cursor: default;

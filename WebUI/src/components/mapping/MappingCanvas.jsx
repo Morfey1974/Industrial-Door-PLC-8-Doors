@@ -2,7 +2,7 @@
  * SVG Canvas для рисования карты
  */
 
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react';
 import './MappingCanvas.css';
 
 const DOOR_HEIGHT = 10;
@@ -702,10 +702,21 @@ const MappingCanvas = forwardRef(({
     return <g className="grid-layer">{lines}</g>;
   };
 
+  // Карта по globalDoorId — один проход по doors, O(1) поиск при рендере каждой двери (без лишних find при галочке ID)
+  const doorsByGlobalId = useMemo(() => {
+    const m = new Map();
+    if (doors && Array.isArray(doors)) {
+      for (const dr of doors) {
+        const gid = dr?.globalDoorId ?? dr?.id ?? dr?.doorId;
+        if (gid != null) m.set(Number(gid), dr);
+      }
+    }
+    return m;
+  }, [doors]);
+
   // Цвет створки двери по состоянию (зелёный — разблокирована, красный — заблокирована/аларм)
   const getDoorLeafColor = (doorObj) => {
-    if (!doors || !Array.isArray(doors) || doors.length === 0) return '#00c853';
-    const d = doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (doorObj?.globalDoorId ?? 0));
+    const d = doorsByGlobalId.get(doorObj?.globalDoorId ?? 0);
     if (!d) return '#00c853';
     if (d.alarming || d.locked) return '#d32f2f';
     return '#00c853';
@@ -713,8 +724,7 @@ const MappingCanvas = forwardRef(({
 
   // Состояние двери: открыта (physClosed=false), заблокирована, аларм (долго открыта)
   const getDoorState = (doorObj) => {
-    if (!doors || !Array.isArray(doors) || doors.length === 0) return { locked: false, alarming: false, open: false };
-    const d = doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (doorObj?.globalDoorId ?? 0));
+    const d = doorsByGlobalId.get(doorObj?.globalDoorId ?? 0);
     if (!d) return { locked: false, alarming: false, open: false };
     return { locked: !!d.locked, alarming: !!d.alarming, open: !d.physClosed };
   };
@@ -834,7 +844,7 @@ const MappingCanvas = forwardRef(({
     const labelEls = [];
     const showIdForDoor = obj.showDoorIdOnDrawing === true || (showDoorId && obj.showDoorIdOnDrawing !== false);
     if (showIdForDoor) {
-      const doorRec = doors && Array.isArray(doors) ? doors.find(dr => (dr?.id ?? dr?.doorId ?? dr?.globalDoorId) === (obj?.globalDoorId ?? 0)) : null;
+      const doorRec = doorsByGlobalId.get(obj?.globalDoorId ?? 0) ?? null;
       // ID привязан к плате: ID-{nodeId}-{localDoor}, например ID-1-1 = плата 1 дверь 1
       const nodeId = doorRec?.nodeId ?? 1;
       const localDoor = doorRec?.localDoor ?? doorRec?.localDoorId ?? doorRec?.id ?? doorRec?.doorId ?? doorRec?.globalDoorId ?? obj.globalDoorId ?? '-';
@@ -1204,7 +1214,7 @@ const MappingCanvas = forwardRef(({
   return (
     <div
       ref={containerRef}
-      className={`mapping-canvas-container${selectedTool === 'select' ? ' select-tool' : ''}`}
+      className={`mapping-canvas-container${mode === 'view' ? ' view-mode' : ''}${selectedTool === 'select' && mode === 'edit' ? ' select-tool' : ''}${isPanning ? ' panning' : ''}`}
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
@@ -1234,7 +1244,7 @@ const MappingCanvas = forwardRef(({
               className="drawing-preview"
             />
           )}
-          {snapPoint && selectedTool !== 'select' && (
+          {snapPoint && selectedTool !== 'select' && mode === 'edit' && (
             <circle
               cx={snapPoint.x}
               cy={snapPoint.y}
@@ -1253,4 +1263,4 @@ const MappingCanvas = forwardRef(({
 
 MappingCanvas.displayName = 'MappingCanvas';
 
-export default MappingCanvas;
+export default memo(MappingCanvas);

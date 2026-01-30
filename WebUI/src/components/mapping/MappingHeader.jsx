@@ -22,6 +22,7 @@ const MappingHeader = ({
   onUndo,
   onRedo,
   onFitToView,
+  onRefreshDoors,
 }) => {
   return (
     <div className="mapping-header">
@@ -85,6 +86,11 @@ const MappingHeader = ({
         )}
       </div>
       <div className="mapping-header-right">
+        {mode === 'view' && onRefreshDoors && (
+          <Button onClick={onRefreshDoors} variant="secondary" size="small" title="Обновить состояние дверей с контроллера">
+            Обновить
+          </Button>
+        )}
         {canEdit && mode === 'edit' && (
           <>
             <Button onClick={onSaveToFile} variant="primary" size="small" title="Сохранить карту в файл на компьютере">

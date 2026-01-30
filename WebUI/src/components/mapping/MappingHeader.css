@@ -6,6 +6,8 @@
   border-bottom: 1px solid var(--border-color, #ddd);
   gap: 6px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .mapping-header-name-row {
