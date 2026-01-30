@@ -1,0 +1,76 @@
+/**
+ * О нас — информация о компании DCM (Doors Control Making) и контактные данные
+ * Данные с сайта www.dcmaking.co.il
+ */
+
+import './About.css';
+
+const About = () => {
+  return (
+    <div className="settings-about">
+      <h1>О нас</h1>
+
+      <section className="about-company">
+        <h2>Doors Control Making (DCM)</h2>
+        <p>
+          <strong>Doors Control Making</strong> — молодая и динамично развивающаяся компания, специализирующаяся на разработке и производстве электронных систем блокировки дверей для чистых помещений в фармацевтической, химической, пищевой и микроэлектронной отраслях.
+        </p>
+        <p>
+          Изначальная идея создания наших электронных устройств — надёжность и простота установки. В процессе разработки было изучено множество аналогичных продуктов и устранены различные проблемы их эксплуатации. Один из главных принципов компании — безупречная репутация на рынке, достигаемая абсолютной открытостью и честностью в работе с партнёрами.
+        </p>
+        <p>
+          Компания постоянно ищет способы улучшения продукции и развивает новые направления в разработке устройств управления дверями. Немаловажное значение имеет и ценовая политика: цены на продукцию существенно отличаются от рыночных за счёт грамотного подхода к разработке и применению современных производственных технологий.
+        </p>
+        <p>
+          Мы готовы к долгосрочному сотрудничеству и предоставлению качественного сервиса. Будем рады обсудить с вами новые перспективы совместного развития.
+        </p>
+      </section>
+
+      <section className="about-contact">
+        <h2>Контактная информация</h2>
+        <div className="about-contact-grid">
+          <div className="about-contact-item">
+            <span className="about-contact-label">Адрес</span>
+            <span className="about-contact-value">Хайфа, Израиль</span>
+          </div>
+          <div className="about-contact-item">
+            <span className="about-contact-label">Телефон</span>
+            <a href="tel:+9720504950495" className="about-contact-value about-contact-link">
+              +972-050-495-0-495
+            </a>
+          </div>
+          <div className="about-contact-item">
+            <span className="about-contact-label">WhatsApp</span>
+            <a
+              href="https://wa.me/9720504950495"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="about-contact-value about-contact-link"
+            >
+              +972-050-495-0-495
+            </a>
+          </div>
+          <div className="about-contact-item">
+            <span className="about-contact-label">Email</span>
+            <a href="mailto:info@dcmaking.co.il" className="about-contact-value about-contact-link">
+              info@dcmaking.co.il
+            </a>
+          </div>
+          <div className="about-contact-item">
+            <span className="about-contact-label">Сайт</span>
+            <a
+              href="https://www.dcmaking.co.il"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="about-contact-value about-contact-link"
+            >
+              www.dcmaking.co.il
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default About;

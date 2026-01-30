@@ -6,7 +6,7 @@ import Input from '../common/Input';
 import Dropdown from '../common/Dropdown';
 import Button from '../common/Button';
 
-const EventsFilterBar = ({ filters, onFilterChange }) => {
+const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
   const handleEventTypeChange = (e) => {
     onFilterChange({ ...filters, eventType: e.target.value });
   };
@@ -52,7 +52,7 @@ const EventsFilterBar = ({ filters, onFilterChange }) => {
     (filters.source && filters.source !== 'all');
 
   return (
-    <div className="filter-bar">
+    <div className="filter-bar filter-bar--events">
       <div className="filter-group">
         <label htmlFor="event-type-filter">Тип события:</label>
         <Dropdown
@@ -81,9 +81,15 @@ const EventsFilterBar = ({ filters, onFilterChange }) => {
           onChange={handleSourceChange}
         />
       </div>
+      {onRefresh && (
+        <Button variant="secondary" size="small" onClick={onRefresh}>
+          Обновить
+        </Button>
+      )}
       {hasActiveFilters && (
         <Button
           variant="secondary"
+          size="small"
           onClick={() => onFilterChange({ eventType: 'all', doorId: '', source: 'all' })}
         >
           Сбросить фильтры

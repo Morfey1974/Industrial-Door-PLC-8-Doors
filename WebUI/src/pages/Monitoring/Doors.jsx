@@ -36,10 +36,13 @@ const Doors = () => {
         <FilterBar filters={filters} onFilterChange={setFilters} />
       </div>
 
-      {/* Информация о количестве дверей */}
+      {/* Информация о количестве дверей и миниатюрная кнопка Обновить слева */}
       {!loading && !error && doors && doors.doors && (
-        <div className="doors-info">
-          <p>
+        <div className="doors-info doors-info-row">
+          <Button variant="secondary" size="small" onClick={() => refetch(false)}>
+            Обновить
+          </Button>
+          <p className="doors-info-text">
             Всего дверей: <strong>{doors.doors.length}</strong>
           </p>
         </div>

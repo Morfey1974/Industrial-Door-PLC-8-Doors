@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
+import { PermissionsProvider, PermissionsContext } from './context/PermissionsContext';
 import { AppProvider } from './context/AppContext';
 import { StateDataProvider } from './context/StateDataContext';
 import { LeaveConfirmProvider, useLeaveConfirm } from './context/LeaveConfirmContext';
@@ -22,6 +23,9 @@ import Mapping from './pages/Mapping';
 import Profile from './pages/Settings/Profile';
 import Users from './pages/Settings/Users';
 import Permissions from './pages/Settings/Permissions';
+import About from './pages/Settings/About';
+import Help from './pages/Settings/Help';
+import { HelpSectionPage } from './pages/Settings/Help';
 import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import './styles/main.css';
@@ -34,6 +38,8 @@ function AppContent() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, isAuthenticated, loading } = useContext(AuthContext);
+    const permissionsContext = useContext(PermissionsContext);
+    const canAccessPath = permissionsContext?.canAccess ?? (() => true);
     const { tryNavigate } = useLeaveConfirm();
     const doNavigate = tryNavigate || navigate;
 
@@ -58,6 +64,8 @@ function AppContent() {
       if (location.pathname === '/configuration/system') return 'system-params';
       if (location.pathname === '/settings/profile') return 'profile';
       if (location.pathname === '/settings/permissions') return 'permissions';
+      if (location.pathname === '/settings/about') return 'about';
+      if (location.pathname === '/settings/help' || location.pathname.startsWith('/settings/help/')) return 'help';
       if (location.pathname === '/settings/users') return 'users';
       return 'doors';
     };
@@ -106,56 +114,48 @@ function AppContent() {
       );
     }
 
-    // Вкладки - скрываем Конфигурацию для операторов
+    // Вкладки и пункты меню — по таблице прав (canAccessPath)
+    const role = user?.role;
+    const monitoringItems = [
+      { id: 'doors', label: 'Двери', path: '/monitoring/doors' },
+      { id: 'events', label: 'События', path: '/monitoring/events' },
+      { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
+      { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
+    ];
+    const configurationItems = [
+      { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
+      { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
+      { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
+    ];
+    const monitoring = monitoringItems.filter((item) => canAccessPath(item.path, role));
+    const configuration = configurationItems.filter((item) => canAccessPath(item.path, role));
+    const settings = [];
+    if (canAccessPath('/settings/profile', role)) {
+      settings.push({ id: 'profile', label: 'Профиль', path: '/settings/profile' });
+    }
+    if (canAccessPath('/settings/permissions', role)) {
+      settings.push({ id: 'permissions', label: 'Права доступа', path: '/settings/permissions' });
+    }
+    if (canAccessPath('/settings/users', role)) {
+      settings.push({ id: 'users', label: 'Пользователи', path: '/settings/users' });
+    }
+    if (canAccessPath('/settings/about', role)) {
+      settings.push({ id: 'about', label: 'О нас', path: '/settings/about' });
+    }
+    if (canAccessPath('/settings/help', role)) {
+      settings.push({ id: 'help', label: 'Помощь', path: '/settings/help' });
+    }
+
     const tabs = (() => {
-      const role = user?.role;
-      const result = [
-        { id: 'monitoring', label: 'Мониторинг' },
-      ];
-      // Конфигурация только для admin и super_admin
-      if (role !== 'operator') {
+      const result = [{ id: 'monitoring', label: 'Мониторинг' }];
+      if (configuration.length > 0) {
         result.push({ id: 'configuration', label: 'Конфигурация' });
       }
       result.push({ id: 'settings', label: 'Настройки' });
       return result;
     })();
 
-    // Определяем доступные пункты меню в зависимости от роли
-    const getSidebarItems = () => {
-      const role = user?.role;
-      
-      // Мониторинг доступен всем ролям (Маппинг открывается из конфигурации)
-      const monitoring = [
-        { id: 'doors', label: 'Двери', path: '/monitoring/doors' },
-        { id: 'events', label: 'События', path: '/monitoring/events' },
-        { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
-        { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
-      ];
-
-      // Конфигурация: Маппинг открывается кнопкой «Маппинг» в загруженной конфигурации
-      const configuration = role === 'operator' ? [] : [
-        { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
-        { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
-        { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
-      ];
-
-      // Настройки
-      const settings = [
-        { id: 'profile', label: 'Профиль', path: '/settings/profile' },
-      ];
-      
-      // Пункт "Права доступа" для Admin и Super Admin
-      if (role === 'admin' || role === 'super_admin') {
-        settings.push({ id: 'permissions', label: 'Права доступа', path: '/settings/permissions' });
-      }
-      
-      // Пункт "Пользователи" только для Super Admin
-      if (role === 'super_admin') {
-        settings.push({ id: 'users', label: 'Пользователи', path: '/settings/users' });
-      }
-
-      return { monitoring, configuration, settings };
-    };
+    const getSidebarItems = () => ({ monitoring, configuration, settings });
 
     const sidebarItems = getSidebarItems();
 
@@ -194,68 +194,23 @@ function AppContent() {
               <div className="layout-content-inner">
                 <DoorsDataProvider>
                 <Routes>
-                {/* Мониторинг - доступен всем ролям */}
-                <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/monitoring/doors" element={<ProtectedRoute><Doors /></ProtectedRoute>} />
-                <Route path="/monitoring/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
-                <Route path="/monitoring/alarms" element={<ProtectedRoute><Alarms /></ProtectedRoute>} />
-                <Route path="/monitoring/statistics" element={<ProtectedRoute><Statistics /></ProtectedRoute>} />
-                
-                {/* Конфигурация - только для admin и super_admin */}
-                <Route 
-                  path="/configuration/doors" 
-                  element={
-                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <DoorsConfig />
-                    </ProtectedRoute>
-                  } 
-                />
-                <Route 
-                  path="/configuration/network" 
-                  element={
-                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <NetworkConfig />
-                    </ProtectedRoute>
-                  } 
-                />
-                <Route 
-                  path="/configuration/system" 
-                  element={
-                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <SystemParams />
-                    </ProtectedRoute>
-                  } 
-                />
-                {/* Маппинг открывается из Конфигурации → Настройка дверей (кнопка «Маппинг») */}
-                <Route 
-                  path="/configuration/mapping" 
-                  element={
-                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <Mapping />
-                    </ProtectedRoute>
-                  } 
-                />
-                
-                {/* Настройки - профиль доступен всем, пользователи только super_admin, права доступа для admin и super_admin */}
-                <Route path="/settings/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                <Route 
-                  path="/settings/users" 
-                  element={
-                    <ProtectedRoute allowedRoles={['super_admin']}>
-                      <Users />
-                    </ProtectedRoute>
-                  } 
-                />
-                <Route 
-                  path="/settings/permissions" 
-                  element={
-                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <Permissions />
-                    </ProtectedRoute>
-                  } 
-                />
-                
+                {/* Доступ по таблице прав (path передаётся в ProtectedRoute) */}
+                <Route path="/" element={<ProtectedRoute path="/"><Dashboard /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute path="/dashboard"><Dashboard /></ProtectedRoute>} />
+                <Route path="/monitoring/doors" element={<ProtectedRoute path="/monitoring/doors"><Doors /></ProtectedRoute>} />
+                <Route path="/monitoring/events" element={<ProtectedRoute path="/monitoring/events"><Events /></ProtectedRoute>} />
+                <Route path="/monitoring/alarms" element={<ProtectedRoute path="/monitoring/alarms"><Alarms /></ProtectedRoute>} />
+                <Route path="/monitoring/statistics" element={<ProtectedRoute path="/monitoring/statistics"><Statistics /></ProtectedRoute>} />
+                <Route path="/configuration/doors" element={<ProtectedRoute path="/configuration/doors"><DoorsConfig /></ProtectedRoute>} />
+                <Route path="/configuration/network" element={<ProtectedRoute path="/configuration/network"><NetworkConfig /></ProtectedRoute>} />
+                <Route path="/configuration/system" element={<ProtectedRoute path="/configuration/system"><SystemParams /></ProtectedRoute>} />
+                <Route path="/configuration/mapping" element={<ProtectedRoute path="/configuration/mapping"><Mapping /></ProtectedRoute>} />
+                <Route path="/settings/profile" element={<ProtectedRoute path="/settings/profile"><Profile /></ProtectedRoute>} />
+                <Route path="/settings/users" element={<ProtectedRoute path="/settings/users"><Users /></ProtectedRoute>} />
+                <Route path="/settings/permissions" element={<ProtectedRoute path="/settings/permissions"><Permissions /></ProtectedRoute>} />
+                <Route path="/settings/about" element={<ProtectedRoute path="/settings/about"><About /></ProtectedRoute>} />
+                <Route path="/settings/help" element={<ProtectedRoute path="/settings/help"><Help /></ProtectedRoute>} />
+                <Route path="/settings/help/:sectionId" element={<ProtectedRoute path="/settings/help"><HelpSectionPage /></ProtectedRoute>} />
                 </Routes>
                 </DoorsDataProvider>
               </div>
@@ -292,9 +247,11 @@ function App() {
         }}
       >
         <AuthProvider>
-          <LeaveConfirmProvider>
-            <AppContent />
-          </LeaveConfirmProvider>
+          <PermissionsProvider>
+            <LeaveConfirmProvider>
+              <AppContent />
+            </LeaveConfirmProvider>
+          </PermissionsProvider>
         </AuthProvider>
       </Router>
     );

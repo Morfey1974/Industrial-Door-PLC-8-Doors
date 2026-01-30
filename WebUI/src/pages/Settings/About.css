@@ -1,0 +1,102 @@
+/**
+ * Стили страницы «О нас»
+ */
+
+.settings-about {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.settings-about h1 {
+  margin: 0 0 24px 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+}
+
+.settings-about h2 {
+  margin: 0 0 16px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.about-company {
+  margin-bottom: 32px;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.about-company p {
+  margin: 0 0 14px 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.about-company p:last-child {
+  margin-bottom: 0;
+}
+
+.about-contact {
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.about-contact h2 {
+  margin-top: 0;
+}
+
+.about-contact-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.about-contact-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.about-contact-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.about-contact-value {
+  font-size: 15px;
+  color: #1e293b;
+}
+
+.about-contact-link {
+  color: #0066cc;
+  text-decoration: none;
+}
+
+.about-contact-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .about-company,
+  .about-contact {
+    padding: 16px;
+  }
+
+  .settings-about h1 {
+    font-size: 22px;
+  }
+
+  .about-contact-grid {
+    grid-template-columns: 1fr;
+  }
+}

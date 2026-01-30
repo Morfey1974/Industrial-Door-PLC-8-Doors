@@ -131,6 +131,17 @@ const Events = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      await refetchStat(true);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // refetch(false) — показываем загрузку и принудительно обновляем список событий
+      await refetch(false);
+    } catch (err) {
+      console.warn('Ошибка обновления журнала:', err);
+    }
+  };
+
   // Вычисляем, есть ли еще записи
   const hasMoreRecords = totalRecords > 0 && (offset + limit) < totalRecords;
   const hasPrevious = offset > 0;
@@ -151,7 +162,7 @@ const Events = () => {
 
       {/* Панель фильтров */}
       <div className="filters-section">
-        <EventsFilterBar filters={filters} onFilterChange={setFilters} />
+        <EventsFilterBar filters={filters} onFilterChange={setFilters} onRefresh={handleRefresh} />
       </div>
 
       {/* Информация о количестве событий */}

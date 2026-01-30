@@ -21,12 +21,20 @@
   line-height: 1.6;
 }
 
+.permissions-main {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
 .permissions-table-container {
+  flex: 1 1 0;
+  min-width: 0;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
   overflow-x: auto;
-  margin-bottom: 30px;
 }
 
 .permissions-table {
@@ -76,6 +84,86 @@
   font-weight: 500;
 }
 
+.permission-select {
+  min-width: 140px;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #333;
+  background: #fff;
+  cursor: pointer;
+}
+
+.permission-select:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.permissions-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.permission-apply-btn {
+  padding: 10px 20px;
+  background: #0066cc;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.permission-apply-btn:hover {
+  background: #0052a3;
+}
+
+.permissions-applied-msg {
+  color: #2e7d32;
+  font-size: 14px;
+}
+
+.permissions-levels-info {
+  flex: 0 0 320px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.permissions-levels-info h2 {
+  margin: 0 0 12px 0;
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.permission-levels-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.permission-levels-list li {
+  margin-bottom: 10px;
+}
+
+.permission-levels-list li:last-child {
+  margin-bottom: 0;
+}
+
+.permission-levels-list strong {
+  color: #333;
+}
+
 .permissions-roles-info {
   background: #fff;
   border: 1px solid #ddd;
@@ -117,6 +205,17 @@
   font-size: 14px;
 }
 
+@media (max-width: 1024px) {
+  .permissions-main {
+    flex-direction: column;
+  }
+
+  .permissions-levels-info {
+    flex: none;
+    width: 100%;
+  }
+}
+
 @media (max-width: 768px) {
   .permissions-table {
     font-size: 14px;
@@ -125,6 +224,10 @@
   .permissions-table th,
   .permissions-table td {
     padding: 8px 12px;
+  }
+
+  .permission-levels-list {
+    font-size: 12px;
   }
 
   .role-descriptions {
