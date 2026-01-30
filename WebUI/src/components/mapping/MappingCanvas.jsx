@@ -3,7 +3,18 @@
  */
 
 import React, { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react';
+import { calculateGlobalDoorId } from '../../utils/configValidator';
 import './MappingCanvas.css';
+
+/** Числовой globalDoorId из объекта двери (API может не передавать globalDoorId, только nodeId+localDoor) */
+function getGlobalDoorIdFromDoor(d) {
+  if (!d) return undefined;
+  if (d.globalDoorId != null) return Number(d.globalDoorId);
+  const nodeId = d.nodeId ?? 1;
+  const localDoor = d.localDoor ?? d?.localDoorId;
+  if (localDoor != null) return calculateGlobalDoorId(nodeId, localDoor);
+  return d?.id ?? d?.doorId;
+}
 
 const DOOR_HEIGHT = 10;
 /** Ширина двери по умолчанию по типам (мм): одностворчатая 90, двустворчатая 120, раздвижная 120, электрическая 90 */
@@ -50,6 +61,7 @@ const MappingCanvas = forwardRef(({
   defaultDrawNumber,
   defaultShowNumberOnDrawing,
   onMoveEnd,
+  wallShape = 'segment',
 }, ref) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
@@ -67,6 +79,9 @@ const MappingCanvas = forwardRef(({
   const [resizeStart, setResizeStart] = useState(null);
   const [isResizingWall, setIsResizingWall] = useState(false);
   const [wallResizeEnd, setWallResizeEnd] = useState(null); // 'start' | 'end'
+  const [isResizingWallRect, setIsResizingWallRect] = useState(false);
+  const [wallRectHandle, setWallRectHandle] = useState(null); // 'nw' | 'ne' | 'sw' | 'se'
+  const [wallRectResizeStart, setWallRectResizeStart] = useState(null);
   const lastMovedObjectsRef = useRef(null);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const commentInputRef = useRef(null);
@@ -125,10 +140,11 @@ const MappingCanvas = forwardRef(({
     let minDistance = SNAP_TOLERANCE;
     const walls = objects.filter(o => o.type === 'wall');
 
-    // Пересечения линий
+    // Пересечения линий (только отрезки стен; прямоугольные стены учитываются по углам ниже)
     for (let i = 0; i < walls.length; i++) {
       for (let j = i + 1; j < walls.length; j++) {
         const w1 = walls[i], w2 = walls[j];
+        if (w1.x1 == null || w2.x1 == null) continue; // прямоугольная стена не имеет x1,y1,x2,y2
         const p = lineIntersection(w1.x1, w1.y1, w1.x2, w1.y2, w2.x1, w2.y1, w2.x2, w2.y2);
         if (p) {
           const d = Math.sqrt((x - p.x) ** 2 + (y - p.y) ** 2);
@@ -140,12 +156,21 @@ const MappingCanvas = forwardRef(({
       }
     }
 
-    // Концы линий
+    // Концы линий (отрезки) и углы прямоугольных стен
     walls.forEach(obj => {
-      const dist1 = Math.sqrt((x - obj.x1) ** 2 + (y - obj.y1) ** 2);
-      const dist2 = Math.sqrt((x - obj.x2) ** 2 + (y - obj.y2) ** 2);
-      if (dist1 < minDistance) { minDistance = dist1; nearestPoint = { x: obj.x1, y: obj.y1 }; }
-      if (dist2 < minDistance) { minDistance = dist2; nearestPoint = { x: obj.x2, y: obj.y2 }; }
+      if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+        const rx = obj.x ?? 0, ry = obj.y ?? 0, rw = obj.width ?? 100, rh = obj.height ?? 50;
+        const corners = [[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]];
+        corners.forEach(([cx, cy]) => {
+          const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+          if (d < minDistance) { minDistance = d; nearestPoint = { x: cx, y: cy }; }
+        });
+      } else {
+        const dist1 = Math.sqrt((x - obj.x1) ** 2 + (y - obj.y1) ** 2);
+        const dist2 = Math.sqrt((x - obj.x2) ** 2 + (y - obj.y2) ** 2);
+        if (dist1 < minDistance) { minDistance = dist1; nearestPoint = { x: obj.x1, y: obj.y1 }; }
+        if (dist2 < minDistance) { minDistance = dist2; nearestPoint = { x: obj.x2, y: obj.y2 }; }
+      }
     });
 
     // Центры объектов
@@ -205,10 +230,32 @@ const MappingCanvas = forwardRef(({
   const hitTestWallEndpoint = useCallback((worldX, worldY) => {
     if (!selectedObject || selectedObject.type !== 'wall') return null;
     const w = selectedObject;
+    if (w.wallShape === 'rectangle' || (w.width != null && w.height != null)) return null;
     const d1 = Math.sqrt((worldX - w.x1) ** 2 + (worldY - w.y1) ** 2);
     const d2 = Math.sqrt((worldX - w.x2) ** 2 + (worldY - w.y2) ** 2);
     if (d1 <= WALL_HANDLE_R) return 'start';
     if (d2 <= WALL_HANDLE_R) return 'end';
+    return null;
+  }, [selectedObject]);
+
+  const MIN_WALL_RECT_SIZE = 10;
+  const hitTestWallRectHandle = useCallback((worldX, worldY) => {
+    if (!selectedObject || selectedObject.type !== 'wall') return null;
+    const w = selectedObject;
+    if (w.wallShape !== 'rectangle' && (w.width == null || w.height == null)) return null;
+    const x = w.x ?? 0;
+    const y = w.y ?? 0;
+    const width = w.width ?? 100;
+    const height = w.height ?? 50;
+    const corners = [
+      ['nw', x, y],
+      ['ne', x + width, y],
+      ['sw', x, y + height],
+      ['se', x + width, y + height],
+    ];
+    for (const [handle, hx, hy] of corners) {
+      if (Math.sqrt((worldX - hx) ** 2 + (worldY - hy) ** 2) <= WALL_HANDLE_R) return handle;
+    }
     return null;
   }, [selectedObject]);
 
@@ -310,6 +357,40 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
+    // Ресайз стены-прямоугольника за угловые маркеры
+    if (isResizingWallRect && wallRectHandle && wallRectResizeStart) {
+      const { obj, startX, startY, startW, startH } = wallRectResizeStart;
+      const mx = svgPoint.x;
+      const my = svgPoint.y;
+      let newX = startX, newY = startY, newW = startW, newH = startH;
+      if (wallRectHandle === 'se') {
+        newX = startX;
+        newY = startY;
+        newW = Math.max(MIN_WALL_RECT_SIZE, mx - startX);
+        newH = Math.max(MIN_WALL_RECT_SIZE, my - startY);
+      } else if (wallRectHandle === 'sw') {
+        newX = mx;
+        newY = startY;
+        newW = Math.max(MIN_WALL_RECT_SIZE, (startX + startW) - mx);
+        newH = Math.max(MIN_WALL_RECT_SIZE, my - startY);
+      } else if (wallRectHandle === 'ne') {
+        newX = startX;
+        newY = my;
+        newW = Math.max(MIN_WALL_RECT_SIZE, mx - startX);
+        newH = Math.max(MIN_WALL_RECT_SIZE, (startY + startH) - my);
+      } else {
+        newX = mx;
+        newY = my;
+        newW = Math.max(MIN_WALL_RECT_SIZE, (startX + startW) - mx);
+        newH = Math.max(MIN_WALL_RECT_SIZE, (startY + startH) - my);
+      }
+      const next = objects.map(o =>
+        o.id === obj.id ? { ...o, x: newX, y: newY, width: newW, height: newH } : o
+      );
+      onObjectsChange(next, { addToHistory: false });
+      return;
+    }
+
     // Ресайз стены за маркеры концов: тянем начало или конец стены в новую точку (с привязкой)
     if (isResizingWall && wallResizeEnd && selectedObject?.type === 'wall') {
       const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
@@ -333,11 +414,17 @@ const MappingCanvas = forwardRef(({
       const noHistory = { addToHistory: false };
       let next;
       if (obj.type === 'wall') {
-        next = objects.map(o =>
-          o.id === obj.id
-            ? { ...o, x1: moveStart.objX1 + dx, y1: moveStart.objY1 + dy, x2: moveStart.objX2 + dx, y2: moveStart.objY2 + dy }
-            : o
-        );
+        if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+          next = objects.map(o =>
+            o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
+          );
+        } else {
+          next = objects.map(o =>
+            o.id === obj.id
+              ? { ...o, x1: moveStart.objX1 + dx, y1: moveStart.objY1 + dy, x2: moveStart.objX2 + dx, y2: moveStart.objY2 + dy }
+              : o
+          );
+        }
       } else if (obj.type === 'door') {
         next = objects.map(o =>
           o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
@@ -352,7 +439,7 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Рисование стены
+    // Рисование стены (отрезок или прямоугольник — превью курсора)
     if (isDrawing && drawingStart && selectedTool === 'wall') {
       let endPoint = svgPoint;
       const snap = findSnapPoint(svgPoint.x, svgPoint.y);
@@ -382,6 +469,9 @@ const MappingCanvas = forwardRef(({
     isResizingDoor,
     resizeStart,
     resizeHandle,
+    isResizingWallRect,
+    wallRectHandle,
+    wallRectResizeStart,
     isResizingWall,
     wallResizeEnd,
     isMovingObject,
@@ -394,6 +484,7 @@ const MappingCanvas = forwardRef(({
     isDrawing,
     drawingStart,
     selectedTool,
+    wallShape,
     findSnapPoint,
     onSnapPointChange,
     worldToDoorLocal,
@@ -406,12 +497,22 @@ const MappingCanvas = forwardRef(({
     for (let i = objects.length - 1; i >= 0; i--) {
       const o = objects[i];
       if (o.type === 'wall') {
-        const thickness = (o.thickness || 5) / 2;
-        const dx = o.x2 - o.x1, dy = o.y2 - o.y1;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-        const t = Math.max(0, Math.min(1, ((x - o.x1) * dx + (y - o.y1) * dy) / (len * len)));
-        const px = o.x1 + t * dx, py = o.y1 + t * dy;
-        if (Math.sqrt((x - px) ** 2 + (y - py) ** 2) <= thickness + tolerance) return o;
+        if (o.wallShape === 'rectangle' || (o.width != null && o.height != null)) {
+          const thickness = (o.thickness || 5) / 2;
+          const rx = o.x ?? 0;
+          const ry = o.y ?? 0;
+          const rw = o.width ?? 100;
+          const rh = o.height ?? 50;
+          const t = thickness + tolerance;
+          if (x >= rx - t && x <= rx + rw + t && y >= ry - t && y <= ry + rh + t) return o;
+        } else {
+          const thickness = (o.thickness || 5) / 2;
+          const dx = o.x2 - o.x1, dy = o.y2 - o.y1;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+          const t = Math.max(0, Math.min(1, ((x - o.x1) * dx + (y - o.y1) * dy) / (len * len)));
+          const px = o.x1 + t * dx, py = o.y1 + t * dy;
+          if (Math.sqrt((x - px) ** 2 + (y - py) ** 2) <= thickness + tolerance) return o;
+        }
       }
       if (o.type === 'door') {
         const { localX, localY } = worldToDoorLocal(o, x, y);
@@ -474,8 +575,8 @@ const MappingCanvas = forwardRef(({
         setMoveStart({
           clientX: e.clientX,
           clientY: e.clientY,
-          objX: hitRight.x,
-          objY: hitRight.y,
+          objX: hitRight.x ?? hitRight.x1,
+          objY: hitRight.y ?? hitRight.y1,
           objX1: hitRight.x1,
           objY1: hitRight.y1,
           objX2: hitRight.x2,
@@ -504,9 +605,24 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Выбор и перемещение (или ресайз двери за углы, или ресайз стены за концы)
+    // Выбор и перемещение (или ресайз двери за углы, или ресайз стены за концы / углы прямоугольника)
     if (selectedTool === 'select' && mode === 'edit') {
       setIsJustFinishedRightDrag(false); // левый клик — сбрасываем «только что перетащили правой», маркеры можно показывать
+      const wallRectH = hitTestWallRectHandle(svgPoint.x, svgPoint.y);
+      if (wallRectH && selectedObject?.type === 'wall') {
+        e.stopPropagation();
+        setIsResizingWallRect(true);
+        setWallRectHandle(wallRectH);
+        const w = selectedObject;
+        setWallRectResizeStart({
+          obj: selectedObject,
+          startX: w.x ?? 0,
+          startY: w.y ?? 0,
+          startW: w.width ?? 100,
+          startH: w.height ?? 50,
+        });
+        return;
+      }
       const wallEnd = hitTestWallEndpoint(svgPoint.x, svgPoint.y);
       if (wallEnd && selectedObject?.type === 'wall') {
         e.stopPropagation();
@@ -560,24 +676,49 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Рисование стены
+    // Рисование стены (отрезок или прямоугольник)
     if (selectedTool === 'wall' && mode === 'edit') {
       if (!isDrawing) {
         setIsDrawing(true);
         setDrawingStart(pt);
       } else {
-        const newWall = {
-          id: `wall_${Date.now()}`,
-          type: 'wall',
-          x1: drawingStart.x,
-          y1: drawingStart.y,
-          x2: pt.x,
-          y2: pt.y,
-          thickness: defaultWallThickness ?? 5,
-          color: '#333333',
-        };
-        onObjectsChange([...objects, newWall]);
-        onObjectSelect(newWall);
+        const thickness = defaultWallThickness ?? 5;
+        if (wallShape === 'rectangle') {
+          const x1 = drawingStart.x;
+          const y1 = drawingStart.y;
+          const x2 = pt.x;
+          const y2 = pt.y;
+          const x = Math.min(x1, x2);
+          const y = Math.min(y1, y2);
+          const width = Math.max(MIN_WALL_RECT_SIZE, Math.abs(x2 - x1));
+          const height = Math.max(MIN_WALL_RECT_SIZE, Math.abs(y2 - y1));
+          const newWall = {
+            id: `wall_${Date.now()}`,
+            type: 'wall',
+            wallShape: 'rectangle',
+            x,
+            y,
+            width,
+            height,
+            thickness,
+            color: '#333333',
+          };
+          onObjectsChange([...objects, newWall]);
+          onObjectSelect(newWall);
+        } else {
+          const newWall = {
+            id: `wall_${Date.now()}`,
+            type: 'wall',
+            x1: drawingStart.x,
+            y1: drawingStart.y,
+            x2: pt.x,
+            y2: pt.y,
+            thickness,
+            color: '#333333',
+          };
+          onObjectsChange([...objects, newWall]);
+          onObjectSelect(newWall);
+        }
         setIsDrawing(false);
         setDrawingStart(null);
       }
@@ -589,7 +730,7 @@ const MappingCanvas = forwardRef(({
       if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
       const doorType = selectedDoorType || 'single';
       const defaultW = DEFAULT_DOOR_WIDTH[doorType] ?? DOOR_WIDTH;
-      const gid = selectedDoorId != null ? selectedDoorId : (Array.isArray(doors) && doors[0] ? (doors[0].id ?? doors[0].doorId ?? doors[0].globalDoorId) : undefined);
+      const gid = selectedDoorId != null ? selectedDoorId : (Array.isArray(doors) && doors[0] ? getGlobalDoorIdFromDoor(doors[0]) : undefined);
       const doorId = `door_${Date.now()}`;
       const x = pt.x - defaultW / 2;
       const y = pt.y - DOOR_HEIGHT / 2;
@@ -642,7 +783,9 @@ const MappingCanvas = forwardRef(({
     hitTest,
     hitTestResizeHandle,
     hitTestWallEndpoint,
+    hitTestWallRectHandle,
     selectedObject,
+    wallShape,
   ]);
 
   // Обработка отпускания мыши
@@ -665,6 +808,9 @@ const MappingCanvas = forwardRef(({
     setResizeStart(null);
     setIsResizingWall(false);
     setWallResizeEnd(null);
+    setIsResizingWallRect(false);
+    setWallRectHandle(null);
+    setWallRectResizeStart(null);
   }, [isMovingObject, onMoveEnd, isMovingByRightButton]);
 
   // Обработка контекстного меню (отключение для правой кнопки мыши)
@@ -756,7 +902,7 @@ const MappingCanvas = forwardRef(({
     const m = new Map();
     if (doors && Array.isArray(doors)) {
       for (const dr of doors) {
-        const gid = dr?.globalDoorId ?? dr?.id ?? dr?.doorId;
+        const gid = getGlobalDoorIdFromDoor(dr);
         if (gid != null) m.set(Number(gid), dr);
       }
     }
@@ -1032,11 +1178,52 @@ const MappingCanvas = forwardRef(({
     });
     return sorted.map(obj => {
       if (obj.type === 'wall') {
-        // В режиме выбора/редактирования — два маркера по концам стены; при перетаскивании правой кнопкой маркеры не показываем
         const selected = selectedObject?.id === obj.id && selectedTool === 'select' && mode === 'edit';
         const showWallHandles = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
-        // Синий цвет выбора не показываем при перетаскивании правой кнопкой и сразу после него
         const showSelectedStyle = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
+        const thickness = obj.thickness || 5;
+        const color = obj.color || '#333333';
+
+        if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+          const rx = obj.x ?? 0;
+          const ry = obj.y ?? 0;
+          const rw = obj.width ?? 100;
+          const rh = obj.height ?? 50;
+          // Один замкнутый path вместо четырёх линий — углы стыкуются без «ступенек»
+          const pathD = `M ${rx},${ry} L ${rx + rw},${ry} L ${rx + rw},${ry + rh} L ${rx},${ry + rh} Z`;
+          return (
+            <g key={obj.id}>
+              <path
+                d={pathD}
+                fill="none"
+                stroke={color}
+                strokeWidth={thickness}
+                strokeLinejoin="miter"
+                strokeLinecap="butt"
+                className={showSelectedStyle ? 'selected' : ''}
+                onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
+              />
+              {showWallHandles && (
+                <>
+                  {[['nw', rx, ry], ['ne', rx + rw, ry], ['sw', rx, ry + rh], ['se', rx + rw, ry + rh]].map(([_, hx, hy]) => (
+                    <circle
+                      key={_}
+                      cx={hx}
+                      cy={hy}
+                      r={WALL_HANDLE_R}
+                      fill="none"
+                      stroke="#007bff"
+                      strokeWidth={2}
+                      className="wall-endpoint-handle"
+                      onClick={(ev) => ev.stopPropagation()}
+                    />
+                  ))}
+                </>
+              )}
+            </g>
+          );
+        }
+
         return (
           <g key={obj.id}>
             <line
@@ -1044,8 +1231,8 @@ const MappingCanvas = forwardRef(({
               y1={obj.y1}
               x2={obj.x2}
               y2={obj.y2}
-              stroke={obj.color || '#333333'}
-              strokeWidth={obj.thickness || 5}
+              stroke={color}
+              strokeWidth={thickness}
               className={showSelectedStyle ? 'selected' : ''}
               onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
             />
@@ -1225,10 +1412,18 @@ const MappingCanvas = forwardRef(({
       maxY = -Infinity;
       objects.forEach(obj => {
         if (obj.type === 'wall') {
-          minX = Math.min(minX, obj.x1, obj.x2);
-          minY = Math.min(minY, obj.y1, obj.y2);
-          maxX = Math.max(maxX, obj.x1, obj.x2);
-          maxY = Math.max(maxY, obj.y1, obj.y2);
+          if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+            const rx = obj.x ?? 0, ry = obj.y ?? 0, rw = obj.width ?? 100, rh = obj.height ?? 50;
+            minX = Math.min(minX, rx, rx + rw);
+            minY = Math.min(minY, ry, ry + rh);
+            maxX = Math.max(maxX, rx, rx + rw);
+            maxY = Math.max(maxY, ry, ry + rh);
+          } else {
+            minX = Math.min(minX, obj.x1, obj.x2);
+            minY = Math.min(minY, obj.y1, obj.y2);
+            maxX = Math.max(maxX, obj.x1, obj.x2);
+            maxY = Math.max(maxY, obj.y1, obj.y2);
+          }
         } else if (obj.type === 'door') {
           const ow = obj.width || DOOR_WIDTH;
           const oh = obj.height || DOOR_HEIGHT;
@@ -1285,17 +1480,31 @@ const MappingCanvas = forwardRef(({
             {renderObjects()}
           </g>
           {renderDoorResizeHandles()}
-          {isDrawing && drawingStart && currentMousePos && (
-            <line
-              x1={drawingStart.x}
-              y1={drawingStart.y}
-              x2={currentMousePos.x}
-              y2={currentMousePos.y}
-              stroke="#007bff"
-              strokeWidth={5}
-              strokeDasharray="5,5"
-              className="drawing-preview"
-            />
+          {isDrawing && drawingStart && currentMousePos && selectedTool === 'wall' && (
+            wallShape === 'rectangle' ? (
+              <rect
+                x={Math.min(drawingStart.x, currentMousePos.x)}
+                y={Math.min(drawingStart.y, currentMousePos.y)}
+                width={Math.abs(currentMousePos.x - drawingStart.x)}
+                height={Math.abs(currentMousePos.y - drawingStart.y)}
+                fill="none"
+                stroke="#007bff"
+                strokeWidth={5}
+                strokeDasharray="5,5"
+                className="drawing-preview"
+              />
+            ) : (
+              <line
+                x1={drawingStart.x}
+                y1={drawingStart.y}
+                x2={currentMousePos.x}
+                y2={currentMousePos.y}
+                stroke="#007bff"
+                strokeWidth={5}
+                strokeDasharray="5,5"
+                className="drawing-preview"
+              />
+            )
           )}
           {snapPoint && selectedTool !== 'select' && mode === 'edit' && (
             <circle

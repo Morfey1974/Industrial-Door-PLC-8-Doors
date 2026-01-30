@@ -3,6 +3,7 @@
  */
 
 import { useRef, useEffect } from 'react';
+import { calculateGlobalDoorId } from '../../utils/configValidator';
 import './MappingToolbar.css';
 
 const MappingToolbar = ({
@@ -24,6 +25,8 @@ const MappingToolbar = ({
   onSelectedDoorTypeChange,
   defaultWallThickness,
   onDefaultWallThicknessChange,
+  wallShape,
+  onWallShapeChange,
   defaultDoorFlipH,
   defaultDoorFlipV,
   defaultDoorRotation,
@@ -40,7 +43,15 @@ const MappingToolbar = ({
   const doorList = Array.isArray(doors)
     ? doors
     : (doors && Array.isArray(doors.doors) ? doors.doors : doors && Array.isArray(doors.data) ? doors.data : []) || [];
-  const getDoorId = (d) => d?.id ?? d?.doorId ?? d?.globalDoorId;
+  /** Числовой globalDoorId для значения выбора и привязки двери на карте (ID-2-1 → 9) */
+  const getDoorId = (d) => {
+    if (!d) return undefined;
+    if (d.globalDoorId != null) return Number(d.globalDoorId);
+    const nodeId = d.nodeId ?? 1;
+    const localDoor = d.localDoor ?? d?.localDoorId;
+    if (localDoor != null) return calculateGlobalDoorId(nodeId, localDoor);
+    return d?.id ?? d?.doorId;
+  };
   /** Подпись для выбора двери: ID-{nodeId}-{localDoor} */
   const getDoorOptionLabel = (d) => {
     const idStr = d ? `ID-${d.nodeId ?? 1}-${d.localDoor ?? d?.localDoorId ?? getDoorId(d) ?? '-'}` : '—';
@@ -97,6 +108,25 @@ const MappingToolbar = ({
 
       {selectedTool === 'wall' && (
         <div className="toolbar-section">
+          <h3 className="toolbar-section-title">Форма стены</h3>
+          <div className="toolbar-setting toolbar-wall-shapes">
+            <button
+              type="button"
+              className={`toolbar-action ${wallShape === 'segment' ? 'active' : ''}`}
+              onClick={() => onWallShapeChange?.('segment')}
+              title="Прямая стена (отрезок)"
+            >
+              Отрезок
+            </button>
+            <button
+              type="button"
+              className={`toolbar-action ${wallShape === 'rectangle' ? 'active' : ''}`}
+              onClick={() => onWallShapeChange?.('rectangle')}
+              title="Замкнутая стена (прямоугольник)"
+            >
+              Прямоугольник
+            </button>
+          </div>
           <h3 className="toolbar-section-title">Толщина новой стены</h3>
           <div className="toolbar-setting">
             <label>
@@ -280,19 +310,49 @@ const MappingToolbar = ({
               </span>
             </div>
             {(selectedObject.type === 'wall') && (
-              <div className="property-item">
-                <span className="property-label">Толщина:</span>
-                <input
-                  type="number"
-                  value={selectedObject.thickness ?? 5}
-                  onChange={(e) => onObjectChange({
-                    ...selectedObject,
-                    thickness: Number(e.target.value),
-                  })}
-                  min="1"
-                  max="20"
-                />
-              </div>
+              <>
+                <div className="property-item">
+                  <span className="property-label">Толщина (мм):</span>
+                  <input
+                    type="number"
+                    value={selectedObject.thickness ?? 5}
+                    onChange={(e) => onObjectChange({
+                      ...selectedObject,
+                      thickness: Number(e.target.value),
+                    })}
+                    min="1"
+                    max="20"
+                  />
+                </div>
+                {(selectedObject.wallShape === 'rectangle' || (selectedObject.width != null && selectedObject.height != null)) && (
+                  <>
+                    <div className="property-item">
+                      <span className="property-label">Длина (мм):</span>
+                      <input
+                        type="number"
+                        value={selectedObject.width ?? 100}
+                        onChange={(e) => onObjectChange({
+                          ...selectedObject,
+                          width: Math.max(10, Number(e.target.value)),
+                        })}
+                        min="10"
+                      />
+                    </div>
+                    <div className="property-item">
+                      <span className="property-label">Ширина (мм):</span>
+                      <input
+                        type="number"
+                        value={selectedObject.height ?? 50}
+                        onChange={(e) => onObjectChange({
+                          ...selectedObject,
+                          height: Math.max(10, Number(e.target.value)),
+                        })}
+                        min="10"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
             )}
             {selectedObject.type === 'door' && (
               <>

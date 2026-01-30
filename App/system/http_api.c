@@ -19,6 +19,7 @@ extern osThreadId_t httpTaskHandle;
 
 #include "config/config_format.h"
 #include "config/mapping_storage_qspi.h"
+#include "logic/logic_deps.h"
 
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
@@ -213,12 +214,13 @@ static uint8_t build_doors(jsonw_t *w)
         }
         else
         {
-            /* Удаленная дверь - используем LogicCore (данные от CAN STATUS) */
+            /* Удаленная дверь - используем LogicCore (данные от CAN STATUS + lockRequired для карты) */
             if (lc && globalDoorId >= 1U && globalDoorId <= APP_MAX_DOORS)
             {
                 uint8_t open = lc->physOpen[globalDoorId - 1U];
                 physClosed = open ? 0U : 1U;
-                locked = 0U;
+                /* Состояние блокировки по зависимостям — чтобы на карте в режиме просмотра отображалась анимация */
+                locked = DoorBitset_Test(&lc->lockRequired, globalDoorId) ? 1U : 0U;
                 alarming = 0U;
                 alarmReasons = 0UL;
                 if (open) open_s = 0U;

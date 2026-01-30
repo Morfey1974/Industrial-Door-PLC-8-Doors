@@ -42,6 +42,7 @@ const Mapping = () => {
   const [selectedDoorId, setSelectedDoorId] = useState(null);
   const [selectedDoorType, setSelectedDoorType] = useState('single'); // single | double | sliding | electric
   const [defaultWallThickness, setDefaultWallThickness] = useState(5);
+  const [selectedWallShape, setSelectedWallShape] = useState('segment'); // 'segment' | 'rectangle'
   const [defaultDoorFlipH, setDefaultDoorFlipH] = useState(false);
   const [defaultDoorFlipV, setDefaultDoorFlipV] = useState(false);
   const [defaultDoorRotation, setDefaultDoorRotation] = useState(0);
@@ -542,6 +543,7 @@ const Mapping = () => {
           defaultDrawNumber={defaultDrawNumber}
           defaultShowNumberOnDrawing={defaultShowNumberOnDrawing}
           onMoveEnd={handleCanvasMoveEnd}
+          wallShape={selectedWallShape}
         />
         {mode === 'edit' && (
           <MappingToolbar
@@ -576,6 +578,8 @@ const Mapping = () => {
             onSelectedDoorTypeChange={setSelectedDoorType}
             defaultWallThickness={defaultWallThickness}
             onDefaultWallThicknessChange={setDefaultWallThickness}
+            wallShape={selectedWallShape}
+            onWallShapeChange={setSelectedWallShape}
             defaultDoorFlipH={defaultDoorFlipH}
             defaultDoorFlipV={defaultDoorFlipV}
             defaultDoorRotation={defaultDoorRotation}

@@ -30,22 +30,42 @@
   font-style: italic;
 }
 
-/* Панель инструментов */
+/* Панель инструментов — компактная */
 .doors-config-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-md);
+  padding: 0.35rem 0.5rem;
   background: var(--color-white);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
 }
 
 .toolbar-left,
 .toolbar-right {
   display: flex;
   gap: var(--spacing-sm);
+}
+
+/* Миниатюрные кнопки на всей странице конфигурации дверей */
+.doors-config .btn {
+  padding: 0.25rem 0.5rem;
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+  min-height: auto;
+  line-height: 1.3;
+}
+
+.doors-config .tab-button {
+  padding: 0.35rem 0.75rem;
+  font-size: var(--font-size-sm);
+  border-bottom-width: 2px;
+}
+
+.doors-config .alert button {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.875rem;
 }
 
 /* Иконка карты на кнопке «Маппинг» — чуть крупнее */
@@ -160,7 +180,7 @@
   align-items: center;
   border-bottom: 2px solid var(--color-border);
   background: var(--color-secondary);
-  padding-right: var(--spacing-md);
+  padding: 0.35rem 0.5rem;
 }
 
 .tabs-header {
@@ -198,8 +218,9 @@
 }
 
 .tabs-content {
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
 }
+
 
 /* Общие стили для вкладок */
 .general-tab,
@@ -336,12 +357,17 @@
   color: var(--color-text-dark);
 }
 
-/* Таблица дверей */
+/* Таблица дверей — компактный заголовок */
 .doors-tab-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.doors-tab-header h2 {
+  font-size: var(--font-size-base);
+  margin: 0;
 }
 
 .doors-tab-controls {
@@ -350,11 +376,12 @@
   align-items: center;
 }
 
-.filter-select {
-  padding: var(--spacing-sm);
+.doors-config .filter-select {
+  padding: 0.25rem 0.5rem;
+  font-size: var(--font-size-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-base);
+  min-height: auto;
 }
 
 .doors-table-container {
@@ -374,9 +401,10 @@
 
 .doors-config-table th,
 .doors-config-table td {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0.25rem 0.5rem;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
 }
 
 .doors-config-table tbody tr:hover {
@@ -550,9 +578,10 @@
 
 .dependencies-table th,
 .dependencies-table td {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0.25rem 0.5rem;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
 }
 
 .dependencies-table thead {
@@ -596,9 +625,10 @@
 
 .timeouts-table th,
 .timeouts-table td {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0.25rem 0.5rem;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
 }
 
 .timeouts-table thead {

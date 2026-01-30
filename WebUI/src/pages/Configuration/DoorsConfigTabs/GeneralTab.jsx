@@ -48,11 +48,11 @@ const GeneralTab = ({ config, updateConfig, loading }) => {
           value={localConfig.projectName}
           onChange={(e) => handleChange('projectName', e.target.value)}
           placeholder="Введите название проекта"
-          maxLength={32}
+          maxLength={100}
           disabled={loading}
           className="form-input project-name-input"
         />
-        <small>Максимум 32 символа</small>
+        <small>Максимум 100 символов</small>
       </div>
 
       <div className="form-group">

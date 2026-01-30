@@ -26,7 +26,7 @@
 #define CFG_MAX_DOORS        (CFG_MAX_NODES * CFG_DOORS_PER_NODE) /* 80 */
 
 /* Ограничения по строкам */
-#define CFG_PROJECT_NAME_LEN 32U
+#define CFG_PROJECT_NAME_LEN 101U  /* до 100 символов + завершающий 0 */
 #define CFG_COMMENT_LEN      32U
 
 /* Ограничение по числу рёбер зависимостей.

@@ -16,8 +16,8 @@ export const validateConfig = (config) => {
   if (!config.projectName || config.projectName.trim().length === 0) {
     errors.push('Название проекта не может быть пустым');
   }
-  if (config.projectName && config.projectName.length > 32) {
-    errors.push('Название проекта не может быть длиннее 32 символов');
+  if (config.projectName && config.projectName.length > 100) {
+    errors.push('Название проекта не может быть длиннее 100 символов');
   }
   
   // Проверка openTimeoutMs

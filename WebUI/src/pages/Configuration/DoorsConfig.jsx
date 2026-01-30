@@ -739,8 +739,8 @@ const DoorsConfig = () => {
       }
 
       const trimmedProjectName = config.projectName.trim();
-      if (trimmedProjectName.length > 32) {
-        setError('Название проекта не может быть длиннее 32 символов');
+      if (trimmedProjectName.length > 100) {
+        setError('Название проекта не может быть длиннее 100 символов');
         setSaving(false);
         return;
       }
@@ -1236,6 +1236,7 @@ const DoorsConfig = () => {
           setDeleteModalVisible(false);
           setDeleteModalName(null);
           if (name && deleteNamedConfig(name)) {
+
             // Обновляем список в следующем тике, чтобы React гарантированно применил обновление (модалка уже закрыта)
             setTimeout(() => {
               setSavedConfigsList(getSavedConfigsList());
