@@ -17,17 +17,17 @@ import Events from './pages/Monitoring/Events';
 import Alarms from './pages/Monitoring/Alarms';
 import Statistics from './pages/Monitoring/Statistics';
 import DoorsConfig from './pages/Configuration/DoorsConfig';
-import NetworkConfig from './pages/Configuration/NetworkConfig';
-import SystemParams from './pages/Configuration/SystemParams';
 import Mapping from './pages/Mapping';
 import Profile from './pages/Settings/Profile';
 import Users from './pages/Settings/Users';
 import Permissions from './pages/Settings/Permissions';
+import SystemParams from './pages/Settings/SystemParams';
 import About from './pages/Settings/About';
 import Help from './pages/Settings/Help';
 import { HelpSectionPage } from './pages/Settings/Help';
 import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import './styles/main.css';
 
 // Компонент для управления навигацией
@@ -60,8 +60,7 @@ function AppContent() {
       if (location.pathname === '/monitoring/statistics') return 'statistics';
       if (location.pathname === '/configuration/doors') return 'doors-config';
       if (location.pathname === '/configuration/mapping') return 'doors-config';
-      if (location.pathname === '/configuration/network') return 'network-config';
-      if (location.pathname === '/configuration/system') return 'system-params';
+      if (location.pathname === '/settings/system') return 'system-params';
       if (location.pathname === '/settings/profile') return 'profile';
       if (location.pathname === '/settings/permissions') return 'permissions';
       if (location.pathname === '/settings/about') return 'about';
@@ -124,14 +123,15 @@ function AppContent() {
     ];
     const configurationItems = [
       { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
-      { id: 'network-config', label: 'Сетевые настройки', path: '/configuration/network' },
-      { id: 'system-params', label: 'Параметры системы', path: '/configuration/system' },
     ];
     const monitoring = monitoringItems.filter((item) => canAccessPath(item.path, role));
     const configuration = configurationItems.filter((item) => canAccessPath(item.path, role));
     const settings = [];
     if (canAccessPath('/settings/profile', role)) {
       settings.push({ id: 'profile', label: 'Профиль', path: '/settings/profile' });
+    }
+    if (canAccessPath('/settings/system', role)) {
+      settings.push({ id: 'system-params', label: 'Параметры системы', path: '/settings/system' });
     }
     if (canAccessPath('/settings/permissions', role)) {
       settings.push({ id: 'permissions', label: 'Права доступа', path: '/settings/permissions' });
@@ -202,9 +202,8 @@ function AppContent() {
                 <Route path="/monitoring/alarms" element={<ProtectedRoute path="/monitoring/alarms"><Alarms /></ProtectedRoute>} />
                 <Route path="/monitoring/statistics" element={<ProtectedRoute path="/monitoring/statistics"><Statistics /></ProtectedRoute>} />
                 <Route path="/configuration/doors" element={<ProtectedRoute path="/configuration/doors"><DoorsConfig /></ProtectedRoute>} />
-                <Route path="/configuration/network" element={<ProtectedRoute path="/configuration/network"><NetworkConfig /></ProtectedRoute>} />
-                <Route path="/configuration/system" element={<ProtectedRoute path="/configuration/system"><SystemParams /></ProtectedRoute>} />
-                <Route path="/configuration/mapping" element={<ProtectedRoute path="/configuration/mapping"><Mapping /></ProtectedRoute>} />
+                <Route path="/configuration/mapping" element={<ProtectedRoute path="/configuration/mapping"><ErrorBoundary><Mapping /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/settings/system" element={<ProtectedRoute path="/settings/system"><SystemParams /></ProtectedRoute>} />
                 <Route path="/settings/profile" element={<ProtectedRoute path="/settings/profile"><Profile /></ProtectedRoute>} />
                 <Route path="/settings/users" element={<ProtectedRoute path="/settings/users"><Users /></ProtectedRoute>} />
                 <Route path="/settings/permissions" element={<ProtectedRoute path="/settings/permissions"><Permissions /></ProtectedRoute>} />

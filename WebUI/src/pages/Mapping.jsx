@@ -27,7 +27,8 @@ const Mapping = () => {
   const [mode, setMode] = useState('edit'); // 'edit' | 'view'
   const [selectedTool, setSelectedTool] = useState('select'); // 'select' | 'wall' | 'door' | 'label' | 'comment'
   const [objects, setObjects] = useState([]);
-  const [selectedObject, setSelectedObject] = useState(null);
+  const [selectedObjects, setSelectedObjects] = useState([]);
+  const selectedObject = selectedObjects[0] ?? null;
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1.0 });
   const [doors, setDoors] = useState([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -46,6 +47,7 @@ const Mapping = () => {
   const [defaultWallRectWidth, setDefaultWallRectWidth] = useState(100);
   const [defaultWallRectHeight, setDefaultWallRectHeight] = useState(50);
   const [defaultWallSegmentLength, setDefaultWallSegmentLength] = useState(100);
+  const [defaultDoorLength, setDefaultDoorLength] = useState(null); // null = по умолчанию по типу (90/120)
   const [defaultDoorFlipH, setDefaultDoorFlipH] = useState(false);
   const [defaultDoorFlipV, setDefaultDoorFlipV] = useState(false);
   const [defaultDoorRotation, setDefaultDoorRotation] = useState(0);
@@ -55,6 +57,8 @@ const Mapping = () => {
   const fileInputRef = useRef(null);
   const modalResolveRef = useRef(null);
   const savedFileHandleRef = useRef(null); // ручка файла после первого сохранения — повторное сохранение без диалога
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -430,12 +434,24 @@ const Mapping = () => {
   }, [addToHistory]);
 
   const handleCanvasObjectChange = useCallback((obj) => {
-    setSelectedObject(obj);
-    handleObjectsChange(objects.map(o => o.id === obj.id ? obj : o));
+    const existing = objects.find(o => o.id === obj.id);
+    const merged = existing ? { ...existing, ...obj } : obj;
+    setSelectedObjects(prev => prev.map(p => p.id === merged.id ? merged : p));
+    handleObjectsChange(objects.map(o => o.id === merged.id ? merged : o));
   }, [objects, handleObjectsChange]);
+
+  // Вставка комментария: добавляем в список и сразу выбираем (панель свойств открывается)
+  const handleAddComment = useCallback((newComment) => {
+    const next = [...objectsRef.current, newComment];
+    setObjects(next);
+    setIsDirty(true);
+    addToHistory(next);
+    flushSync(() => setSelectedObjects([newComment]));
+  }, [addToHistory]);
 
   const handleCanvasMoveEnd = useCallback((objs) => {
     addToHistory(objs);
+    setSelectedObjects(prev => prev.map(p => objs.find(o => o.id === p.id) ?? p));
   }, [addToHistory]);
 
   // Инициализация истории при первой загрузке
@@ -459,11 +475,11 @@ const Mapping = () => {
         const active = document.activeElement;
         // Не удалять объект при редактировании текста: в инлайн-редакторе на карте И в поле «Текст» в панели свойств (тулбар)
         const isEditingText = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-        if (mode === 'edit' && selectedObject && !isEditingText) {
+        if (mode === 'edit' && selectedObjects.length > 0 && !isEditingText) {
           e.preventDefault();
-          const newObjects = objects.filter(o => o.id !== selectedObject.id);
-          handleObjectsChange(newObjects);
-          setSelectedObject(null);
+          const ids = new Set(selectedObjects.map(o => o.id));
+          handleObjectsChange(objects.filter(o => !ids.has(o.id)));
+          setSelectedObjects([]);
         }
       }
     };
@@ -472,7 +488,7 @@ const Mapping = () => {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [mode, handleUndo, handleRedo, selectedObject, objects, handleObjectsChange]);
+  }, [mode, handleUndo, handleRedo, selectedObjects, objects, handleObjectsChange]);
 
   // Блокируем прокрутку страницы колесом (passive: false нужен для preventDefault)
   useEffect(() => {
@@ -525,9 +541,12 @@ const Mapping = () => {
           selectedTool={selectedTool}
           objects={objects}
           selectedObject={selectedObject}
-          onObjectSelect={setSelectedObject}
+          selectedObjects={Array.isArray(selectedObjects) ? selectedObjects : []}
+          onObjectSelect={(obj) => setSelectedObjects(obj ? [obj] : [])}
+          onObjectsSelect={setSelectedObjects}
           onObjectsChange={handleObjectsChange}
           onObjectChange={handleCanvasObjectChange}
+          onAddComment={handleAddComment}
           viewport={viewport}
           onViewportChange={setViewport}
           snapEnabled={snapEnabled}
@@ -539,6 +558,7 @@ const Mapping = () => {
           selectedDoorId={selectedDoorId}
           selectedDoorType={selectedDoorType}
           defaultWallThickness={defaultWallThickness}
+          defaultDoorLength={defaultDoorLength}
           defaultDoorFlipH={defaultDoorFlipH}
           defaultDoorFlipV={defaultDoorFlipV}
           defaultDoorRotation={defaultDoorRotation}
@@ -553,19 +573,21 @@ const Mapping = () => {
             selectedTool={selectedTool}
             onToolSelect={(toolId) => {
               setSelectedTool(toolId);
-              setSelectedObject(null); // при смене инструмента сбрасываем выбор — панель «Свойства» показывает настройки выбранного инструмента
+              setSelectedObjects([]);
             }}
             selectedObject={selectedObject}
+            selectedObjects={Array.isArray(selectedObjects) ? selectedObjects : []}
             onObjectChange={(obj) => {
-              setSelectedObject(obj);
-              const newObjects = objects.map(o => o.id === obj.id ? obj : o);
-              handleObjectsChange(newObjects);
+              const existing = objects.find(o => o.id === obj.id);
+              const merged = existing ? { ...existing, ...obj } : obj;
+              setSelectedObjects(prev => prev.map(p => p.id === merged.id ? merged : p));
+              handleObjectsChange(objects.map(o => o.id === merged.id ? merged : o));
             }}
             onDelete={() => {
-              if (selectedObject) {
-                const newObjects = objects.filter(o => o.id !== selectedObject.id);
-                handleObjectsChange(newObjects);
-                setSelectedObject(null);
+              if (selectedObjects.length > 0) {
+                const ids = new Set(selectedObjects.map(o => o.id));
+                handleObjectsChange(objects.filter(o => !ids.has(o.id)));
+                setSelectedObjects([]);
               }
             }}
             snapEnabled={snapEnabled}
@@ -589,6 +611,8 @@ const Mapping = () => {
             onDefaultWallRectHeightChange={setDefaultWallRectHeight}
             defaultWallSegmentLength={defaultWallSegmentLength}
             onDefaultWallSegmentLengthChange={setDefaultWallSegmentLength}
+            defaultDoorLength={defaultDoorLength}
+            onDefaultDoorLengthChange={setDefaultDoorLength}
             defaultDoorFlipH={defaultDoorFlipH}
             defaultDoorFlipV={defaultDoorFlipV}
             defaultDoorRotation={defaultDoorRotation}

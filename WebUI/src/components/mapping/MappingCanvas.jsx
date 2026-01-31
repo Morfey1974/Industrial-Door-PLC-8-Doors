@@ -40,9 +40,12 @@ const MappingCanvas = forwardRef(({
   selectedTool,
   objects,
   selectedObject,
+  selectedObjects = [],
   onObjectSelect,
+  onObjectsSelect,
   onObjectsChange,
   onObjectChange,
+  onAddComment,
   viewport,
   onViewportChange,
   snapEnabled,
@@ -54,6 +57,7 @@ const MappingCanvas = forwardRef(({
   selectedDoorId,
   selectedDoorType,
   defaultWallThickness,
+  defaultDoorLength,
   defaultDoorFlipH,
   defaultDoorFlipV,
   defaultDoorRotation,
@@ -63,6 +67,7 @@ const MappingCanvas = forwardRef(({
   onMoveEnd,
   wallShape = 'segment',
 }, ref) => {
+  const sel = Array.isArray(selectedObjects) ? selectedObjects : [];
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -88,6 +93,9 @@ const MappingCanvas = forwardRef(({
   const commentMoveByRightRef = useRef(false); // перетаскивание комментария правой кнопкой — подавить контекстное меню
   const [isMovingByRightButton, setIsMovingByRightButton] = useState(false); // перетаскивание правой кнопкой — не показывать маркеры двери/стены
   const [isJustFinishedRightDrag, setIsJustFinishedRightDrag] = useState(false); // после отпускания мыши после правого перетаскивания — маркеры не показывать до следующего левого клика
+  const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
+  const [marqueeStart, setMarqueeStart] = useState(null);
+  const [marqueeCurrent, setMarqueeCurrent] = useState(null);
 
   const DOOR_HANDLE_SIZE = 8;
   const MIN_DOOR_SIZE = 12;
@@ -130,7 +138,7 @@ const MappingCanvas = forwardRef(({
     };
   }, [viewport.x, viewport.y, viewport.zoom]);
 
-  const SNAP_TOLERANCE = 15; // расстояние привязки в мировых единицах (мм)
+  const SNAP_TOLERANCE = 22; // расстояние привязки в мировых единицах (мм); прилипание к концам стен и пересечениям
 
   // Поиск ближайшей точки привязки (приоритет: пересечения > концы линий > центры объектов > сетка)
   const findSnapPoint = useCallback((x, y) => {
@@ -300,7 +308,6 @@ const MappingCanvas = forwardRef(({
       const { leafX, leafY, leafW: prevLeafW, leafH: prevLeafH } = getDoorLeafBounds(obj);
       let newX = x, newY = y, newW = w, newH = h;
 
-      // double: маркеры по углам всего проёма (как single); single/sliding/electric — по створке (длина панели = ширина двери)
       if (type !== 'double') {
         const newLeafWFromRight = (v) => Math.max(MIN_DOOR_SIZE, v);
         const newLeafWFromLeft = (v) => Math.max(MIN_DOOR_SIZE, v);
@@ -326,7 +333,6 @@ const MappingCanvas = forwardRef(({
           newH = Math.max(MIN_DOOR_SIZE, (y + h) - localY);
         }
       } else {
-        // double: ресайз по углам всего проёма (leafX=x, leafW=w)
         if (resizeHandle === 'se') {
           newX = x;
           newY = y;
@@ -406,36 +412,52 @@ const MappingCanvas = forwardRef(({
       return;
     }
 
-    // Перемещение объекта (без добавления в историю на каждый кадр)
-    if (isMovingObject && moveStart && selectedObject) {
+    // Перемещение объекта/объектов (без добавления в историю на каждый кадр)
+    if (isMovingObject && moveStart) {
       const dx = (e.clientX - moveStart.clientX) / viewport.zoom;
       const dy = (e.clientY - moveStart.clientY) / viewport.zoom;
-      const obj = selectedObject;
       const noHistory = { addToHistory: false };
       let next;
-      if (obj.type === 'wall') {
-        if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+      if (moveStart.positions && moveStart.positions.length > 0) {
+        const posById = new Map(moveStart.positions.map(p => [p.id, p]));
+        next = objects.map(o => {
+          const pos = posById.get(o.id);
+          if (!pos) return o;
+          if (o.type === 'wall') {
+            if (o.wallShape === 'rectangle' || (o.width != null && o.height != null))
+              return { ...o, x: pos.x + dx, y: pos.y + dy };
+            return { ...o, x1: pos.x1 + dx, y1: pos.y1 + dy, x2: pos.x2 + dx, y2: pos.y2 + dy };
+          }
+          return { ...o, x: pos.x + dx, y: pos.y + dy };
+        });
+      } else {
+        const obj = selectedObject;
+        if (!obj) return;
+        if (obj.type === 'wall') {
+          if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null)) {
+            next = objects.map(o =>
+              o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
+            );
+          } else {
+            next = objects.map(o =>
+              o.id === obj.id
+                ? { ...o, x1: moveStart.objX1 + dx, y1: moveStart.objY1 + dy, x2: moveStart.objX2 + dx, y2: moveStart.objY2 + dy }
+                : o
+            );
+          }
+        } else {
           next = objects.map(o =>
             o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
           );
-        } else {
-          next = objects.map(o =>
-            o.id === obj.id
-              ? { ...o, x1: moveStart.objX1 + dx, y1: moveStart.objY1 + dy, x2: moveStart.objX2 + dx, y2: moveStart.objY2 + dy }
-              : o
-          );
         }
-      } else if (obj.type === 'door') {
-        next = objects.map(o =>
-          o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
-        );
-      } else {
-        next = objects.map(o =>
-          o.id === obj.id ? { ...o, x: moveStart.objX + dx, y: moveStart.objY + dy } : o
-        );
       }
       lastMovedObjectsRef.current = next;
       onObjectsChange(next, noHistory);
+      return;
+    }
+
+    if (isMarqueeSelecting && marqueeStart) {
+      setMarqueeCurrent(svgPoint);
       return;
     }
 
@@ -489,6 +511,8 @@ const MappingCanvas = forwardRef(({
     onSnapPointChange,
     worldToDoorLocal,
     getDoorLeafBounds,
+    isMarqueeSelecting,
+    marqueeStart,
   ]);
 
   // Поиск объекта под курсором (сверху вниз по массиву)
@@ -533,31 +557,83 @@ const MappingCanvas = forwardRef(({
           hitMinY = o.y - Math.max(leftLeafW, rightLeafW);
           hitMaxY = o.y + h;
         } else if (type === 'single' || type === 'electric') {
-          // Ширина — по закрашенному прямоугольнику (створка), высота — от верха синей линии (дуги) до низа створки
           const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
           hitMinX = leafX;
           hitMaxX = leafX + leafW;
-          hitMinY = leafY - leafW; // верх синей линии (ось шарнира)
+          hitMinY = leafY - leafW;
           hitMaxY = leafY + leafH;
         } else {
-          // Раздвижная: зона по размеру створки (синей дуги над створкой нет)
           const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
           hitMinX = leafX;
           hitMinY = leafY;
           hitMaxX = leafX + leafW;
           hitMaxY = leafY + leafH;
         }
-        const doorTolerance = 0; // зона выделения двери совпадает с размером объекта
+        const doorTolerance = 0;
         if (localX >= hitMinX - doorTolerance && localX <= hitMaxX + doorTolerance && localY >= hitMinY - doorTolerance && localY <= hitMaxY + doorTolerance) return o;
       }
       if (o.type === 'label' || o.type === 'comment') {
-        const w = 60;
-        const h = (o.fontSize || 12) + 4;
-        if (x >= o.x - tolerance && x <= o.x + w + tolerance && y >= o.y - tolerance && y <= o.y + h + tolerance) return o;
+        const fs = o.fontSize || 12;
+        const lines = (o.text || '').split('\n');
+        const lineCount = Math.max(1, lines.length);
+        // Для комментария — кликабельная область на весь текст (перетаскивание ПКМ в любом месте)
+        const w = o.type === 'comment' ? 280 : 60;
+        const h = o.type === 'comment' ? lineCount * (fs + 2) + 8 : fs + 4;
+        const anchor = o.type === 'comment' ? (o.textAnchor || 'start') : 'start';
+        const left = anchor === 'middle' ? (o.x ?? 0) - w / 2 : anchor === 'end' ? (o.x ?? 0) - w : (o.x ?? 0);
+        if (x >= left - tolerance && x <= left + w + tolerance && y >= (o.y ?? 0) - tolerance && y <= (o.y ?? 0) + h + tolerance) return o;
       }
     }
     return null;
   }, [objects, worldToDoorLocal, getDoorLeafBounds]);
+
+  // Bounding box объекта для проверки попадания в рамку выбора
+  const getObjectBBox = useCallback((o) => {
+    if (o.type === 'wall') {
+      if (o.wallShape === 'rectangle' || (o.width != null && o.height != null)) {
+        const x = o.x ?? 0, y = o.y ?? 0, w = o.width ?? 100, h = o.height ?? 50;
+        return { minX: x, minY: y, maxX: x + w, maxY: y + h };
+      }
+      const t = (o.thickness || 5) / 2;
+      const x1 = o.x1 ?? 0, y1 = o.y1 ?? 0, x2 = o.x2 ?? x1, y2 = o.y2 ?? y1;
+      return {
+        minX: Math.min(x1, x2) - t,
+        minY: Math.min(y1, y2) - t,
+        maxX: Math.max(x1, x2) + t,
+        maxY: Math.max(y1, y2) + t,
+      };
+    }
+    if (o.type === 'door') {
+      const { leafX, leafY, leafW, leafH } = getDoorLeafBounds(o);
+      const type = o.doorType || 'single';
+      let minY = leafY;
+      if (type === 'single' || type === 'electric') minY = leafY - leafW;
+      return { minX: leafX, minY, maxX: leafX + leafW, maxY: leafY + leafH };
+    }
+    if (o.type === 'label' || o.type === 'comment') {
+      const fs = o.fontSize || 12;
+      const lines = (o.text || '').split('\n');
+      const lineCount = Math.max(1, lines.length);
+      const w = o.type === 'comment' ? 280 : 60;
+      const h = o.type === 'comment' ? lineCount * (fs + 2) + 8 : fs + 4;
+      const anchor = o.type === 'comment' ? (o.textAnchor || 'start') : 'start';
+      const left = anchor === 'middle' ? (o.x ?? 0) - w / 2 : anchor === 'end' ? (o.x ?? 0) - w : (o.x ?? 0);
+      return { minX: left, minY: o.y ?? 0, maxX: left + w, maxY: (o.y ?? 0) + h };
+    }
+    return { minX: o.x ?? 0, minY: o.y ?? 0, maxX: (o.x ?? 0) + 1, maxY: (o.y ?? 0) + 1 };
+  }, [getDoorLeafBounds]);
+
+  const rectsIntersect = (aMinX, aMinY, aMaxX, aMaxY, bMinX, bMinY, bMaxX, bMaxY) =>
+    !(aMaxX < bMinX || bMaxX < aMinX || aMaxY < bMinY || bMaxY < aMinY);
+
+  const getObjectsInRect = useCallback((selMinX, selMinY, selMaxX, selMaxY) => {
+    const out = [];
+    for (const o of objects) {
+      const b = getObjectBBox(o);
+      if (rectsIntersect(selMinX, selMinY, selMaxX, selMaxY, b.minX, b.minY, b.maxX, b.maxY)) out.push(o);
+    }
+    return out;
+  }, [objects, getObjectBBox]);
 
   // Обработка клика мыши
   const handleMouseDown = useCallback((e) => {
@@ -606,85 +682,114 @@ const MappingCanvas = forwardRef(({
 
     const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
 
-    // Вставка комментария — обрабатываем до блока «Выбор», чтобы клик по карте всегда добавлял комментарий
+    // Вставка комментария — обрабатываем до блока «Выбор»; сразу открываем свойства (один обработчик в родителе добавляет и выбирает)
     if (selectedTool === 'comment' && mode === 'edit') {
       e.preventDefault();
       e.stopPropagation();
       const newComment = { id: `comment_${Date.now()}`, type: 'comment', x: pt.x, y: pt.y, text: '', fontSize: 14, textAnchor: 'start' };
-      onObjectsChange([...objects, newComment]);
-      onObjectSelect(newComment);
+      if (onAddComment) {
+        onAddComment(newComment);
+      } else {
+        onObjectsChange([...objects, newComment]);
+        onObjectSelect(newComment);
+      }
       setEditingCommentId(newComment.id);
       return;
     }
 
-    // Выбор и перемещение (или ресайз двери за углы, или ресайз стены за концы / углы прямоугольника)
+    // Выбор и перемещение (или ресайз одной двери/стены, или рамка выбора нескольких, или перемещение выбранных)
     if (selectedTool === 'select' && mode === 'edit') {
-      setIsJustFinishedRightDrag(false); // левый клик — сбрасываем «только что перетащили правой», маркеры можно показывать
-      const wallRectH = hitTestWallRectHandle(svgPoint.x, svgPoint.y);
-      if (wallRectH && selectedObject?.type === 'wall') {
-        e.stopPropagation();
-        setIsResizingWallRect(true);
-        setWallRectHandle(wallRectH);
-        const w = selectedObject;
-        setWallRectResizeStart({
-          obj: selectedObject,
-          startX: w.x ?? 0,
-          startY: w.y ?? 0,
-          startW: w.width ?? 100,
-          startH: w.height ?? 50,
-        });
-        return;
-      }
-      const wallEnd = hitTestWallEndpoint(svgPoint.x, svgPoint.y);
-      if (wallEnd && selectedObject?.type === 'wall') {
-        e.stopPropagation();
-        setIsResizingWall(true);
-        setWallResizeEnd(wallEnd);
-        return;
-      }
-      const handle = hitTestResizeHandle(svgPoint.x, svgPoint.y);
-      if (handle && selectedObject?.type === 'door') {
-        e.stopPropagation();
-        setIsResizingDoor(true);
-        setResizeHandle(handle);
-        setResizeStart({
-          obj: selectedObject,
-          worldX: svgPoint.x,
-          worldY: svgPoint.y,
-          x: selectedObject.x,
-          y: selectedObject.y,
-          w: selectedObject.width || DOOR_WIDTH,
-          h: selectedObject.height || DOOR_HEIGHT,
-        });
-        return;
-      }
+      setIsJustFinishedRightDrag(false);
       const hit = hitTest(svgPoint.x, svgPoint.y);
-      if (hit) {
-        onObjectSelect(hit);
-        if (hit.type === 'comment') {
-          // Левый клик по комментарию — режим редактирования (перетаскивание — правой кнопкой)
-          setEditingCommentId(hit.id);
+      const hitInSelection = hit && sel.some(s => s.id === hit.id);
+      const singleSelected = sel.length === 1 && selectedObject;
+
+      if (hitInSelection && singleSelected) {
+        // Клик по единственному выбранному — ресайз двери/стены по ручкам, если попали
+        const wallRectH = hitTestWallRectHandle(svgPoint.x, svgPoint.y);
+        if (wallRectH && selectedObject.type === 'wall') {
+          e.stopPropagation();
+          setIsResizingWallRect(true);
+          setWallRectHandle(wallRectH);
+          const w = selectedObject;
+          setWallRectResizeStart({
+            obj: selectedObject,
+            startX: w.x ?? 0,
+            startY: w.y ?? 0,
+            startW: w.width ?? 100,
+            startH: w.height ?? 50,
+          });
           return;
         }
-        if (hit.type === 'door' || hit.type === 'wall') {
-          // Левый клик по двери/стене — только выбор и редактирование в панели (перетаскивание — правой кнопкой)
+        const wallEnd = hitTestWallEndpoint(svgPoint.x, svgPoint.y);
+        if (wallEnd && selectedObject.type === 'wall') {
+          e.stopPropagation();
+          setIsResizingWall(true);
+          setWallResizeEnd(wallEnd);
           return;
         }
+        const handle = hitTestResizeHandle(svgPoint.x, svgPoint.y);
+        if (handle && selectedObject.type === 'door') {
+          e.stopPropagation();
+          setIsResizingDoor(true);
+          setResizeHandle(handle);
+          setResizeStart({
+            obj: selectedObject,
+            worldX: svgPoint.x,
+            worldY: svgPoint.y,
+            x: selectedObject.x,
+            y: selectedObject.y,
+            w: selectedObject.width || DOOR_WIDTH,
+            h: selectedObject.height || DOOR_HEIGHT,
+          });
+          return;
+        }
+      }
+
+      const buildMovePositions = (objs) => objs.map(obj => {
+        if (obj.type === 'wall') {
+          if (obj.wallShape === 'rectangle' || (obj.width != null && obj.height != null))
+            return { id: obj.id, x: obj.x ?? 0, y: obj.y ?? 0 };
+          return { id: obj.id, x1: obj.x1 ?? 0, y1: obj.y1 ?? 0, x2: obj.x2 ?? obj.x1 ?? 0, y2: obj.y2 ?? obj.y1 ?? 0 };
+        }
+        return { id: obj.id, x: obj.x ?? 0, y: obj.y ?? 0 };
+      });
+
+      if (hitInSelection && sel.length > 0) {
+        // Клик по одному из выбранных — начинаем перемещение всех выбранных
+        e.stopPropagation();
         setMoveStart({
           clientX: e.clientX,
           clientY: e.clientY,
-          objX: hit.x,
-          objY: hit.y,
-          objX1: hit.x1,
-          objY1: hit.y1,
-          objX2: hit.x2,
-          objY2: hit.y2,
+          positions: buildMovePositions(sel),
         });
         setIsMovingObject(true);
-      } else {
-        onObjectSelect(null);
-        setEditingCommentId(null);
+        if (hit.type === 'comment') setEditingCommentId(null);
+        return;
       }
+
+      if (hit) {
+        onObjectSelect(hit);
+        if (hit.type === 'comment') {
+          setEditingCommentId(hit.id);
+          return;
+        }
+        if (hit.type === 'door' || hit.type === 'wall') return;
+        setMoveStart({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          positions: buildMovePositions([hit]),
+        });
+        setIsMovingObject(true);
+        return;
+      }
+
+      // Клик по пустому месту — начинаем рамку выбора (marquee)
+      setIsMarqueeSelecting(true);
+      setMarqueeStart(svgPoint);
+      setMarqueeCurrent(svgPoint);
+      setEditingCommentId(null);
+      if (!onObjectsSelect) onObjectSelect(null);
       return;
     }
 
@@ -741,7 +846,7 @@ const MappingCanvas = forwardRef(({
     if (selectedTool === 'door' && mode === 'edit') {
       if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
       const doorType = selectedDoorType || 'single';
-      const defaultW = DEFAULT_DOOR_WIDTH[doorType] ?? DOOR_WIDTH;
+      const defaultW = (defaultDoorLength != null ? defaultDoorLength : (DEFAULT_DOOR_WIDTH[doorType] ?? DOOR_WIDTH));
       const gid = selectedDoorId != null ? selectedDoorId : (Array.isArray(doors) && doors[0] ? getGlobalDoorIdFromDoor(doors[0]) : undefined);
       const doorId = `door_${Date.now()}`;
       const x = pt.x - defaultW / 2;
@@ -783,12 +888,14 @@ const MappingCanvas = forwardRef(({
     objects,
     onObjectsChange,
     onObjectSelect,
+    onAddComment,
     selectedDoorId,
     selectedDoorType,
     doors,
     defaultWallThickness,
     defaultDoorFlipH,
     defaultDoorFlipV,
+    defaultDoorLength,
     defaultDoorRotation,
     defaultDrawNumber,
     defaultShowNumberOnDrawing,
@@ -797,11 +904,28 @@ const MappingCanvas = forwardRef(({
     hitTestWallEndpoint,
     hitTestWallRectHandle,
     selectedObject,
+    selectedObjects,
+    getObjectsInRect,
+    onObjectsSelect,
     wallShape,
   ]);
 
   // Обработка отпускания мыши
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e) => {
+    if (isMarqueeSelecting && marqueeStart && onObjectsSelect && e != null && typeof e.clientX === 'number') {
+      const endPt = getSVGPoint(e.clientX, e.clientY);
+      if (endPt) {
+        const selMinX = Math.min(marqueeStart.x, endPt.x);
+        const selMinY = Math.min(marqueeStart.y, endPt.y);
+        const selMaxX = Math.max(marqueeStart.x, endPt.x);
+        const selMaxY = Math.max(marqueeStart.y, endPt.y);
+        const objs = getObjectsInRect(selMinX, selMinY, selMaxX, selMaxY);
+        onObjectsSelect(objs);
+      }
+      setIsMarqueeSelecting(false);
+      setMarqueeStart(null);
+      setMarqueeCurrent(null);
+    }
     if (isMovingObject && onMoveEnd && lastMovedObjectsRef.current) {
       onMoveEnd(lastMovedObjectsRef.current);
       lastMovedObjectsRef.current = null;
@@ -823,7 +947,7 @@ const MappingCanvas = forwardRef(({
     setIsResizingWallRect(false);
     setWallRectHandle(null);
     setWallRectResizeStart(null);
-  }, [isMovingObject, onMoveEnd, isMovingByRightButton]);
+  }, [isMarqueeSelecting, marqueeStart, getSVGPoint, getObjectsInRect, onObjectsSelect, isMovingObject, onMoveEnd, isMovingByRightButton]);
 
   // Обработка контекстного меню (отключение для правой кнопки мыши)
   const handleContextMenu = useCallback((e) => {
@@ -949,7 +1073,7 @@ const MappingCanvas = forwardRef(({
     const type = obj.doorType || 'single';
     const leafColor = getDoorLeafColor(obj);
     const state = getDoorState(obj);
-    const selected = selectedObject?.id === obj.id;
+    const selected = sel.some(s => s.id === obj.id);
     // Маркеры редактирования — только при левом клике (редактирование); при перетаскивании правой кнопкой и после него маркеры не показываем
     const showEditHandles = selected && selectedTool === 'select' && mode === 'edit' && !isMovingByRightButton && !isJustFinishedRightDrag;
     const strokeW = selected ? 2 : 1;
@@ -965,7 +1089,7 @@ const MappingCanvas = forwardRef(({
     const el = [];
     const half = DOOR_HANDLE_SIZE / 2;
     const { leafX, leafY, leafW: lw, leafH: lh } = getDoorLeafBounds(obj);
-    const leafW = lw; // длина створки: 60 мм для single/electric, w/2 для double, 0.35w для sliding
+    const leafW = lw;
     const arcR = lw;
     // Маркеры — по углам закрашенного прямоугольника створки (leaf); только в режиме редактирования
     const handleCorners = showEditHandles ? [
@@ -1245,6 +1369,7 @@ const MappingCanvas = forwardRef(({
               y2={obj.y2}
               stroke={color}
               strokeWidth={thickness}
+              strokeLinecap="round"
               className={showSelectedStyle ? 'selected' : ''}
               onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
             />
@@ -1286,7 +1411,7 @@ const MappingCanvas = forwardRef(({
             y={obj.y + (obj.fontSize || 12)}
             fontSize={obj.fontSize || 12}
             fill="#333"
-            className={selectedObject?.id === obj.id ? 'selected' : ''}
+            className={sel.some(s => s.id === obj.id) ? 'selected' : ''}
             onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
           >
             {obj.text || '№'}
@@ -1364,7 +1489,7 @@ const MappingCanvas = forwardRef(({
             fill="#666"
             fontStyle="italic"
             textAnchor={anchor}
-            className={selectedObject?.id === obj.id ? 'selected' : ''}
+            className={sel.some(s => s.id === obj.id) ? 'selected' : ''}
             style={{ cursor: 'pointer' }}
             onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
           >
@@ -1464,8 +1589,11 @@ const MappingCanvas = forwardRef(({
     const zoomX = w / boxW;
     const zoomY = h / boxH;
     const zoom = Math.max(0.1, Math.min(5, Math.min(zoomX, zoomY) || 1));
-    const newX = minX - pad;
-    const newY = minY - pad;
+    // Центр бокса в мировых координатах — показываем в центре окна
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const newX = centerX - w / (2 * zoom);
+    const newY = centerY - h / (2 * zoom);
     onViewportChange({ x: newX, y: newY, zoom });
   }, [containerSize.width, containerSize.height, objects, onViewportChange]);
 
@@ -1517,6 +1645,19 @@ const MappingCanvas = forwardRef(({
                 className="drawing-preview"
               />
             )
+          )}
+          {isMarqueeSelecting && marqueeStart && marqueeCurrent && (
+            <rect
+              x={Math.min(marqueeStart.x, marqueeCurrent.x)}
+              y={Math.min(marqueeStart.y, marqueeCurrent.y)}
+              width={Math.abs(marqueeCurrent.x - marqueeStart.x)}
+              height={Math.abs(marqueeCurrent.y - marqueeStart.y)}
+              fill="rgba(0, 123, 255, 0.08)"
+              stroke="#007bff"
+              strokeWidth={2}
+              strokeDasharray="6,4"
+              className="marquee-selection"
+            />
           )}
           {snapPoint && selectedTool !== 'select' && mode === 'edit' && (
             <circle

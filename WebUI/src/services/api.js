@@ -3,15 +3,21 @@
  */
 
 import axios from 'axios';
-import { API_URL, API_TIMEOUT } from '../utils/constants';
+import { getEffectiveApiUrl, API_TIMEOUT } from '../utils/constants';
 
 // Создаем экземпляр axios с базовой конфигурацией
 const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getEffectiveApiUrl(),
   timeout: API_TIMEOUT,
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Перед каждым запросом подставляем актуальный URL контроллера (для удалённого подключения)
+apiClient.interceptors.request.use((config) => {
+  config.baseURL = getEffectiveApiUrl();
+  return config;
 });
 
 // Интерцептор для обработки ошибок
@@ -98,9 +104,11 @@ apiClient.interceptors.response.use(
  * API функции для работы с контроллером
  */
 
-// Получить состояние системы
+// Таймаут для /state увеличен, чтобы при долгой загрузке других запросов (журнал и т.д.)
+// опрос состояния не срабатывал по таймауту и не переводил индикаторы сети в «ошибка».
+export const STATE_REQUEST_TIMEOUT = 45000; // 45 с
 export const getState = async (signal = null) => {
-  const config = signal ? { signal } : {};
+  const config = { timeout: STATE_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
   const response = await apiClient.get('/state', config);
   return response.data;
 };
@@ -132,16 +140,22 @@ export const putConfig = async (configData, signal = null) => {
   return response.data;
 };
 
+// Таймаут для журнала: при первой загрузке контроллер может отвечать долго (до 35 с)
+const JOURNAL_REQUEST_TIMEOUT = 35000;
+
 // Получить статистику журнала
 export const getJournalStat = async (signal = null) => {
-  const config = signal ? { signal } : {};
+  const config = { timeout: JOURNAL_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
   const response = await apiClient.get('/journal/stat', config);
   return response.data;
 };
 
 // Получить записи журнала с пагинацией
 export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
-  const config = signal ? { signal, params: { offset, limit } } : { params: { offset, limit } };
+  const config = {
+    timeout: JOURNAL_REQUEST_TIMEOUT,
+    ...(signal ? { signal, params: { offset, limit } } : { params: { offset, limit } }),
+  };
   const response = await apiClient.get('/journal/dump', config);
   return response.data;
 };

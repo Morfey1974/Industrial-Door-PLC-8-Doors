@@ -1,0 +1,260 @@
+/**
+ * Стили для страницы «Параметры системы»
+ */
+
+.settings-system-params {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.settings-system-params h1 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text-dark, #333);
+}
+
+.settings-system-params .system-params-page-intro {
+  margin-bottom: 24px;
+  color: var(--color-text-muted, #666);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.system-params-section-security {
+  border-left: 4px solid var(--color-accent, #0066cc);
+}
+
+.system-params-security-checklist {
+  margin-bottom: 16px;
+}
+
+.system-params-security-checklist h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-dark, #333);
+}
+
+.system-params-security-checklist ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-dark, #333);
+}
+
+.system-params-security-checklist li {
+  margin-bottom: 8px;
+}
+
+.system-params-security-warning {
+  padding: 12px 16px;
+  background: #fff8e6;
+  border: 1px solid #ffd966;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  color: #7d5a00;
+}
+
+.system-params-section-vpn {
+  border-left: 4px solid #2e7d32;
+}
+
+.system-params-vpn-options,
+.system-params-vpn-after {
+  margin-bottom: 16px;
+}
+
+.system-params-vpn-options h3,
+.system-params-vpn-after h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-dark, #333);
+}
+
+.system-params-vpn-options ul,
+.system-params-vpn-after ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-dark, #333);
+}
+
+.system-params-vpn-options li,
+.system-params-vpn-after li {
+  margin-bottom: 10px;
+}
+
+.system-params-vpn-options code,
+.system-params-vpn-after code {
+  font-size: 13px;
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.system-params-message {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.system-params-error {
+  background: #fdecea;
+  border: 1px solid #f5c6cb;
+  color: var(--color-accent, #c82333);
+}
+
+.system-params-success {
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  color: #2e7d32;
+}
+
+.system-params-section {
+  background: #fff;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-md, 8px);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.system-params-section h2 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-dark, #333);
+  border-bottom: 2px solid var(--color-accent, #0066cc);
+  padding-bottom: 10px;
+}
+
+.system-params-section p {
+  margin: 0;
+  color: var(--color-text-muted, #666);
+  font-size: 14px;
+}
+
+.system-params-intro {
+  margin-bottom: 16px !important;
+  line-height: 1.5;
+}
+
+.system-params-note {
+  margin-top: 16px !important;
+  font-size: 13px;
+  color: var(--color-text-muted, #666);
+  font-style: italic;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.system-params-form .form-group {
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.system-params-form .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--color-text-dark, #333);
+}
+
+.system-params-form .form-group small {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted, #666);
+}
+
+.form-input {
+  width: 100%;
+  max-width: 200px;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 14px;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent, #0066cc);
+}
+
+.form-input:disabled {
+  background: var(--color-secondary, #f5f5f5);
+  cursor: not-allowed;
+}
+
+.form-input-narrow {
+  max-width: 280px;
+}
+
+.form-input-error {
+  border-color: var(--color-accent, #c82333) !important;
+}
+
+.form-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-text-dark, #333);
+}
+
+.form-checkbox {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.form-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.system-params-actions {
+  margin-top: 20px;
+}
+
+.system-params-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.system-params-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.system-params-info-label {
+  font-size: 13px;
+  color: var(--color-text-muted, #666);
+}
+
+.system-params-info-value {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-dark, #333);
+}

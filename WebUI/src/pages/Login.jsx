@@ -9,6 +9,8 @@ import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
 import SplashScreen from '../components/common/SplashScreen';
 import ForgotPasswordModal from '../components/common/ForgotPasswordModal';
+import ControllerConnectionModal from '../components/common/ControllerConnectionModal';
+import { getControllerUrlForDisplay } from '../utils/constants';
 import '../styles/layout.css';
 
 let logoImage;
@@ -26,6 +28,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [showControllerModal, setShowControllerModal] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -58,6 +61,10 @@ const Login = () => {
       <ForgotPasswordModal 
         isOpen={showForgotPasswordModal} 
         onClose={() => setShowForgotPasswordModal(false)} 
+      />
+      <ControllerConnectionModal 
+        isOpen={showControllerModal} 
+        onClose={() => setShowControllerModal(false)} 
       />
       <div 
         className={`login-container ${showSplash ? 'login-container-hidden' : 'login-container-visible'}`}
@@ -128,6 +135,13 @@ const Login = () => {
           <div style={{ marginTop: '15px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
             Для отладки: admin / admin
           </div>
+          <button
+            type="button"
+            className="login-controller-link"
+            onClick={() => setShowControllerModal(true)}
+          >
+            Подключение к контроллеру ({getControllerUrlForDisplay()})
+          </button>
         </form>
       </div>
     </div>

@@ -9,7 +9,7 @@ const DoorCard = ({ door }) => {
       <div className="door-card-header">
         <h3>{formatDoorId(door)}</h3>
         <span className={`door-status status-${door.alarming ? 'alarm' : door.physClosed ? 'closed' : 'open'}`}>
-          {door.alarming ? 'Авария' : door.physClosed ? 'Закрыта' : 'Открыта'}
+          {door.alarming ? 'Alarm' : door.physClosed ? 'Закрыта' : 'Открыта'}
         </span>
       </div>
       <div className="door-card-body">

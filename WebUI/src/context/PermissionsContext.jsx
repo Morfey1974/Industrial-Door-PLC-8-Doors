@@ -27,7 +27,12 @@ function loadStoredPermissions() {
 function mergeWithDefaults(stored) {
   const result = {};
   for (const [sectionId, defaults] of Object.entries(DEFAULT_PERMISSIONS)) {
-    result[sectionId] = { ...defaults, ...(stored && stored[sectionId] ? stored[sectionId] : {}) };
+    let merged = { ...defaults, ...(stored && stored[sectionId] ? stored[sectionId] : {}) };
+    // settings_system: полный удалённый доступ только у Super Admin
+    if (sectionId === 'settings_system') {
+      merged = { ...merged, admin: 'none', operator: 'none' };
+    }
+    result[sectionId] = merged;
   }
   return result;
 }
@@ -39,6 +44,10 @@ export function PermissionsProvider({ children }) {
   });
 
   const updatePermission = useCallback((sectionId, role, value) => {
+    // settings_system: Admin и Operator не могут получить доступ
+    if (sectionId === 'settings_system' && (role === 'admin' || role === 'operator')) {
+      return;
+    }
     setPermissions((prev) => {
       const next = { ...prev };
       if (!next[sectionId]) next[sectionId] = { ...DEFAULT_PERMISSIONS[sectionId] };
@@ -51,7 +60,12 @@ export function PermissionsProvider({ children }) {
     setPermissions((current) => {
       const toStore = {};
       for (const [sectionId, roles] of Object.entries(current)) {
-        toStore[sectionId] = roles;
+        let toSave = { ...roles };
+        // settings_system: всегда сохраняем admin и operator как 'none'
+        if (sectionId === 'settings_system') {
+          toSave = { ...toSave, admin: 'none', operator: 'none' };
+        }
+        toStore[sectionId] = toSave;
       }
       try {
         localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify(toStore));
@@ -85,8 +99,13 @@ export function PermissionsProvider({ children }) {
    * Можно ли текущему пользователю редактировать ячейку (sectionId, roleColumn).
    * Super Admin: может редактировать только колонки Admin и Operator (не себя).
    * Admin: может редактировать только колонку Operator (не себя и не Super Admin).
+   * Исключение: settings_system (Параметры системы) — полный удалённый доступ только у Super Admin,
+   * колонки Admin и Operator не редактируются (всегда «Нет доступа»).
    */
   const canEditCell = useCallback((sectionId, roleColumn, currentUserRole) => {
+    if (sectionId === 'settings_system' && (roleColumn === 'admin' || roleColumn === 'operator')) {
+      return false; // Полный удалённый доступ — только Супер-администратор
+    }
     if (currentUserRole === 'super_admin') {
       return roleColumn === 'admin' || roleColumn === 'operator';
     }

@@ -13,8 +13,7 @@ export const PERMISSION_SECTIONS = [
   { id: 'monitoring_alarms', section: 'Мониторинг → Алармы' },
   { id: 'monitoring_statistics', section: 'Мониторинг → Статистика' },
   { id: 'config_doors', section: 'Конфигурация → Двери' },
-  { id: 'config_network', section: 'Конфигурация → Сеть' },
-  { id: 'config_system', section: 'Конфигурация → Система' },
+  { id: 'settings_system', section: 'Настройки → Параметры системы (только Super Admin)' },
   { id: 'settings_users', section: 'Настройки → Пользователи' },
   { id: 'settings_profile', section: 'Настройки → Профиль' },
   { id: 'settings_permissions', section: 'Настройки → Права доступа' },
@@ -41,8 +40,7 @@ export const DEFAULT_PERMISSIONS = {
   monitoring_alarms: { super_admin: 'view', admin: 'view', operator: 'view' },
   monitoring_statistics: { super_admin: 'view', admin: 'view', operator: 'view' },
   config_doors: { super_admin: 'edit', admin: 'edit', operator: 'none' },
-  config_network: { super_admin: 'edit', admin: 'edit', operator: 'none' },
-  config_system: { super_admin: 'edit', admin: 'edit', operator: 'none' },
+  settings_system: { super_admin: 'edit', admin: 'none', operator: 'none' }, // Полный удалённый доступ — только Супер-администратор
   settings_users: { super_admin: 'manage', admin: 'none', operator: 'none' },
   settings_profile: { super_admin: 'edit', admin: 'edit', operator: 'change_password' },
   settings_permissions: { super_admin: 'edit', admin: 'edit', operator: 'none' },
@@ -60,8 +58,7 @@ export const PATH_TO_PERMISSION = {
   '/monitoring/statistics': { sectionId: 'monitoring_statistics', minLevel: 'view' },
   '/configuration/doors': { sectionId: 'config_doors', minLevel: 'edit' },
   '/configuration/mapping': { sectionId: 'config_doors', minLevel: 'edit' },
-  '/configuration/network': { sectionId: 'config_network', minLevel: 'edit' },
-  '/configuration/system': { sectionId: 'config_system', minLevel: 'edit' },
+  '/settings/system': { sectionId: 'settings_system', minLevel: 'edit' }, // Только super_admin (admin: none по умолчанию)
   '/settings/users': { sectionId: 'settings_users', minLevel: 'manage' },
   '/settings/profile': { sectionId: 'settings_profile', minLevel: 'view' }, // view или change_password — проверка отдельно
   '/settings/permissions': { sectionId: 'settings_permissions', minLevel: 'edit' },

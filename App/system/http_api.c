@@ -24,6 +24,20 @@ extern osThreadId_t httpTaskHandle;
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
 
+/* Парсинг IPv4 "a.b.c.d" в uint8_t[4]. Возвращает 1 при успехе. */
+static uint8_t parse_ipv4(const char *str, uint8_t *out)
+{
+    if (!str || !out) return 0U;
+    unsigned int a, b, c, d;
+    if (sscanf(str, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) return 0U;
+    if (a > 255U || b > 255U || c > 255U || d > 255U) return 0U;
+    out[0] = (uint8_t)a;
+    out[1] = (uint8_t)b;
+    out[2] = (uint8_t)c;
+    out[3] = (uint8_t)d;
+    return 1U;
+}
+
 /* Stage 7 service: atomic A/B persist to QSPI + journal event */
 #include "config_service.h"
 
@@ -279,9 +293,8 @@ static uint8_t build_doors(jsonw_t *w)
 
 static uint8_t build_config(jsonw_t *w)
 {
-    /* На этом шаге: отдаём только часть полей, достаточную для теста.
-     * Полный конфиг большой (до 80 дверей + edges) — можно расширить позже.
-     */
+    const cfg_net_t *n = &g_project_cfg.net;
+    /* net: dhcpEnabled, webPort, ip, netmask, gateway */
     return jw_appendf(w,
         "{"
           "\"formatVersion\":%lu,"
@@ -289,15 +302,24 @@ static uint8_t build_config(jsonw_t *w)
           "\"projectName\":\"%s\","
           "\"doorCount\":%u,"
           "\"openTimeoutMs\":%lu,"
-          "\"net\":{\"dhcpEnabled\":%u,\"webPort\":%u}"
+          "\"net\":{"
+            "\"dhcpEnabled\":%u,"
+            "\"webPort\":%u,"
+            "\"ip\":\"%u.%u.%u.%u\","
+            "\"netmask\":\"%u.%u.%u.%u\","
+            "\"gateway\":\"%u.%u.%u.%u\""
+          "}"
         "}",
         (unsigned long)g_project_cfg.formatVersion,
         (unsigned long)g_project_cfg.seq,
         g_project_cfg.projectName,
         (unsigned)g_project_cfg.doorCount,
         (unsigned long)g_project_cfg.openTimeoutMs,
-        (unsigned)g_project_cfg.net.dhcpEnabled,
-        (unsigned)g_project_cfg.net.webPort
+        (unsigned)n->dhcpEnabled,
+        (unsigned)n->webPort,
+        (unsigned)n->ip[0], (unsigned)n->ip[1], (unsigned)n->ip[2], (unsigned)n->ip[3],
+        (unsigned)n->netmask[0], (unsigned)n->netmask[1], (unsigned)n->netmask[2], (unsigned)n->netmask[3],
+        (unsigned)n->gw[0], (unsigned)n->gw[1], (unsigned)n->gw[2], (unsigned)n->gw[3]
     );
 }
 
@@ -396,14 +418,23 @@ static uint8_t build_config_full(jsonw_t *w)
     if (!jw_appendf(w, "],")) return 0U;
     
     /* Сетевые параметры */
-    if (!jw_appendf(w,
-        "\"net\":{"
-          "\"dhcpEnabled\":%u,"
-          "\"webPort\":%u"
-        "}",
-        (unsigned)cfg->net.dhcpEnabled,
-        (unsigned)cfg->net.webPort
-    )) return 0U;
+    {
+        const cfg_net_t *n = &cfg->net;
+        if (!jw_appendf(w,
+            "\"net\":{"
+              "\"dhcpEnabled\":%u,"
+              "\"webPort\":%u,"
+              "\"ip\":\"%u.%u.%u.%u\","
+              "\"netmask\":\"%u.%u.%u.%u\","
+              "\"gateway\":\"%u.%u.%u.%u\""
+            "}",
+            (unsigned)n->dhcpEnabled,
+            (unsigned)n->webPort,
+            (unsigned)n->ip[0], (unsigned)n->ip[1], (unsigned)n->ip[2], (unsigned)n->ip[3],
+            (unsigned)n->netmask[0], (unsigned)n->netmask[1], (unsigned)n->netmask[2], (unsigned)n->netmask[3],
+            (unsigned)n->gw[0], (unsigned)n->gw[1], (unsigned)n->gw[2], (unsigned)n->gw[3]
+        )) return 0U;
+    }
     
     /* Закрываем JSON объект */
     if (!jw_appendf(w, "}")) return 0U;
@@ -796,7 +827,7 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
  * Supported keys (optional):
  *   - projectName: string
  *   - openTimeoutMs: uint32
- *   - net: { dhcpEnabled: bool, webPort: uint16 }
+ *   - net: { dhcpEnabled: bool, webPort: uint16, ip?: string, netmask?: string, gateway?: string }
  *
  * Anything else is ignored for now.
  * ========================================================= */
@@ -854,6 +885,17 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
         uint16_t wp;
         if (Json_GetUint16(net_json, "webPort", &wp)) {
             cfg.net.webPort = wp;
+        }
+
+        char ip_str[20];
+        if (Json_GetString(net_json, "ip", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.ip)) {
+            /* ip updated */
+        }
+        if (Json_GetString(net_json, "netmask", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.netmask)) {
+            /* netmask updated */
+        }
+        if (Json_GetString(net_json, "gateway", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.gw)) {
+            /* gateway updated */
         }
     }
 
@@ -971,6 +1013,10 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         uint16_t wp;
         if (Json_GetUint16(net_json, "webPort", &wp))
             cfg.net.webPort = wp;
+        char ip_str[20];
+        if (Json_GetString(net_json, "ip", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.ip)) { /* ok */ }
+        if (Json_GetString(net_json, "netmask", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.netmask)) { /* ok */ }
+        if (Json_GetString(net_json, "gateway", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.gw)) { /* ok */ }
     }
 
     /* doors[] */

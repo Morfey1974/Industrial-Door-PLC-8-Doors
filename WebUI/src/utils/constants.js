@@ -2,20 +2,58 @@
  * Константы приложения
  */
 
-// Базовый URL API контроллера
-// По умолчанию используется IP контроллера из набросков
-// Можно изменить через переменные окружения или настройки
-// В Vite используем import.meta.env вместо process.env
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.1.50';
+const STORAGE_KEY = 'plc_controller_url';
 
-// Порт веб-сервера контроллера (по умолчанию 80, но может быть настроен)
-// Если порт 80, не добавляем его в URL (стандартный HTTP порт)
-export const API_PORT = import.meta.env.VITE_API_PORT || '80';
+// Базовый URL API контроллера (значения по умолчанию)
+const DEFAULT_BASE = import.meta.env.VITE_API_BASE_URL || 'http://192.168.1.50';
+const DEFAULT_PORT = import.meta.env.VITE_API_PORT || '80';
 
-// Полный URL API
-export const API_URL = API_PORT === '80' 
-  ? `${API_BASE_URL}/api`
-  : `${API_BASE_URL}:${API_PORT}/api`;
+const defaultApiUrl = DEFAULT_PORT === '80'
+  ? `${DEFAULT_BASE}/api`
+  : `${DEFAULT_BASE}:${DEFAULT_PORT}/api`;
+
+/**
+ * Эффективный URL API: URL-параметр ?controller= > localStorage > сборка.
+ * Позволяет подключаться с другого компьютера без пересборки.
+ */
+export function getEffectiveApiUrl() {
+  const params = new URLSearchParams(typeof window !== 'undefined' ? window.location?.search : '');
+  const fromUrl = params.get('controller') || params.get('api');
+  if (fromUrl) {
+    const base = fromUrl.replace(/\/api\/?$/, '');
+    return `${base}/api`;
+  }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && stored.trim()) {
+      const base = stored.trim().replace(/\/api\/?$/, '');
+      return `${base}/api`;
+    }
+  } catch (_) {}
+  return defaultApiUrl;
+}
+
+export function saveControllerUrl(url) {
+  try {
+    const base = (url || '').trim().replace(/\/api\/?$/, '');
+    if (base) {
+      localStorage.setItem(STORAGE_KEY, base);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+export function getControllerUrlForDisplay() {
+  const api = getEffectiveApiUrl();
+  return api.replace(/\/api\/?$/, '');
+}
+
+// Для обратной совместимости
+export const API_URL = defaultApiUrl;
 
 // Таймауты
 export const API_TIMEOUT = 30000; // 30 секунд (увеличено для медленных соединений)
@@ -66,6 +104,6 @@ export const DOOR_STATUS = {
 export const STATUS_COLORS = {
   normal: '#00c853',    // Зеленый - норма
   open: '#ff9800',      // Оранжевый - открыта
-  alarm: '#d32f2f',     // Красный - авария
+  alarm: '#d32f2f',     // Красный - Alarm
   locked: '#3A6577'     // Темно-бирюзовый - заблокирована
 };

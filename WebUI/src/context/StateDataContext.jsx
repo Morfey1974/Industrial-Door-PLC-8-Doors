@@ -9,8 +9,10 @@ import { getState } from '../services/api';
 const StateDataContext = createContext(null);
 
 export function StateDataProvider({ children }) {
+  // Порог последовательных неудач опроса /state перед показом «Нет связи».
+  // Увеличен, чтобы индикаторы сети/линка не краснели из‑за долгой загрузки других страниц (например журнала).
   const stateData = useApi(getState, [], {
-    consecutiveFailuresForError: 3,
+    consecutiveFailuresForError: 15,
   });
   return (
     <StateDataContext.Provider value={stateData}>

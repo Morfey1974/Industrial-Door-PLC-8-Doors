@@ -10,6 +10,7 @@ const MappingToolbar = ({
   selectedTool,
   onToolSelect,
   selectedObject,
+  selectedObjects = [],
   onObjectChange,
   onDelete,
   snapEnabled,
@@ -23,6 +24,8 @@ const MappingToolbar = ({
   onSelectedDoorIdChange,
   selectedDoorType,
   onSelectedDoorTypeChange,
+  defaultDoorLength,
+  onDefaultDoorLengthChange,
   defaultWallThickness,
   onDefaultWallThicknessChange,
   wallShape,
@@ -46,6 +49,7 @@ const MappingToolbar = ({
   onDefaultDrawNumberChange,
   onDefaultShowNumberOnDrawingChange,
 }) => {
+  const sel = Array.isArray(selectedObjects) ? selectedObjects : [];
   const doorList = Array.isArray(doors)
     ? doors
     : (doors && Array.isArray(doors.doors) ? doors.doors : doors && Array.isArray(doors.data) ? doors.data : []) || [];
@@ -70,6 +74,8 @@ const MappingToolbar = ({
     { id: 'sliding', label: 'Раздвижная дверь' },
     { id: 'electric', label: 'Дверь с электродоводчиком' },
   ];
+  /** Длины двери по умолчанию по типу (мм) при вставке */
+  const DEFAULT_DOOR_WIDTH = { single: 90, double: 120, sliding: 120, electric: 90 };
   const ROTATION_PRESETS = [90, 180, 270];
   const tools = [
     { id: 'select', label: 'Выбор', icon: '↖' },
@@ -79,6 +85,7 @@ const MappingToolbar = ({
     { id: 'view', label: 'Вид', icon: '⊞' },
   ];
   const toolbarRef = useRef(null);
+  const propertiesSectionRef = useRef(null);
 
   useEffect(() => {
     const el = toolbarRef.current;
@@ -92,6 +99,13 @@ const MappingToolbar = ({
     document.addEventListener('wheel', onWheel, { passive: false, capture: true });
     return () => document.removeEventListener('wheel', onWheel, { capture: true });
   }, []);
+
+  // При выборе инструмента «Комментарий» прокручиваем к блоку «Свойства», чтобы он был виден
+  useEffect(() => {
+    if (selectedTool === 'comment' && propertiesSectionRef.current) {
+      propertiesSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedTool]);
 
   return (
     <div ref={toolbarRef} className="mapping-toolbar">
@@ -254,6 +268,19 @@ const MappingToolbar = ({
               />
             </label>
           </div>
+          <div className="toolbar-setting">
+            <label>
+              Длина двери (мм):
+              <input
+                type="number"
+                min="1"
+                value={defaultDoorLength ?? ''}
+                onChange={(e) => onDefaultDoorLengthChange?.(e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
+                placeholder={String(DEFAULT_DOOR_WIDTH[selectedDoorType] ?? 90)}
+                title="Пусто = по умолчанию для типа (90/120 мм)"
+              />
+            </label>
+          </div>
         </div>
       )}
 
@@ -301,18 +328,31 @@ const MappingToolbar = ({
         </>
       )}
 
-      {/* Свойства выбранного объекта ИЛИ параметры стены (прямоугольник/отрезок) при выборе инструмента «Стена» */}
-      {(selectedObject || (selectedTool === 'wall' && (wallShape === 'rectangle' || wallShape === 'segment'))) && (
-        <div className="toolbar-section toolbar-section-properties">
+      {/* Свойства выбранного объекта ИЛИ «Выбрано N объектов» ИЛИ параметры инструмента */}
+      {(selectedObject || sel.length > 1 || (selectedTool === 'wall' && (wallShape === 'rectangle' || wallShape === 'segment')) || selectedTool === 'comment') && (
+        <div ref={propertiesSectionRef} className="toolbar-section toolbar-section-properties">
           <h3 className="toolbar-section-title">
-            {selectedObject
-              ? 'Свойства'
-              : wallShape === 'rectangle'
-                ? 'Параметры прямоугольника'
-                : 'Параметры отрезка'}
+            {sel.length > 1
+              ? `Выбрано объектов: ${sel.length}`
+              : selectedObject
+                ? 'Свойства'
+                : selectedTool === 'comment'
+                  ? 'Комментарий'
+                  : wallShape === 'rectangle'
+                    ? 'Параметры прямоугольника'
+                    : 'Параметры отрезка'}
           </h3>
           <div className="toolbar-properties">
-            {selectedObject ? (
+            {sel.length > 1 ? (
+              <>
+                <p className="toolbar-placeholder" style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary, #666)' }}>
+                  Перетащите выбранные объекты на карте или удалите.
+                </p>
+                <button type="button" className="toolbar-action danger" onClick={onDelete}>
+                  🗑 Удалить все
+                </button>
+              </>
+            ) : selectedObject ? (
               <>
             <div className="property-item">
               <span className="property-label">Тип:</span>
@@ -413,6 +453,19 @@ const MappingToolbar = ({
                       <option key={d.id} value={d.id}>{d.label}</option>
                     ))}
                   </select>
+                </div>
+                <div className="property-item">
+                  <span className="property-label">Длина двери (мм):</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={selectedObject.width ?? DEFAULT_DOOR_WIDTH[selectedObject.doorType] ?? 90}
+                    onChange={(e) => onObjectChange({
+                      ...selectedObject,
+                      width: Math.max(1, Number(e.target.value)),
+                    })}
+                    title="Длина проёма двери"
+                  />
                 </div>
                 <div className="property-item">
                   <span className="property-label">Отразить / Поворот</span>
@@ -578,6 +631,8 @@ const MappingToolbar = ({
               🗑 Удалить
             </button>
           </>
+            ) : selectedTool === 'comment' ? (
+              <p className="toolbar-placeholder">Кликните по карте, чтобы вставить комментарий.</p>
             ) : wallShape === 'rectangle' ? (
               <>
                 <div className="property-item">

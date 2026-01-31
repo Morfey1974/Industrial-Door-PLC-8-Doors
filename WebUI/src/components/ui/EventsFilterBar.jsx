@@ -23,7 +23,7 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
     { value: 'all', label: 'Все типы' },
     { value: 'DOOR_OPEN', label: 'Открытие двери' },
     { value: 'DOOR_CLOSE', label: 'Закрытие двери' },
-    { value: 'DOOR_ALARM', label: 'Авария двери' },
+    { value: 'DOOR_ALARM', label: 'Alarm двери' },
     { value: 'DOOR_OPEN_TIMEOUT', label: 'Таймаут открытия' },
     { value: 'DOOR_POST_CLOSE_READY', label: 'Готовность после закрытия' },
     { value: 'DOOR_SIGNAL_ON', label: 'Сигнал включен' },

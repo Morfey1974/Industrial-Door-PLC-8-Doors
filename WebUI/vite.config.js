@@ -6,7 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    host: true, // доступ с других компьютеров по IP (для удалённого тестирования)
     open: true
+  },
+  preview: {
+    port: 3000,
+    host: true
   },
   build: {
     outDir: 'dist',

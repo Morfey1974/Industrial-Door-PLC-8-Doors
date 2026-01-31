@@ -19,7 +19,7 @@ const FilterBar = ({ filters, onFilterChange }) => {
     { value: 'all', label: 'Все' },
     { value: 'open', label: 'Открытые' },
     { value: 'closed', label: 'Закрытые' },
-    { value: 'alarm', label: 'С авариями' },
+    { value: 'alarm', label: 'С Alarmми' },
     { value: 'locked', label: 'Заблокированные' },
   ];
 

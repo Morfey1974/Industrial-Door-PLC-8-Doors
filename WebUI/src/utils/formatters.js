@@ -92,7 +92,7 @@ export const formatIpAddress = (ip) => {
  * @returns {string} Цвет в hex формате
  */
 export const getDoorStatusColor = (door) => {
-  if (door.alarming) return '#d32f2f'; // Красный - авария
+  if (door.alarming) return '#d32f2f'; // Красный - Alarm
   if (!door.physClosed) return '#ff9800'; // Оранжевый - открыта
   if (door.locked) return '#3A6577'; // Темно-бирюзовый - заблокирована
   return '#00c853'; // Зеленый - норма
@@ -104,7 +104,7 @@ export const getDoorStatusColor = (door) => {
  * @returns {string} Описание статуса
  */
 export const getDoorStatusText = (door) => {
-  if (door.alarming) return 'Авария';
+  if (door.alarming) return 'Alarm';
   if (!door.physClosed) return 'Открыта';
   if (door.locked) return 'Заблокирована';
   return 'Закрыта';

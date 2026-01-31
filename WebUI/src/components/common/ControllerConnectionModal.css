@@ -1,0 +1,60 @@
+.controller-connection-modal {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.controller-connection-modal h2 {
+  margin-bottom: 12px;
+  color: #333;
+  font-size: 20px;
+}
+
+.controller-connection-info {
+  margin-bottom: 20px;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.controller-connection-modal .form-group {
+  margin-bottom: 16px;
+}
+
+.controller-connection-modal .form-group label {
+  display: block;
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.controller-connection-modal .form-group small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #888;
+}
+
+.controller-url-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.controller-connection-saved {
+  margin-bottom: 16px;
+  padding: 10px;
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  border-radius: 6px;
+  color: #2e7d32;
+  font-size: 14px;
+}
+
+.controller-connection-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
