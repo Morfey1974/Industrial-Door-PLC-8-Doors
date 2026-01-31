@@ -8,6 +8,8 @@
  * - Экспорт/импорт JSON файлов
  */
 
+import { FILE_PICKER_ID_CONFIGS } from '../constants/filePaths';
+
 const STORAGE_KEYS = {
   DRAFT: 'config_draft',
   LIST: 'config_list',
@@ -166,6 +168,8 @@ export const exportConfigToFile = async (config, filename = 'config.json') => {
       const handle = await window.showSaveFilePicker({
         suggestedName: filename,
         types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+        id: FILE_PICKER_ID_CONFIGS,
+        startIn: 'documents',
       });
       const w = await handle.createWritable();
       await w.write(jsonStr);

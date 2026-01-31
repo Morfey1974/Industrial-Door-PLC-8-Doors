@@ -471,10 +471,29 @@ const DoorsConfig = () => {
   }, [currentConfigName]);
   
   // Сохранение конфигурации (без выхода)
-  const handleSaveConfig = useCallback(() => {
+  const handleSaveConfig = useCallback(async () => {
     if (!currentConfigName) {
-      // Если конфигурация не имеет имени, предлагаем сохранить как
-      handleSaveAs();
+      // Если конфигурация не имеет имени — запрашиваем имя для сохранения в приложении
+      const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
+      if (!name || name.trim().length === 0) return;
+      const trimmedName = name.trim();
+      const validation = validateCurrentConfig();
+      if (!validation.valid) {
+        setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+        return;
+      }
+      if (saveNamedConfig(trimmedName, config)) {
+        setSavedConfigsList(getSavedConfigsList());
+        setCurrentConfigNameState(trimmedName);
+        setCurrentConfigName(trimmedName);
+        setHasUnsavedChanges(false);
+        setHasDraft(false);
+        clearDraft();
+        setSuccess(`Конфигурация "${trimmedName}" сохранена`);
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError('Ошибка сохранения конфигурации');
+      }
       return;
     }
     
@@ -534,33 +553,25 @@ const DoorsConfig = () => {
     setTimeout(() => setSuccess(null), 3000);
   }, [config, currentConfigName, validateCurrentConfig]);
   
-  // Сохранение как (с другим именем)
+  // Сохранение как — окно выбора места сохранения (экспорт в файл)
   const handleSaveAs = useCallback(async () => {
-    const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
-    if (!name || name.trim().length === 0) return;
-    
-    const trimmedName = name.trim();
-    
-    // Валидация перед сохранением
     const validation = validateCurrentConfig();
     if (!validation.valid) {
       setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
       return;
     }
-    
-    if (saveNamedConfig(trimmedName, config)) {
-      setSavedConfigsList(getSavedConfigsList());
-      setCurrentConfigNameState(trimmedName);
-      setCurrentConfigName(trimmedName);
-      setHasUnsavedChanges(false);
-      setHasDraft(false);
-      clearDraft();
-      setSuccess(`Конфигурация "${trimmedName}" сохранена`);
+
+    const base = currentConfigName || config.projectName || 'config';
+    const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
+    const result = await exportConfigToFile(config, filename);
+
+    if (result.ok) {
+      setSuccess('Конфигурация сохранена в файл');
       setTimeout(() => setSuccess(null), 3000);
-    } else {
+    } else if (!result.cancelled) {
       setError('Ошибка сохранения конфигурации');
     }
-  }, [config, validateCurrentConfig]);
+  }, [config, currentConfigName, validateCurrentConfig]);
   
   // Экспорт конфигурации: ИМЯ_conf.json (карта той же конфигурации — ИМЯ_map.json)
   const handleExport = useCallback(async () => {
@@ -601,7 +612,7 @@ const DoorsConfig = () => {
         setHasDraft(true);
         setViewMode('edit');
         setActiveTab('general');
-        setSuccess('Конфигурация импортирована');
+        setSuccess('Конфигурация открыта');
         setTimeout(() => setSuccess(null), 3000);
       } catch (err) {
         setError(`Ошибка импорта: ${err.message}`);
@@ -913,19 +924,16 @@ const DoorsConfig = () => {
         </div>
         
         {/* Панель управления (только в режиме списка) */}
-        <div className="doors-config-toolbar">
+        <div className="doors-config-toolbar doors-config-toolbar--list">
           <div className="toolbar-left">
-            <Button onClick={handleCreateConfig} variant="primary">
-              ➕ Создать конфигурацию
+            <Button onClick={handleImport}>
+              Открыть конфигурацию
+            </Button>
+            <Button onClick={handleCreateConfig}>
+              Создать конфигурацию
             </Button>
             <Button onClick={handleLoadFromController} disabled={loading}>
-              {loading ? 'Загрузка...' : '📥 Загрузить с сервера'}
-            </Button>
-            <Button onClick={handleExport} variant="secondary">
-              📤 Экспорт
-            </Button>
-            <Button onClick={handleImport} variant="secondary">
-              📥 Импорт
+              {loading ? 'Загрузка...' : 'Загрузить с контроллера'}
             </Button>
           </div>
         </div>

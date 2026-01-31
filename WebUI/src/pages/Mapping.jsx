@@ -13,6 +13,7 @@ import MappingCanvas from '../components/mapping/MappingCanvas';
 import MappingToolbar from '../components/mapping/MappingToolbar';
 import Modal from '../components/common/Modal';
 import { getDoors, getMapping, putMapping } from '../services/api';
+import { FILE_PICKER_ID_MAPS } from '../constants/filePaths';
 import './Mapping.css';
 
 const Mapping = () => {
@@ -269,6 +270,8 @@ const Mapping = () => {
           handle = await window.showSaveFilePicker({
             suggestedName: defaultName,
             types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+            id: FILE_PICKER_ID_MAPS,
+            startIn: 'documents',
           });
           savedFileHandleRef.current = handle;
           const writable = await handle.createWritable();
