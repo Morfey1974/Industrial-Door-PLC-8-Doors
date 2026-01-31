@@ -1314,8 +1314,8 @@ const MappingCanvas = forwardRef(({
     });
     return sorted.map(obj => {
       if (obj.type === 'wall') {
-        const selected = selectedObject?.id === obj.id && selectedTool === 'select' && mode === 'edit';
-        const showWallHandles = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
+        const selected = sel.some(s => s.id === obj.id) && selectedTool === 'select' && mode === 'edit';
+        const showWallHandles = selected && sel.length === 1 && !isMovingByRightButton && !isJustFinishedRightDrag;
         const showSelectedStyle = selected && !isMovingByRightButton && !isJustFinishedRightDrag;
         const thickness = obj.thickness || 5;
         const color = obj.color || '#333333';
