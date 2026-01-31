@@ -20,11 +20,11 @@ export const validateConfig = (config) => {
     errors.push('Название проекта не может быть длиннее 100 символов');
   }
   
-  // Проверка openTimeoutMs
+  // Проверка openTimeoutMs (0 = нет автосигнализации, только кнопка Alarm)
   if (config.openTimeoutMs === undefined || config.openTimeoutMs === null) {
     errors.push('Глобальный таймаут открытия должен быть указан');
-  } else if (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000) {
-    errors.push('Глобальный таймаут открытия должен быть от 1000 до 3600000 мс (1 час)');
+  } else if (config.openTimeoutMs !== 0 && (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000)) {
+    errors.push('Глобальный таймаут открытия должен быть 0 (нет сигнализации) или от 1000 до 3600000 мс (1 час)');
   }
   
   // Проверка дверей

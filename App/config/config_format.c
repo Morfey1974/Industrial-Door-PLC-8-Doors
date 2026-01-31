@@ -96,7 +96,9 @@ static uint8_t validate_ranges(const project_config_t *cfg, cfg_validate_error_t
         set_err(err, "edgeCount exceeds limit");
         return CFG_VALIDATE_BAD;
     }
-    if (cfg->openTimeoutMs < 100U || cfg->openTimeoutMs > (10U * 60U * 1000U))
+    /* 0 = отключена автосигнализация по таймауту (только кнопка Alarm) */
+    if (cfg->openTimeoutMs != 0U &&
+        (cfg->openTimeoutMs < 100U || cfg->openTimeoutMs > (10U * 60U * 1000U)))
     {
         set_err(err, "openTimeoutMs out of range");
         return CFG_VALIDATE_BAD;

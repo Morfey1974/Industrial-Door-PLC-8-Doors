@@ -159,7 +159,7 @@ export const deleteNamedConfig = (name) => {
  * для выбора пути. Иначе — скачивание в папку по умолчанию.
  * @param {Object} config - Объект конфигурации
  * @param {string} filename - Предлагаемое имя файла
- * @returns {Promise<{ok: boolean, cancelled?: boolean}>}
+ * @returns {Promise<{ok: boolean, cancelled?: boolean, filename?: string}>}
  */
 export const exportConfigToFile = async (config, filename = 'config.json') => {
   try {
@@ -174,7 +174,7 @@ export const exportConfigToFile = async (config, filename = 'config.json') => {
       const w = await handle.createWritable();
       await w.write(jsonStr);
       await w.close();
-      return { ok: true };
+      return { ok: true, filename: handle.name || filename };
     }
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -185,7 +185,7 @@ export const exportConfigToFile = async (config, filename = 'config.json') => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    return { ok: true };
+    return { ok: true, filename };
   } catch (error) {
     if (error?.name === 'AbortError') return { ok: false, cancelled: true };
     console.error('Ошибка экспорта конфигурации:', error);

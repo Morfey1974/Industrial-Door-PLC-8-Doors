@@ -70,6 +70,7 @@ const DoorsConfig = () => {
   const [currentConfigName, setCurrentConfigNameState] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasDraft, setHasDraft] = useState(false); // Есть ли несохраненный черновик
+  const [openedConfigFilePath, setOpenedConfigFilePath] = useState(null); // путь/имя файла при открытии с компьютера
   
   // Состояние модального окна
   const [modal, setModal] = useState({
@@ -94,6 +95,7 @@ const DoorsConfig = () => {
   // Отдельное состояние для модального окна удаления (простое булево значение для flushSync)
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteModalName, setDeleteModalName] = useState(null);
+  const [deleteModalForDraft, setDeleteModalForDraft] = useState(false);
   
   // useLayoutEffect для принудительного обновления DOM при открытии модального окна удаления
   useLayoutEffect(() => {
@@ -343,6 +345,13 @@ const DoorsConfig = () => {
       setHasDraft(true);
     }
   }, [config, hasUnsavedChanges, viewMode]);
+
+  // Автоскрытие сообщения об ошибке через 3 с (как у success)
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 3000);
+    return () => clearTimeout(t);
+  }, [error]);
   
   // Обновление конфигурации
   const updateConfig = useCallback((updates) => {
@@ -372,6 +381,7 @@ const DoorsConfig = () => {
     });
     setCurrentConfigNameState(null);
     setCurrentConfigName(null);
+    setOpenedConfigFilePath(null);
     setHasUnsavedChanges(false);
     setHasDraft(false);
     clearDraft();
@@ -389,6 +399,7 @@ const DoorsConfig = () => {
       setHasDraft(true);
       setCurrentConfigNameState(null);
       setCurrentConfigName(null);
+      setOpenedConfigFilePath(null);
       setViewMode('edit');
       setActiveTab('general');
     }
@@ -414,6 +425,34 @@ const DoorsConfig = () => {
     }
   }, [config]);
   
+  // Открыть модальное окно удаления черновика
+  const handleDeleteDraftClick = useCallback(() => {
+    setDeleteModalForDraft(true);
+    setDeleteModalVisible(true);
+  }, []);
+
+  const doDeleteDraft = useCallback(() => {
+    clearDraft();
+    setConfig({
+      formatVersion: 0x00010001,
+      seq: 0,
+      projectName: '',
+      openTimeoutMs: 30000,
+      doors: [],
+      edges: [],
+      postCloseTimeouts: [],
+      net: { dhcpEnabled: 1, webPort: 8080 },
+    });
+    setHasDraft(false);
+    setHasUnsavedChanges(false);
+    setLastSaved(null);
+    setCurrentConfigNameState(null);
+    setCurrentConfigName(null);
+    setOpenedConfigFilePath(null);
+    setSuccess('Черновик удалён');
+    setTimeout(() => setSuccess(null), 3000);
+  }, []);
+  
   // Загрузка именованной конфигурации
   const handleLoadConfig = useCallback((name) => {
     const loadedConfig = loadNamedConfig(name);
@@ -421,6 +460,7 @@ const DoorsConfig = () => {
       setConfig(loadedConfig);
       setCurrentConfigNameState(name);
       setCurrentConfigName(name);
+      setOpenedConfigFilePath(null); // из локального хранилища, не из файла
       setHasUnsavedChanges(false);
       setHasDraft(false);
       clearDraft();
@@ -472,24 +512,46 @@ const DoorsConfig = () => {
   
   // Сохранение конфигурации (без выхода)
   const handleSaveConfig = useCallback(async () => {
-    if (!currentConfigName) {
-      // Если конфигурация не имеет имени — запрашиваем имя для сохранения в приложении
-      const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
-      if (!name || name.trim().length === 0) return;
-      const trimmedName = name.trim();
+    if (!currentConfigName && !openedConfigFilePath) {
+      // Новая конфигурация — открываем диалог выбора места и сохраняем в файл
       const validation = validateCurrentConfig();
       if (!validation.valid) {
         setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
         return;
       }
-      if (saveNamedConfig(trimmedName, config)) {
+      const base = config.projectName || 'config';
+      const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
+      const result = await exportConfigToFile(config, filename);
+      if (!result.ok) {
+        if (!result.cancelled) setError('Ошибка сохранения конфигурации');
+        return;
+      }
+      const savedFilename = result.filename || filename;
+      const derivedName = savedFilename.replace(/_conf\.json$/i, '') || savedFilename.replace(/\.json$/i, '');
+      setOpenedConfigFilePath(savedFilename);
+      setCurrentConfigNameState(derivedName);
+      setCurrentConfigName(derivedName);
+      saveNamedConfig(derivedName, config);
+      setSavedConfigsList(getSavedConfigsList());
+      setHasUnsavedChanges(false);
+      setHasDraft(false);
+      clearDraft();
+      setSuccess(`Конфигурация сохранена в файл`);
+      setTimeout(() => setSuccess(null), 3000);
+      return;
+    }
+
+    if (!currentConfigName) {
+      // Есть openedConfigFilePath, но нет имени — сохраняем в список под именем из файла
+      const name = (openedConfigFilePath || '').replace(/_conf\.json$/i, '') || 'config';
+      if (saveNamedConfig(name, config)) {
         setSavedConfigsList(getSavedConfigsList());
-        setCurrentConfigNameState(trimmedName);
-        setCurrentConfigName(trimmedName);
+        setCurrentConfigNameState(name);
+        setCurrentConfigName(name);
         setHasUnsavedChanges(false);
         setHasDraft(false);
         clearDraft();
-        setSuccess(`Конфигурация "${trimmedName}" сохранена`);
+        setSuccess(`Конфигурация "${name}" сохранена`);
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError('Ошибка сохранения конфигурации');
@@ -497,7 +559,7 @@ const DoorsConfig = () => {
       return;
     }
     
-    // Валидация перед сохранением
+    // Существующая конфигурация — сохраняем в список
     const validation = validateCurrentConfig();
     if (!validation.valid) {
       setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
@@ -514,30 +576,47 @@ const DoorsConfig = () => {
     } else {
       setError('Ошибка сохранения конфигурации');
     }
-  }, [config, currentConfigName, validateCurrentConfig]);
+  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig]);
   
   // Сохранение конфигурации и выход в список
   const handleSaveAndExit = useCallback(async () => {
-    if (!currentConfigName) {
-      // Если конфигурация не имеет имени, предлагаем сохранить как
-      const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
-      if (!name || name.trim().length === 0) return;
-      
-      const trimmedName = name.trim();
-      if (!saveNamedConfig(trimmedName, config)) {
-        setError('Ошибка сохранения конфигурации');
-        return;
-      }
-      setCurrentConfigNameState(trimmedName);
-      setCurrentConfigName(trimmedName);
-    } else {
-      // Валидация перед сохранением
+    let savedName = currentConfigName;
+    if (!currentConfigName && !openedConfigFilePath) {
+      // Новая конфигурация — открываем диалог и сохраняем в файл, затем выходим
       const validation = validateCurrentConfig();
       if (!validation.valid) {
         setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
         return;
       }
-      
+      const base = config.projectName || 'config';
+      const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
+      const result = await exportConfigToFile(config, filename);
+      if (!result.ok) {
+        if (!result.cancelled) setError('Ошибка сохранения конфигурации');
+        return;
+      }
+      const savedFilename = result.filename || filename;
+      savedName = savedFilename.replace(/_conf\.json$/i, '') || savedFilename.replace(/\.json$/i, '');
+      setOpenedConfigFilePath(savedFilename);
+      setCurrentConfigNameState(savedName);
+      setCurrentConfigName(savedName);
+      saveNamedConfig(savedName, config);
+    } else if (!currentConfigName) {
+      // Есть openedConfigFilePath — сохраняем в список под именем из файла
+      savedName = (openedConfigFilePath || '').replace(/_conf\.json$/i, '') || 'config';
+      if (!saveNamedConfig(savedName, config)) {
+        setError('Ошибка сохранения конфигурации');
+        return;
+      }
+      setCurrentConfigNameState(savedName);
+      setCurrentConfigName(savedName);
+    } else {
+      // Существующая конфигурация
+      const validation = validateCurrentConfig();
+      if (!validation.valid) {
+        setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+        return;
+      }
       if (!saveNamedConfig(currentConfigName, config)) {
         setError('Ошибка сохранения конфигурации');
         return;
@@ -549,9 +628,9 @@ const DoorsConfig = () => {
     setHasDraft(false);
     clearDraft();
     setViewMode('list');
-    setSuccess(`Конфигурация "${currentConfigName || 'новая'}" сохранена`);
+    setSuccess(`Конфигурация "${savedName || 'новая'}" сохранена`);
     setTimeout(() => setSuccess(null), 3000);
-  }, [config, currentConfigName, validateCurrentConfig]);
+  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig]);
   
   // Сохранение как — окно выбора места сохранения (экспорт в файл)
   const handleSaveAs = useCallback(async () => {
@@ -566,6 +645,9 @@ const DoorsConfig = () => {
     const result = await exportConfigToFile(config, filename);
 
     if (result.ok) {
+      if (result.filename) {
+        setOpenedConfigFilePath(result.filename);
+      }
       setSuccess('Конфигурация сохранена в файл');
       setTimeout(() => setSuccess(null), 3000);
     } else if (!result.cancelled) {
@@ -573,41 +655,21 @@ const DoorsConfig = () => {
     }
   }, [config, currentConfigName, validateCurrentConfig]);
   
-  // Экспорт конфигурации: ИМЯ_conf.json (карта той же конфигурации — ИМЯ_map.json)
-  const handleExport = useCallback(async () => {
-    const base = currentConfigName || config.projectName || 'config';
-    const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
-    const result = await exportConfigToFile(config, filename);
-    if (result.ok) {
-      setSuccess('Конфигурация экспортирована');
-      setTimeout(() => setSuccess(null), 3000);
-    } else if (!result.cancelled) {
-      setError('Ошибка экспорта конфигурации');
-    }
-  }, [config, currentConfigName]);
-  
-  // Импорт конфигурации
-  const handleImport = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      
+  // Импорт конфигурации (Открыть конфигурацию в списке)
+  const handleImport = useCallback(async () => {
+    const loadFromFile = async (file) => {
       try {
         const importedConfig = await importConfigFromFile(file);
-        
-        // Валидация импортированной конфигурации
         const validation = validateConfig(importedConfig);
         if (!validation.valid) {
           setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
           return;
         }
-        
         setConfig(importedConfig);
         setCurrentConfigNameState(null);
         setCurrentConfigName(null);
+        // file.path — полный путь в Electron; в браузере — только file.name
+        setOpenedConfigFilePath(file.path || file.name || '');
         setHasUnsavedChanges(true);
         setHasDraft(true);
         setViewMode('edit');
@@ -617,6 +679,29 @@ const DoorsConfig = () => {
       } catch (err) {
         setError(`Ошибка импорта: ${err.message}`);
       }
+    };
+
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+          id: 'industrial-door-configs',
+          startIn: 'documents',
+        });
+        const file = await handle.getFile();
+        await loadFromFile(file);
+      } catch (err) {
+        if (err?.name !== 'AbortError') setError(`Ошибка: ${err.message}`);
+      }
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      await loadFromFile(file);
     };
     input.click();
   }, []);
@@ -640,6 +725,7 @@ const DoorsConfig = () => {
     if (loadedConfig) {
       setCurrentConfigNameState(null);
       setCurrentConfigName(null);
+      setOpenedConfigFilePath(null);
       setHasUnsavedChanges(false);
       setHasDraft(false);
       clearDraft();
@@ -688,6 +774,7 @@ const DoorsConfig = () => {
     setHasDraft(false);
     setCurrentConfigNameState(null);
     setCurrentConfigName(null);
+    setOpenedConfigFilePath(null);
     setError(null);
     setSuccess(null);
     
@@ -743,8 +830,8 @@ const DoorsConfig = () => {
         setSaving(false);
         return;
       }
-      if (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000) {
-        setError('Таймаут открытия должен быть от 1000 до 3600000 мс');
+      if (config.openTimeoutMs !== 0 && (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000)) {
+        setError('Таймаут открытия должен быть 0 (нет сигнализации) или от 1000 до 3600000 мс');
         setSaving(false);
         return;
       }
@@ -770,6 +857,7 @@ const DoorsConfig = () => {
       const fullConfig = {
         projectName: trimmedProjectName,
         openTimeoutMs: config.openTimeoutMs,
+        noAlarm: config.noAlarm === true,
         doors,
         edges: config.edges || [],
         postCloseTimeouts: config.postCloseTimeouts || [],
@@ -920,7 +1008,7 @@ const DoorsConfig = () => {
     return (
       <div className="doors-config">
         <div className="doors-config-header">
-          <h1>Конфигурация → Настройка дверей</h1>
+          <h1>Список конфигураций</h1>
         </div>
         
         {/* Панель управления (только в режиме списка) */}
@@ -981,6 +1069,13 @@ const DoorsConfig = () => {
                   >
                     Сохранить
                   </Button>
+                  <Button 
+                    onClick={handleDeleteDraftClick}
+                    variant="secondary"
+                    size="small"
+                  >
+                    Удалить
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1010,6 +1105,7 @@ const DoorsConfig = () => {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                        setDeleteModalForDraft(false);
                         setDeleteModalName(item.name);
                         setDeleteModalVisible(true);
                       }}
@@ -1032,20 +1128,27 @@ const DoorsConfig = () => {
           )}
         </div>
 
-        {/* Модальное окно удаления — должно быть в дереве и в режиме списка, иначе кнопка «Удалить» не открывает его */}
+        {/* Модальное окно удаления — для черновика и сохранённых конфигураций */}
         <Modal
           isOpen={deleteModalVisible}
           type="confirm"
-          title="Удаление конфигурации"
-          message={deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : ''}
+          title={deleteModalForDraft ? 'Удаление черновика' : 'Удаление конфигурации'}
+          message={deleteModalForDraft
+            ? 'Удалить несохранённую конфигурацию? Все изменения будут потеряны.'
+            : (deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : '')
+          }
           confirmText="Да"
           cancelText="Нет"
           onConfirm={() => {
+            const isDraft = deleteModalForDraft;
             const name = deleteModalName;
             const currentName = currentConfigName;
             setDeleteModalVisible(false);
             setDeleteModalName(null);
-            if (name && deleteNamedConfig(name)) {
+            setDeleteModalForDraft(false);
+            if (isDraft) {
+              doDeleteDraft();
+            } else if (name && deleteNamedConfig(name)) {
               setTimeout(() => setSavedConfigsList(getSavedConfigsList()), 0);
               if (currentName === name) {
                 setCurrentConfigNameState(null);
@@ -1060,17 +1163,29 @@ const DoorsConfig = () => {
           onCancel={() => {
             setDeleteModalVisible(false);
             setDeleteModalName(null);
+            setDeleteModalForDraft(false);
           }}
         />
       </div>
     );
   }
   
+  // Текст пути/источника конфигурации (редактируемый для вставки полного пути)
+  const configFileName = currentConfigName
+    ? currentConfigName.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json'
+    : '';
+  const configSourceDisplay = openedConfigFilePath
+    ? openedConfigFilePath
+    : currentConfigName
+      ? `Сохранённая: ${configFileName}`
+      : 'Новая конфигурация';
+  const isPathEditable = !!openedConfigFilePath || !!currentConfigName;
+
   // Режим редактирования
   return (
     <div className="doors-config">
       <div className="doors-config-header">
-        <h1>Конфигурация → Настройка дверей</h1>
+        <h1>Редактирование конфигурации</h1>
         <div className="doors-config-status">
           {hasUnsavedChanges && lastSaved && (
             <span className="auto-save-indicator">
@@ -1084,34 +1199,60 @@ const DoorsConfig = () => {
           )}
         </div>
       </div>
+
+      {/* Путь к файлу / источник конфигурации (редактируемый для полного пути) */}
+      <div className="config-source-path-wrap">
+        <input
+          type="text"
+          className="config-source-path"
+          value={configSourceDisplay}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            if (openedConfigFilePath != null || currentConfigName) {
+              setOpenedConfigFilePath(v || null);
+            }
+          }}
+          readOnly={!isPathEditable}
+          placeholder="Путь к файлу конфигурации"
+          title="Браузер даёт только имя файла. Вставьте полный путь из проводника при необходимости."
+        />
+      </div>
       
       {/* Панель управления (в режиме редактирования) */}
-      <div className="doors-config-toolbar">
+      <div className="doors-config-toolbar doors-config-toolbar--edit">
         <div className="toolbar-left">
           <Button onClick={handleLoadFromController} disabled={loading}>
-            {loading ? 'Загрузка...' : '📥 Загрузить с контроллера'}
+            {loading ? 'Загрузка...' : 'Загрузить с контроллера'}
           </Button>
-          <Button onClick={handleExport} variant="secondary">
-            📤 Экспорт
+          <Button onClick={handleSaveConfig}>
+            Сохранить конфигурацию
           </Button>
-          <Button onClick={handleImport} variant="secondary">
-            📥 Импорт
+          <Button
+            onClick={handleSaveAs}
+            disabled={!currentConfigName && !openedConfigFilePath}
+            title={(!currentConfigName && !openedConfigFilePath) ? 'Доступно только для сохранённых конфигураций' : 'Сохранить в другой файл или под другим именем'}
+          >
+            Сохранить как...
+          </Button>
+          <Button onClick={handleSaveAndExit}>
+            Сохранить и Выйти
+          </Button>
+          <Button onClick={handleCancel}>
+            Отмена
           </Button>
           <Button
             onClick={() => navigate('/configuration/mapping', { state: { configBaseName: currentConfigName || config.projectName || '' } })}
-            variant="secondary"
             title="Редактор карты маппинга для этой конфигурации (ИМЯ_map.json)"
           >
-            <span className="mapping-btn-icon" aria-hidden>🗺</span> Маппинг
+            Маппинг
           </Button>
         </div>
-        <div className="toolbar-right">
-          <Button 
-            onClick={handleApplyToController} 
-            variant="primary"
+        <div className="toolbar-right toolbar-right--apply">
+          <Button
+            onClick={handleApplyToController}
             disabled={saving || loading}
           >
-            {saving ? 'Применение...' : '📤 Применить на контроллер'}
+            {saving ? 'Применение...' : 'Применить на контроллер'}
           </Button>
         </div>
       </div>
@@ -1141,17 +1282,17 @@ const DoorsConfig = () => {
         }}>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>
             {currentConfigName ? (
-              <>📋 Конфигурация: <span style={{ color: '#0066cc' }}>{currentConfigName}</span></>
+              <>Конфигурация: <span style={{ color: '#0066cc' }}>{currentConfigName}</span></>
             ) : config.projectName ? (
-              <>📋 Проект: <span style={{ color: '#0066cc' }}>{config.projectName}</span></>
+              <>Проект: <span style={{ color: '#0066cc' }}>{config.projectName}</span></>
             ) : (
-              <>📋 Новая конфигурация</>
+              <>Новая конфигурация</>
             )}
           </h2>
         </div>
       )}
       
-      {/* Вкладки с кнопками сохранения */}
+      {/* Вкладки */}
       <div className="doors-config-tabs">
         <div className="tabs-header-with-actions">
           <div className="tabs-header">
@@ -1164,20 +1305,6 @@ const DoorsConfig = () => {
                 {tab.label}
               </button>
             ))}
-          </div>
-          <div className="tabs-actions">
-            <Button onClick={handleSaveConfig} variant="secondary" size="small">
-              💾 Сохранить конфигурацию
-            </Button>
-            <Button onClick={handleSaveAs} variant="secondary" size="small">
-              💾 Сохранить как...
-            </Button>
-            <Button onClick={handleSaveAndExit} variant="primary" size="small">
-              💾 Сохранить и Выйти
-            </Button>
-            <Button onClick={handleCancel} variant="secondary" size="small">
-              ✖ Отмена
-            </Button>
           </div>
         </div>
         

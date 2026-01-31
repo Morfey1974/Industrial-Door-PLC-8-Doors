@@ -227,9 +227,9 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
                 <th>Плата</th>
                 <th>Дверь</th>
                 <th>Global ID</th>
-                <th>Tech ID</th>
+                <th>Порядк. №</th>
                 <th>Drawing ID</th>
-                <th>Тип</th>
+                <th>Состояние</th>
                 <th>Комментарий</th>
                 <th>Действия</th>
               </tr>

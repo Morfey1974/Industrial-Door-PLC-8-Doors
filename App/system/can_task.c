@@ -145,7 +145,7 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
                                         ((uint32_t)svc->rsvd6 << 16U) |
                                         ((uint32_t)svc->rsvd7 << 24U);
                 
-                if (openTimeoutMs > 0U && openTimeoutMs <= 300000U) /* Валидация: 1-300 секунд */
+                if (openTimeoutMs <= 300000U) /* 0 = нет автосигнализации, макс 300 с */
                 {
                     printf("CAN_SLAVE: received openTimeoutMs=%lu ms from MASTER\r\n", (unsigned long)openTimeoutMs);
                     /* Функция DoorsCfg_SetOpenTimeoutMs всегда доступна (не weak) */
@@ -336,7 +336,7 @@ void CanTask_SendConfigParams(void)
     uint32_t openTimeoutMs = g_project_cfg.openTimeoutMs;
     
     /* Валидация: отправляем только валидные значения */
-    if (openTimeoutMs == 0U || openTimeoutMs > 300000U) /* 0-300 секунд */
+    if (openTimeoutMs > 300000U) /* 0 = нет автосигнализации, макс 300 с */
     {
         printf("CAN_MASTER: openTimeoutMs=%lu invalid, skip sending\r\n", (unsigned long)openTimeoutMs);
         return;

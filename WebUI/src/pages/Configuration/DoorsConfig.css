@@ -48,9 +48,13 @@
   gap: var(--spacing-sm);
 }
 
-/* Кнопки панели списка: цвет #3A6577, миниатюрные, одинаковый размер и форма */
+/* Единый стиль кнопок: цвет #3A6577, миниатюрные, без иконок */
 .doors-config-toolbar--list .toolbar-left .btn,
-.doors-config-toolbar--list .toolbar-left .btn.btn-primary {
+.doors-config-toolbar--list .toolbar-left .btn.btn-primary,
+.doors-config-toolbar--edit .toolbar-left .btn,
+.doors-config-toolbar--edit .toolbar-left .btn.btn-primary,
+.doors-config-toolbar--edit .toolbar-right .btn,
+.doors-config-toolbar--edit .toolbar-right .btn.btn-primary {
   background-color: #3A6577 !important;
   background-image: none !important;
   border: 1px solid #3A6577 !important;
@@ -65,7 +69,11 @@
 }
 
 .doors-config-toolbar--list .toolbar-left .btn:hover:not(:disabled),
-.doors-config-toolbar--list .toolbar-left .btn.btn-primary:hover:not(:disabled) {
+.doors-config-toolbar--list .toolbar-left .btn.btn-primary:hover:not(:disabled),
+.doors-config-toolbar--edit .toolbar-left .btn:hover:not(:disabled),
+.doors-config-toolbar--edit .toolbar-left .btn.btn-primary:hover:not(:disabled),
+.doors-config-toolbar--edit .toolbar-right .btn:hover:not(:disabled),
+.doors-config-toolbar--edit .toolbar-right .btn.btn-primary:hover:not(:disabled) {
   background-color: #2d5160 !important;
   background-image: none !important;
   border-color: #2d5160 !important;
@@ -74,10 +82,32 @@
 }
 
 .doors-config-toolbar--list .toolbar-left .btn:disabled,
-.doors-config-toolbar--list .toolbar-left .btn.btn-primary:disabled {
+.doors-config-toolbar--list .toolbar-left .btn.btn-primary:disabled,
+.doors-config-toolbar--edit .toolbar-left .btn:disabled,
+.doors-config-toolbar--edit .toolbar-left .btn.btn-primary:disabled,
+.doors-config-toolbar--edit .toolbar-right .btn:disabled,
+.doors-config-toolbar--edit .toolbar-right .btn.btn-primary:disabled {
   opacity: 0.6;
   background-color: #5a8a99 !important;
   border-color: #5a8a99 !important;
+}
+
+/* Кнопка «Применить на контроллер» — красный цвет */
+.doors-config-toolbar--edit .toolbar-right--apply .btn,
+.doors-config-toolbar--edit .toolbar-right--apply .btn.btn-primary {
+  background-color: var(--color-accent) !important;
+  background-image: none !important;
+  border-color: var(--color-accent) !important;
+  color: #fff !important;
+}
+.doors-config-toolbar--edit .toolbar-right--apply .btn:hover:not(:disabled),
+.doors-config-toolbar--edit .toolbar-right--apply .btn.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-accent-dark) !important;
+  border-color: var(--color-accent-dark) !important;
+}
+.doors-config-toolbar--edit .toolbar-right--apply .btn:disabled {
+  background-color: #e88 !important;
+  border-color: #e88 !important;
 }
 
 /* Миниатюрные кнопки на всей странице конфигурации дверей */
@@ -163,6 +193,34 @@
   gap: var(--spacing-xs);
 }
 
+/* Кнопки в списке конфигураций: Загрузить и Сохранить — белые */
+.saved-configs-list .saved-config-actions .btn {
+  background-color: #fff !important;
+  background-image: none !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text-dark) !important;
+}
+
+.saved-configs-list .saved-config-actions .btn:hover:not(:disabled) {
+  background-color: #f5f5f5 !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-dark) !important;
+}
+
+/* Кнопка Удалить — красная */
+.saved-configs-list .saved-config-actions .btn:last-child {
+  background-color: #c33 !important;
+  background-image: none !important;
+  border: 1px solid #c33 !important;
+  color: #fff !important;
+}
+
+.saved-configs-list .saved-config-actions .btn:last-child:hover:not(:disabled) {
+  background-color: #a22 !important;
+  border-color: #a22 !important;
+  color: #fff !important;
+}
+
 /* Сообщения */
 .alert {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -183,6 +241,26 @@
   background: #efe;
   border: 1px solid #cfc;
   color: #3c3;
+}
+
+/* Путь к файлу / источник конфигурации (светло-зелёное окно) */
+.config-source-path-wrap {
+  width: 100%;
+  margin-bottom: var(--spacing-md);
+}
+
+.config-source-path-wrap .config-source-path,
+.config-source-path {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+  background: #efe;
+  border: 1px solid #cfc;
+  color: #2a7d2a;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  display: block;
 }
 
 .alert button {
@@ -337,6 +415,34 @@
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+}
+
+/* Таймаут: поле и чекбокс в одну строку */
+.general-tab .timeout-with-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.general-tab .timeout-with-checkbox .timeout-input {
+  width: 100px;
+  min-width: 80px;
+}
+.general-tab .no-alarm-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal;
+  margin: 0;
+  color: var(--color-text-dark) !important;
+}
+
+/* Явный тёмный цвет для меток на вкладке «Общие параметры» — чтобы текст был виден */
+.general-tab .form-group label,
+.general-tab .form-group label[for="projectName"],
+.general-tab .form-group label[for="openTimeoutSec"] {
+  color: var(--color-text-dark) !important;
 }
 
 /* Поле «Короткий заголовок-описание проекта» — примерно в 2 раза шире обычного */
@@ -524,6 +630,112 @@
   gap: var(--spacing-sm);
   padding: var(--spacing-md) var(--spacing-lg);
   border-top: 1px solid var(--color-border);
+}
+
+/* Компактное модальное окно редактирования двери */
+.door-edit-modal {
+  max-width: 420px;
+  width: 95%;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+.door-edit-modal .modal-close {
+  font-size: 18px;
+  width: 24px;
+  height: 24px;
+}
+.door-edit-modal .modal-header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.door-edit-modal .modal-header h3 {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+.door-edit-modal-body {
+  padding: 0.6rem 0.75rem;
+}
+.door-edit-modal-body .form-group {
+  margin-bottom: 0.5rem;
+}
+.door-edit-modal-body .form-group label {
+  font-size: var(--font-size-sm);
+  margin-bottom: 0.2rem;
+}
+.door-edit-modal-body .form-input--compact {
+  padding: 0.3rem 0.5rem;
+  font-size: var(--font-size-sm);
+  min-height: 32px;
+}
+.door-edit-modal-body .form-input--readonly {
+  background: var(--color-secondary);
+  color: var(--color-text-muted);
+}
+.door-edit-modal-body .form-input--full {
+  width: 100%;
+  max-width: calc(100% * 5 / 6);
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  font-size: var(--font-size-sm);
+}
+.door-edit-modal-body .form-group--full {
+  margin-top: 0.4rem;
+  margin-bottom: 0;
+}
+.door-edit-modal-body .form-group--full .form-input--full {
+  width: calc(100% * 5 / 6);
+}
+.door-edit-modal-body small {
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+.door-edit-modal-body .error-message {
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+.door-edit-grid {
+  display: grid;
+  gap: 0 0.75rem;
+}
+.door-edit-grid--row1 {
+  grid-template-columns: 1fr 1fr;
+}
+.door-edit-grid--row2 {
+  grid-template-columns: 1fr 1fr minmax(90px, 1fr);
+}
+.door-edit-grid--row3 {
+  grid-template-columns: 1fr;
+}
+.door-edit-modal .modal-footer {
+  padding: 0.5rem 0.75rem;
+}
+.door-edit-modal .modal-footer .btn {
+  padding: 0.3rem 0.75rem;
+  font-size: var(--font-size-sm);
+}
+
+/* Тексты в модальном окне редактирования двери — тёмные для видимости */
+.door-edit-modal .modal-body label,
+.door-edit-modal .modal-body small,
+.door-edit-modal .modal-header h3 {
+  color: var(--color-text-dark) !important;
+}
+.door-edit-modal .modal-body .required {
+  color: var(--color-accent) !important; /* Красная звёздочка обязательных полей */
+}
+
+/* Кнопка «Сохранить» в модальном окне редактирования двери — красная */
+.door-edit-modal-footer .btn:last-child,
+.door-edit-modal-footer .btn.btn-primary:last-child {
+  background-color: var(--color-accent) !important;
+  background-image: none !important;
+  border-color: var(--color-accent) !important;
+  color: #fff !important;
+}
+.door-edit-modal-footer .btn:last-child:hover:not(:disabled),
+.door-edit-modal-footer .btn.btn-primary:last-child:hover:not(:disabled) {
+  background-color: var(--color-accent-dark) !important;
+  border-color: var(--color-accent-dark) !important;
 }
 
 /* Зависимости */
