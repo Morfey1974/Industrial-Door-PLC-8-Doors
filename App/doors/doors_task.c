@@ -13,6 +13,11 @@
 #include "system/app_events.h"
 #include "system/app_health.h"
 #include "system/config_service.h"
+#include "system/system_node.h"
+#include "system/comms_task.h"
+#include "logic/logic_core.h"
+#include "logic/global_door_id.h"
+#include "config/config_format.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -70,6 +75,12 @@ static AppDoorState_t s_doors[APP_DOOR_MAX];
  */
 static uint32_t s_cfgOpenTimeoutMs = 0U;
 
+/* NC-дверь: окно разблокировки и задержка блокировки после закрытия (из конфига) */
+static uint32_t s_cfgNcUnlockWindowMs       = 5000U;
+static uint32_t s_cfgNcLockDelayAfterCloseMs = 1000U;
+
+extern project_config_t g_project_cfg;
+
 /* ------------------------------------------------------------
    Локальные сервисные состояния (не “модель двери”, а служебные переменные)
    ------------------------------------------------------------ */
@@ -101,6 +112,8 @@ static SemaphoreHandle_t s_doors_mutex = NULL;
 /* ============================================================
    Вспомогательные функции
    ============================================================ */
+
+static uint8_t door_is_nc_type(uint8_t local_door_id);
 
 static uint32_t GetMs(void)
 {
@@ -172,6 +185,28 @@ uint32_t DoorsCfg_GetPostCloseTimeoutMs(uint8_t door_id)
 {
     if (door_id == 0U || door_id > APP_DOOR_MAX) return 0U;
     return s_doors[door_id - 1U].postCloseTimeoutMs;
+}
+
+uint8_t DoorsCfg_SetNcUnlockWindowMs(uint32_t ms)
+{
+    s_cfgNcUnlockWindowMs = ms;
+    return 1U;
+}
+
+uint32_t DoorsCfg_GetNcUnlockWindowMs(void)
+{
+    return s_cfgNcUnlockWindowMs;
+}
+
+uint8_t DoorsCfg_SetNcLockDelayAfterCloseMs(uint32_t ms)
+{
+    s_cfgNcLockDelayAfterCloseMs = ms;
+    return 1U;
+}
+
+uint32_t DoorsCfg_GetNcLockDelayAfterCloseMs(void)
+{
+    return s_cfgNcLockDelayAfterCloseMs;
 }
 
 /* ============================================================
@@ -552,7 +587,8 @@ static void alarm_remove(uint8_t door1based, uint8_t idx, door_alarm_reason_t re
 /* Нормальный режим:
    - buzzer OFF
    - LED: RED если locked, иначе GREEN
-   - LOCK применяем только если дверь физически закрыта (инвариант) */
+   - LOCK применяем только если дверь физически закрыта (инвариант)
+   - NC: при активном окне разблокировки — всегда unlock (зелёный) */
 static void applyNormal(uint8_t door1based, bool physClosed, uint8_t idx)
 {
     bool wantLock = (s_doors[idx].locked != 0U);
@@ -561,6 +597,14 @@ static void applyNormal(uint8_t door1based, bool physClosed, uint8_t idx)
     /* Инвариант безопасности: нельзя LOCK при открытой двери */
     if (!physClosed)
         wantLock = false;
+
+    /* NC: активное окно разблокировки — принудительно unlock */
+    if (door_is_nc_type(door1based) && physClosed && s_doors[idx].ncUnlockWindowEndMs != 0U)
+    {
+        uint32_t now = GetMs();
+        if (now < s_doors[idx].ncUnlockWindowEndMs)
+            wantLock = false;
+    }
 
     /* ЛОГИРОВАНИЕ: изменение состояния замка на аппаратном уровне */
     if (wasLocked != wantLock)
@@ -598,6 +642,20 @@ static void applySignaling(uint8_t door1based, uint8_t idx)
     /* Сигнализация всегда держит дверь разблокированной */
     DoorHAL_SetLock(door1based, false);
     s_doors[idx].locked = 0U;
+}
+
+/* NC: проверка типа двери по конфигу (локальная дверь 1..8 на текущем узле) */
+static uint8_t door_is_nc_type(uint8_t local_door_id)
+{
+    if (local_door_id < 1U || local_door_id > APP_DOOR_MAX) return 0U;
+    uint8_t nodeId = System_GetNodeId();
+    for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
+    {
+        const cfg_door_t *d = &g_project_cfg.doors[i];
+        if (d->nodeId == nodeId && d->localDoor == local_door_id)
+            return (d->type == (uint8_t)DOOR_TYPE_NC) ? 1U : 0U;
+    }
+    return 0U;
 }
 
 /* ============================================================
@@ -647,6 +705,14 @@ static void updateOneDoor(uint8_t door1based)
         	             * отменяем ожидание, чтобы потом НЕ прилетело "POST_CLOSE_READY" не к месту.
         	             */
         	            s_doors[idx].postClosePending = 0U;
+
+        	            /* NC: при открытии сбрасываем окно разблокировки и задержку после закрытия */
+        	            if (door_is_nc_type(door1based))
+        	            {
+        	                s_doors[idx].ncUnlockWindowEndMs = 0U;
+        	                s_doors[idx].ncLockAfterCloseStartMs = 0U;
+        	                s_doors[idx].ncLockAfterClosePending = 0U;
+        	            }
         }
         else
         {
@@ -667,6 +733,13 @@ static void updateOneDoor(uint8_t door1based)
                 else
                 {
                     s_doors[idx].postClosePending = 1U;
+                }
+
+                /* NC: при переходе OPEN->CLOSE запускаем задержку блокировки после закрытия */
+                if (door_is_nc_type(door1based))
+                {
+                    s_doors[idx].ncLockAfterCloseStartMs = now;
+                    s_doors[idx].ncLockAfterClosePending = 1U;
                 }
             }
 
@@ -699,15 +772,29 @@ static void updateOneDoor(uint8_t door1based)
         {
             s_lastAlarmEdgeMs[idx] = now;
 
-            uint8_t manualOn = (s_doors[idx].alarmReasons & DOOR_ALARM_MANUAL) ? 1U : 0U;
-            manualOn ^= 1U;
-
-            if (manualOn)
-                alarm_add(door1based, idx, DOOR_ALARM_MANUAL);
+            if (door_is_nc_type(door1based))
+            {
+                /* NC: импульс = окно разблокировки. Разблокировка только если LogicCore не требует блокировку. */
+                logic_core_t *lc = CommsTask_GetLogicCore();
+                uint8_t nodeId = System_GetNodeId();
+                uint8_t gid = GlobalDoorId_Make(nodeId, door1based);
+                if (lc && gid != 0U && !LogicCore_IsLockRequired(lc, gid))
+                {
+                    s_doors[idx].ncUnlockWindowEndMs = now + s_cfgNcUnlockWindowMs; /* старт или продление окна */
+                }
+            }
             else
-                alarm_remove(door1based, idx, DOOR_ALARM_MANUAL);
+            {
+                uint8_t manualOn = (s_doors[idx].alarmReasons & DOOR_ALARM_MANUAL) ? 1U : 0U;
+                manualOn ^= 1U;
 
-            publish_event(EVT_DOOR_ALARM, door1based, manualOn ? 1U : 0U);
+                if (manualOn)
+                    alarm_add(door1based, idx, DOOR_ALARM_MANUAL);
+                else
+                    alarm_remove(door1based, idx, DOOR_ALARM_MANUAL);
+
+                publish_event(EVT_DOOR_ALARM, door1based, manualOn ? 1U : 0U);
+            }
         }
     }
     s_prevAlarmRaw[idx] = (uint8_t)alarm;
@@ -767,6 +854,30 @@ static void updateOneDoor(uint8_t door1based)
     }
 
     /* --------------------------------------------------------
+     * 5b) NC: истечение окна разблокировки и задержка блокировки после закрытия
+     * -------------------------------------------------------- */
+    if (door_is_nc_type(door1based) && closed)
+    {
+        if (s_doors[idx].ncUnlockWindowEndMs != 0U && now > s_doors[idx].ncUnlockWindowEndMs)
+        {
+            s_doors[idx].locked = 1U;
+            s_doors[idx].ncUnlockWindowEndMs = 0U;
+            s_doors[idx].lastChangeMs = now;
+        }
+        if (s_doors[idx].ncLockAfterClosePending)
+        {
+            uint32_t delay = s_cfgNcLockDelayAfterCloseMs;
+            if (delay == 0U || (now - s_doors[idx].ncLockAfterCloseStartMs) >= delay)
+            {
+                s_doors[idx].locked = 1U;
+                s_doors[idx].ncLockAfterClosePending = 0U;
+                s_doors[idx].ncLockAfterCloseStartMs = 0U;
+                s_doors[idx].lastChangeMs = now;
+            }
+        }
+    }
+
+    /* --------------------------------------------------------
      * 6) Применение внешних команд lock/unlock (если не в сигнализации)
      * --------------------------------------------------------
      * Правило:
@@ -799,10 +910,16 @@ static void updateOneDoor(uint8_t door1based)
                  */
                 if (!s_lockReq[idx].lock_on)
                 {
-                    /* Команда unlock: применяем только если дверь заблокирована
-                     * или есть pending команда LOCK (чтобы отменить её)
+                    /* Команда unlock от LogicCore.
+                     * Для NC-двери закрытой без активного окна разблокировки — не применяем,
+                     * замок остаётся (управляется блоком 5b и окном NC).
                      */
-                    if (s_doors[idx].locked != 0U)
+                    if (door_is_nc_type(door1based) && closed &&
+                        (s_doors[idx].ncUnlockWindowEndMs == 0U || now >= s_doors[idx].ncUnlockWindowEndMs))
+                    {
+                        s_lockReq[idx].pending = 0U; /* игнорируем unlock, NC остаётся заблокированной */
+                    }
+                    else if (s_doors[idx].locked != 0U)
                     {
                         /* Дверь заблокирована - разблокируем */
                         s_doors[idx].locked = 0U;
@@ -811,9 +928,7 @@ static void updateOneDoor(uint8_t door1based)
                     }
                     else
                     {
-                        /* Дверь уже разблокирована - просто сбрасываем pending команду
-                         * без изменения состояния. Это предотвращает "дергание".
-                         */
+                        /* Дверь уже разблокирована - просто сбрасываем pending команду */
                         s_lockReq[idx].pending = 0U;
                     }
                 }

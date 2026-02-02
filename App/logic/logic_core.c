@@ -79,46 +79,12 @@ static void recompute_lock_required(logic_core_t *lc)
         }
     }
 
-    /* 3) Apply door type: NC doors should be locked by default when closed
-     * According to plan section 3.9.2: NC doors should be locked in safe state
-     * ВАЖНО: Применяем только для локальных дверей MASTER, чтобы избежать проблем
-     * с синхронизацией состояния удаленных дверей на SLAVE.
-     * Для удаленных дверей (SLAVE) команды LOCK будут отправляться только если
-     * они действительно закрыты (проверка physOpen в send_master_command_to_node).
+    /* 3) NC-двери НЕ добавляем в lockRequired здесь.
+     * Блокировка закрытой NC-двери управляется в doors_task (окно разблокировки,
+     * задержка после закрытия). LogicCore_IsLockRequired тогда 0 для NC при отсутствии
+     * зависимостей — по Alarm возможна разблокировка (окно). Если другая дверь открыта
+     * и эта в deps — она уже в lockRequired из п.1, разблокировка по Alarm блокируется.
      */
-    extern project_config_t g_project_cfg;
-    for (uint8_t door = 1; door <= APP_MAX_DOORS; door++)
-    {
-        /* Check if door is already in lockRequired */
-        if (DoorBitset_Test(&lc->lockRequired, door))
-            continue;
-        
-        /* Check if door is open - NC doors should not be locked if open */
-        if (lc->physOpen[door - 1U])
-            continue;
-        
-        /* Find door in configuration to check its type and nodeId */
-        for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
-        {
-            const cfg_door_t *d = &g_project_cfg.doors[i];
-            uint8_t gid = Config_MakeGlobalDoorId(d->nodeId, d->localDoor);
-            if (gid == door && d->type == DOOR_TYPE_NC)
-            {
-                /* Применяем NC логику только для локальных дверей MASTER (nodeId=1)
-                 * Для удаленных дверей (SLAVE) не добавляем в lockRequired здесь,
-                 * чтобы избежать проблем с синхронизацией состояния.
-                 * Команды для SLAVE будут формироваться в send_master_command_to_node
-                 * на основе актуального physOpen.
-                 */
-                if (d->nodeId == 1U)
-                {
-                    /* NC door on MASTER is closed and not in lockRequired - add it */
-                    DoorBitset_Set(&lc->lockRequired, door, 1U);
-                }
-                break;
-            }
-        }
-    }
 }
 
 /* Применить решения на локальные двери Master (nodeId=1, localDoor=1..8)
@@ -166,6 +132,13 @@ static void apply_to_master_local_doors(logic_core_t *lc)
 /* ============================================================
  * Public API
  * ============================================================ */
+
+uint8_t LogicCore_IsLockRequired(logic_core_t *lc, uint8_t globalDoorId)
+{
+    if (!lc) return 0U;
+    if (globalDoorId < 1U || globalDoorId > APP_MAX_DOORS) return 0U;
+    return DoorBitset_Test(&lc->lockRequired, globalDoorId) ? 1U : 0U;
+}
 
 void LogicCore_Init(logic_core_t *lc)
 {

@@ -76,6 +76,14 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
 /* Принудительно пересчитать и применить (можно дергать после конфиг-активации) */
 void LogicCore_RecomputeAndApply(logic_core_t *lc);
 
+/**
+ * Проверить, требуется ли блокировка для двери с заданным globalDoorId (1..80).
+ * Используется NC-логикой: разблокировка по импульсу возможна только если возврат 0.
+ * lc — экземпляр LogicCore (например, CommsTask_GetLogicCore()).
+ * Возвращает 1 если блокировка требуется, 0 если нет.
+ */
+uint8_t LogicCore_IsLockRequired(logic_core_t *lc, uint8_t globalDoorId);
+
 /* ============================================================
  * Ручная команда LOCK/UNLOCK (ЭТАП 5.5: разрешение конфликтов)
  *

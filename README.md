@@ -4,14 +4,27 @@
 
 ---
 
+## Типы дверей и NC-логика
+
+- **NO (нормально открытая):** по умолчанию замок отпущен (зелёный). Кнопка Alarm включает/выключает сигнализацию (мигание, пищалка).
+- **NC (нормально закрытая):** по умолчанию замок зажат (красный). Кнопка Alarm — **импульс разблокировки** (без сигнализации):
+  - Разблокировка возможна только если LogicCore не требует блокировку (нет зависимостей от другой открытой двери).
+  - По нажатию открывается **окно разблокировки** (по умолчанию 5 с); повторное нажатие продлевает окно.
+  - Если дверь не открыли до истечения окна — замок снова блокируется.
+  - После физического закрытия — задержка (по умолчанию 1 с), затем замок блокируется.
+
+Параметры NC в конфиге: `ncUnlockWindowMs` (окно разблокировки, 100–60000 мс), `ncLockDelayAfterCloseMs` (задержка блокировки после закрытия, 0–30000 мс). См. `Спецификация.md`.
+
+---
+
 ## Структура проекта
 
 - **`Core/`** — CubeMX/STM32 HAL, FreeRTOS (`freertos.c`), bring-up (LwIP, CAN, RS-485, QSPI).
 - **`BSP/`** — привязка GPIO к железу (входы/выходы дверей).
-- **`App/doors/`** — модель двери, DoorTask (датчик, замок, индикация, Alarm, таймеры).
-- **`App/logic/`** — Logic Core, зависимости дверей.
+- **`App/doors/`** — модель двери, DoorTask (датчик, замок, индикация, Alarm, таймеры, окно/задержка NC).
+- **`App/logic/`** — Logic Core, зависимости дверей, `LogicCore_IsLockRequired` (приоритет разблокировки NC).
 - **`App/system/`** — EventBus, health/heartbeat, лог‑очередь; задачи RTOS (net, CAN, RS-485, HTTP, logger, watchdog, supervisor, comms).
-- **`App/config/`** — формат конфигурации, хранилище в QSPI, атомарная активация (слоты A/B).
+- **`App/config/`** — формат конфигурации (в т.ч. `ncUnlockWindowMs`, `ncLockDelayAfterCloseMs`), хранилище в QSPI, атомарная активация (слоты A/B).
 - **`App/log/`** — журнал событий в QSPI (кольцевой лог).
 - **`WebUI/`** — React‑приложение (Vite): Dashboard, мониторинг дверей/событий, конфигурация дверей.
 
@@ -37,8 +50,8 @@
 - **9.1–9.2:** LwIP, NetTask, HTTP‑сервер на MASTER (`http_server.c`, `http_task.c`).
 - **9.3 REST API:**
   - `GET /`, `/api/state`, `/api/doors`, `/api/config`, `/api/config/full`, `/api/journal/stat`, `/api/journal/dump`
-  - `PUT /api/config` — merge (projectName, openTimeoutMs, net)
-  - `PUT /api/config/full` — полная конфигурация (doors, edges, postCloseTimeouts), лимиты v1: 8 дверей, 16 edges, 8 postClose.
+  - `PUT /api/config` — merge (projectName, openTimeoutMs, ncUnlockWindowMs, ncLockDelayAfterCloseMs, net)
+  - `PUT /api/config/full` — полная конфигурация (doors, edges, postCloseTimeouts, ncUnlockWindowMs, ncLockDelayAfterCloseMs), лимиты v1: 8 дверей, 16 edges, 8 postClose. Валидация перед применением; статический буфер разбора (без переполнения стека HTTP-задачи).
 - **9.4 Web UI (React):** Dashboard, Мониторинг (Двери, События), Конфигурация → Настройка дверей (общие параметры, двери, зависимости, таймауты). Экспорт/импорт JSON, автосохранение черновика, применение на контроллер.
 
 **Поведение при применении конфигурации:** после успешной записи в QSPI плата выполняет автосброс (`HAL_NVIC_SystemReset`), конфиг подхватывается при загрузке.
@@ -69,5 +82,6 @@
 
 - **`API_CONTRACT.md`** — контракт REST API.
 - **`CONFIG_APPLY_FULL_PLAN.md`** — план и реализация полной загрузки конфигурации (вариант A).
+- **`Спецификация.md`** — финальная спецификация NC-двери (окно разблокировки, задержка после закрытия, план изменений).
 - **`План_UI.md`** — план Web UI.
 - **`WebUI/README.md`**, **`WebUI/INSTALL_VS.md`** — запуск и интеграция в Visual Studio.

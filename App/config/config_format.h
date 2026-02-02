@@ -96,6 +96,8 @@ typedef struct
     /* Тайм-ауты */
     uint32_t openTimeoutMs;                         /* глобальный */
     uint32_t postCloseTimeoutMs[CFG_MAX_DOORS];     /* индивидуальный */
+    uint32_t ncUnlockWindowMs;                       /* окно разблокировки NC, мс (по умолч. 5000) */
+    uint32_t ncLockDelayAfterCloseMs;               /* задержка блокировки NC после закрытия, мс (по умолч. 1000) */
 
     /* Двери */
     uint8_t doorCount; /* <= 80 */

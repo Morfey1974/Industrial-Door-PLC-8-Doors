@@ -50,6 +50,8 @@ void Config_Default(project_config_t *cfg)
     cfg->openTimeoutMs = 30U * 1000U; /* 30 сек */
     for (uint16_t i = 0; i < CFG_MAX_DOORS; i++)
         cfg->postCloseTimeoutMs[i] = 500U; /* 0.5 сек */
+    cfg->ncUnlockWindowMs = 5000U;
+    cfg->ncLockDelayAfterCloseMs = 1000U;
 
     /* Двери по умолчанию: 8 дверей на MASTER (node=1) */
     cfg->doorCount = 8U;
@@ -58,7 +60,7 @@ void Config_Default(project_config_t *cfg)
         cfg_door_t *d = &cfg->doors[i];
         d->nodeId = 1U;
         d->localDoor = (uint8_t)(i + 1U);
-        d->type = (uint8_t)DOOR_TYPE_NC;
+        d->type = (uint8_t)DOOR_TYPE_NO;
         d->techId = (uint16_t)(i + 1U);
         d->drawingId = (uint16_t)(i + 1U);
         memset(d->comment, 0, sizeof(d->comment));
@@ -101,6 +103,18 @@ static uint8_t validate_ranges(const project_config_t *cfg, cfg_validate_error_t
         (cfg->openTimeoutMs < 100U || cfg->openTimeoutMs > (10U * 60U * 1000U)))
     {
         set_err(err, "openTimeoutMs out of range");
+        return CFG_VALIDATE_BAD;
+    }
+    /* NC: окно разблокировки 100–60000 мс */
+    if (cfg->ncUnlockWindowMs < 100U || cfg->ncUnlockWindowMs > 60000U)
+    {
+        set_err(err, "ncUnlockWindowMs out of range (100-60000)");
+        return CFG_VALIDATE_BAD;
+    }
+    /* NC: задержка блокировки после закрытия 0–30000 мс */
+    if (cfg->ncLockDelayAfterCloseMs > 30000U)
+    {
+        set_err(err, "ncLockDelayAfterCloseMs out of range (0-30000)");
         return CFG_VALIDATE_BAD;
     }
     return CFG_VALIDATE_OK;

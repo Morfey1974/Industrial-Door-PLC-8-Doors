@@ -24,6 +24,24 @@ extern osThreadId_t httpTaskHandle;
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
 
+/* Экранирование строки для JSON: копирует src в dst, экранирует " и \, ограничивает длину. */
+static void json_escape_error(const char *src, char *dst, size_t dst_sz)
+{
+    if (!dst || dst_sz == 0U) return;
+    size_t j = 0U;
+    if (dst_sz > 1U && src) {
+        for (size_t i = 0; src[i] != '\0' && j < dst_sz - 1U; i++) {
+            if ((src[i] == '"' || src[i] == '\\') && j + 2U <= dst_sz - 1U) {
+                dst[j++] = '\\';
+                dst[j++] = src[i];
+            } else {
+                dst[j++] = src[i];
+            }
+        }
+    }
+    dst[j] = '\0';
+}
+
 /* Парсинг IPv4 "a.b.c.d" в uint8_t[4]. Возвращает 1 при успехе. */
 static uint8_t parse_ipv4(const char *str, uint8_t *out)
 {
@@ -302,6 +320,8 @@ static uint8_t build_config(jsonw_t *w)
           "\"projectName\":\"%s\","
           "\"doorCount\":%u,"
           "\"openTimeoutMs\":%lu,"
+          "\"ncUnlockWindowMs\":%lu,"
+          "\"ncLockDelayAfterCloseMs\":%lu,"
           "\"net\":{"
             "\"dhcpEnabled\":%u,"
             "\"webPort\":%u,"
@@ -315,6 +335,8 @@ static uint8_t build_config(jsonw_t *w)
         g_project_cfg.projectName,
         (unsigned)g_project_cfg.doorCount,
         (unsigned long)g_project_cfg.openTimeoutMs,
+        (unsigned long)g_project_cfg.ncUnlockWindowMs,
+        (unsigned long)g_project_cfg.ncLockDelayAfterCloseMs,
         (unsigned)n->dhcpEnabled,
         (unsigned)n->webPort,
         (unsigned)n->ip[0], (unsigned)n->ip[1], (unsigned)n->ip[2], (unsigned)n->ip[3],
@@ -337,11 +359,15 @@ static uint8_t build_config_full(jsonw_t *w)
         "\"seq\":%lu,"
         "\"projectName\":\"%s\","
         "\"openTimeoutMs\":%lu,"
+        "\"ncUnlockWindowMs\":%lu,"
+        "\"ncLockDelayAfterCloseMs\":%lu,"
         "\"doorCount\":%u,",
         (unsigned long)cfg->formatVersion,
         (unsigned long)cfg->seq,
         cfg->projectName,
         (unsigned long)cfg->openTimeoutMs,
+        (unsigned long)cfg->ncUnlockWindowMs,
+        (unsigned long)cfg->ncLockDelayAfterCloseMs,
         (unsigned)cfg->doorCount
     )) return 0U;
     
@@ -867,6 +893,16 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
         cfg.openTimeoutMs = ot;
     }
 
+    /* NC: окно разблокировки и задержка блокировки после закрытия */
+    uint32_t ncWin;
+    if (Json_GetUint32(body, "ncUnlockWindowMs", &ncWin)) {
+        cfg.ncUnlockWindowMs = ncWin;
+    }
+    uint32_t ncDelay;
+    if (Json_GetUint32(body, "ncLockDelayAfterCloseMs", &ncDelay)) {
+        cfg.ncLockDelayAfterCloseMs = ncDelay;
+    }
+
     /* net object (optional) */
     json_span_t net_span;
     if (Json_FindObjectSpan(body, "net", &net_span)) {
@@ -955,6 +991,9 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
  */
 #define CFG_FULL_ELEM_BUF_SIZE  512
 
+/* Статический буфер для разбора PUT /api/config/full (project_config_t ~6KB — не на стеке HTTP-задачи). */
+static project_config_t s_put_cfg;
+
 /* Парсинг полной конфигурации из JSON (PUT /api/config/full).
  * Лимиты v1: 8 дверей, 16 edges, 8 postCloseTimeouts.
  * Обнуляем doors/edges/postClose, затем заполняем из JSON.
@@ -964,6 +1003,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
 
+    printf("CFG full: start (body=%u)\r\n", (unsigned)body_len);
     AppLog("CFG full: body len=%u", (unsigned)body_len);
     if (!body || body_len == 0 || body[0] == 0) {
         AppLog("CFG full: empty body");
@@ -972,32 +1012,45 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     }
     /* Ожидается, что HTTP-слой передаёт body с null-termination (body[body_len]=0). */
 
-    project_config_t cfg = g_project_cfg;
-    cfg.formatVersion = CFG_FORMAT_VERSION;
-    cfg.seq = (uint32_t)(g_project_cfg.seq + 1U);
+    project_config_t *cfg = &s_put_cfg;
+    *cfg = g_project_cfg;
+    cfg->formatVersion = CFG_FORMAT_VERSION;
+    cfg->seq = (uint32_t)(g_project_cfg.seq + 1U);
 
     /* Обнуление: заменяем конфиг полностью в рамках лимитов v1. */
-    cfg.doorCount = 0U;
-    cfg.edgeCount = 0U;
-    memset(cfg.doors, 0, sizeof(cfg_door_t) * CFG_FULL_MAX_DOORS_V1);
-    memset(cfg.edges, 0, sizeof(cfg_edge_t) * CFG_FULL_MAX_EDGES_V1);
+    cfg->doorCount = 0U;
+    cfg->edgeCount = 0U;
+    memset(cfg->doors, 0, sizeof(cfg_door_t) * CFG_FULL_MAX_DOORS_V1);
+    memset(cfg->edges, 0, sizeof(cfg_edge_t) * CFG_FULL_MAX_EDGES_V1);
     /* Обнуляем все post-close таймауты (0 = нет задержки) */
     for (uint8_t i = 0; i < CFG_MAX_DOORS; i++)
-        cfg.postCloseTimeoutMs[i] = 0U;
+        cfg->postCloseTimeoutMs[i] = 0U;
 
     /* projectName */
     AppLog("CFG full: parse projectName");
     char pname[CFG_PROJECT_NAME_LEN];
     if (Json_GetString(body, "projectName", pname, sizeof(pname))) {
-        memset(cfg.projectName, 0, sizeof(cfg.projectName));
-        strncpy(cfg.projectName, pname, sizeof(cfg.projectName) - 1U);
+        memset(cfg->projectName, 0, sizeof(cfg->projectName));
+        strncpy(cfg->projectName, pname, sizeof(cfg->projectName) - 1U);
     }
 
     /* openTimeoutMs */
     AppLog("CFG full: parse openTimeoutMs");
     uint32_t ot;
     if (Json_GetUint32(body, "openTimeoutMs", &ot))
-        cfg.openTimeoutMs = ot;
+        cfg->openTimeoutMs = ot;
+
+    /* NC: окно разблокировки и задержка блокировки после закрытия (по умолчанию 5000 и 1000) */
+    uint32_t ncWin;
+    if (Json_GetUint32(body, "ncUnlockWindowMs", &ncWin))
+        cfg->ncUnlockWindowMs = ncWin;
+    else
+        cfg->ncUnlockWindowMs = 5000U;
+    uint32_t ncDelay;
+    if (Json_GetUint32(body, "ncLockDelayAfterCloseMs", &ncDelay))
+        cfg->ncLockDelayAfterCloseMs = ncDelay;
+    else
+        cfg->ncLockDelayAfterCloseMs = 1000U;
 
     /* net (опционально) */
     json_span_t net_span;
@@ -1009,14 +1062,14 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         net_json[n] = 0;
         uint8_t dh;
         if (Json_GetBool(net_json, "dhcpEnabled", &dh))
-            cfg.net.dhcpEnabled = dh ? 1U : 0U;
+            cfg->net.dhcpEnabled = dh ? 1U : 0U;
         uint16_t wp;
         if (Json_GetUint16(net_json, "webPort", &wp))
-            cfg.net.webPort = wp;
+            cfg->net.webPort = wp;
         char ip_str[20];
-        if (Json_GetString(net_json, "ip", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.ip)) { /* ok */ }
-        if (Json_GetString(net_json, "netmask", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.netmask)) { /* ok */ }
-        if (Json_GetString(net_json, "gateway", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg.net.gw)) { /* ok */ }
+        if (Json_GetString(net_json, "ip", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.ip)) { /* ok */ }
+        if (Json_GetString(net_json, "netmask", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.netmask)) { /* ok */ }
+        if (Json_GetString(net_json, "gateway", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.gw)) { /* ok */ }
     }
 
     /* doors[] */
@@ -1029,7 +1082,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             json_span_t obj;
             if (!Json_ArrayNextObject(doors_arr.ptr, doors_arr.len, &off, &obj))
                 break;
-            if (cfg.doorCount >= CFG_FULL_MAX_DOORS_V1) {
+            if (cfg->doorCount >= CFG_FULL_MAX_DOORS_V1) {
                 AppLog("CFG full: doors limit %u exceeded", (unsigned)CFG_FULL_MAX_DOORS_V1);
                 (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"doors limit %u exceeded\"}",
                                  (unsigned)CFG_FULL_MAX_DOORS_V1);
@@ -1040,14 +1093,14 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             memcpy(elem_buf, obj.ptr, cp);
             elem_buf[cp] = 0;
 
-            cfg_door_t *d = &cfg.doors[cfg.doorCount];
+            cfg_door_t *d = &cfg->doors[cfg->doorCount];
             uint32_t v32;
-            if (!Json_GetUint32(elem_buf, "techId", &v32)) { AppLog("CFG full: door[%u] no techId", (unsigned)cfg.doorCount); continue; }
+            if (!Json_GetUint32(elem_buf, "techId", &v32)) { AppLog("CFG full: door[%u] no techId", (unsigned)cfg->doorCount); continue; }
             d->techId = (uint16_t)v32;
             if (Json_GetUint32(elem_buf, "drawingId", &v32)) d->drawingId = (uint16_t)v32;
-            if (!Json_GetUint32(elem_buf, "nodeId", &v32)) { AppLog("CFG full: door[%u] no nodeId", (unsigned)cfg.doorCount); continue; }
+            if (!Json_GetUint32(elem_buf, "nodeId", &v32)) { AppLog("CFG full: door[%u] no nodeId", (unsigned)cfg->doorCount); continue; }
             d->nodeId = (uint8_t)v32;
-            if (!Json_GetUint32(elem_buf, "localDoor", &v32)) { AppLog("CFG full: door[%u] no localDoor", (unsigned)cfg.doorCount); continue; }
+            if (!Json_GetUint32(elem_buf, "localDoor", &v32)) { AppLog("CFG full: door[%u] no localDoor", (unsigned)cfg->doorCount); continue; }
             d->localDoor = (uint8_t)v32;
             if (Json_GetUint32(elem_buf, "typeCode", &v32))
                 d->type = (uint8_t)v32;
@@ -1061,10 +1114,10 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             }
             memset(d->comment, 0, sizeof(d->comment));
             (void)Json_GetString(elem_buf, "comment", d->comment, sizeof(d->comment));
-            cfg.doorCount++;
+            cfg->doorCount++;
         }
     }
-    AppLog("CFG full: doors count=%u", (unsigned)cfg.doorCount);
+    AppLog("CFG full: doors count=%u", (unsigned)cfg->doorCount);
 
     /* edges[] */
     AppLog("CFG full: parse edges");
@@ -1076,7 +1129,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             json_span_t obj;
             if (!Json_ArrayNextObject(edges_arr.ptr, edges_arr.len, &off, &obj))
                 break;
-            if (cfg.edgeCount >= CFG_FULL_MAX_EDGES_V1) {
+            if (cfg->edgeCount >= CFG_FULL_MAX_EDGES_V1) {
                 AppLog("CFG full: edges limit %u exceeded", (unsigned)CFG_FULL_MAX_EDGES_V1);
                 (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"edges limit %u exceeded\"}",
                                  (unsigned)CFG_FULL_MAX_EDGES_V1);
@@ -1089,19 +1142,19 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
 
             uint32_t src, dst;
             if (!Json_GetUint32(elem_buf, "srcGlobalDoorId", &src) || !Json_GetUint32(elem_buf, "dstGlobalDoorId", &dst)) {
-                AppLog("CFG full: edge[%u] missing src/dst", (unsigned)cfg.edgeCount);
+                AppLog("CFG full: edge[%u] missing src/dst", (unsigned)cfg->edgeCount);
                 continue;
             }
             if (src < 1U || src > CFG_MAX_DOORS || dst < 1U || dst > CFG_MAX_DOORS) {
                 AppLog("CFG full: edge src/dst out of range");
                 continue;
             }
-            cfg.edges[cfg.edgeCount].srcGlobalDoorId = (uint8_t)src;
-            cfg.edges[cfg.edgeCount].dstGlobalDoorId = (uint8_t)dst;
-            cfg.edgeCount++;
+            cfg->edges[cfg->edgeCount].srcGlobalDoorId = (uint8_t)src;
+            cfg->edges[cfg->edgeCount].dstGlobalDoorId = (uint8_t)dst;
+            cfg->edgeCount++;
         }
     }
-    AppLog("CFG full: edges count=%u", (unsigned)cfg.edgeCount);
+    AppLog("CFG full: edges count=%u", (unsigned)cfg->edgeCount);
 
     /* postCloseTimeouts[] */
     AppLog("CFG full: parse postCloseTimeouts");
@@ -1134,7 +1187,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
                 AppLog("CFG full: postClose gid=%u out of range", (unsigned)gid);
                 continue;
             }
-            cfg.postCloseTimeoutMs[(size_t)(gid - 1U)] = tms;
+            cfg->postCloseTimeoutMs[(size_t)(gid - 1U)] = tms;
             AppLog("CFG full: postClose gid=%u timeout=%lu ms", (unsigned)gid, (unsigned long)tms);
             pct_count++;
         }
@@ -1142,16 +1195,22 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     }
 
     /* Валидация */
+    printf("CFG full: validate\r\n");
     AppLog("CFG full: validate");
     cfg_validate_error_t err;
     memset(&err, 0, sizeof(err));
-    if (Config_Validate(&cfg, &err) != CFG_VALIDATE_OK) {
+    if (Config_Validate(cfg, &err) != CFG_VALIDATE_OK) {
+        printf("CFG full: validate FAIL %s\r\n", err.text);
         AppLog("CFG full: validate fail %s", err.text);
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"%s\"}", err.text);
+        /* Экранируем текст ошибки для JSON, чтобы ответ всегда был валидным */
+        char err_esc[96];
+        json_escape_error(err.text, err_esc, sizeof(err_esc));
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"%s\"}", err_esc);
         return 400;
     }
+    printf("CFG full: validate ok\r\n");
     AppLog("CFG full: finalize");
-    Config_Finalize(&cfg);
+    Config_Finalize(cfg);
 
     printf("CFG full: persist start\r\n");
     AppLog("CFG full: persist");
@@ -1159,7 +1218,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     {
         osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
         (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
-        st = ConfigService_Persist(&cfg);
+        st = ConfigService_Persist(cfg);
         (void)osThreadSetPriority(httpTaskHandle, prev_prio);
     }
     printf("CFG full: persist done st=%d\r\n", (int)st);
@@ -1168,17 +1227,19 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         (void)jw_appendf(&w, "{\"ok\":0,\"persistStatus\":%u}", (unsigned)st);
         return 500;
     }
-    g_project_cfg = cfg;
+    g_project_cfg = *cfg;
     
     /* Применяем конфигурацию к runtime модулям (doors, etc.)
      * Это нужно, чтобы таймауты работали сразу, даже до перезагрузки.
      */
+    printf("CFG full: apply runtime\r\n");
     AppLog("CFG full: apply runtime");
-    ConfigService_ApplyRuntime(&cfg);
+    ConfigService_ApplyRuntime(cfg);
     
+    printf("CFG full: done 200\r\n");
     AppLog("CFG full: send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
-                     (unsigned)st, (unsigned long)cfg.seq);
+                     (unsigned)st, (unsigned long)cfg->seq);
     s_reboot_after_config_apply = 1;
     return 200;
 }

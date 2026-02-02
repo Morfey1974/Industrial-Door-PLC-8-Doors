@@ -69,6 +69,12 @@ typedef struct
     uint32_t postCloseStartMs;
     uint32_t postCloseTimeoutMs; /* конфиг на дверь */
 
+    /* NC-дверь: окно разблокировки и задержка блокировки после закрытия */
+    uint32_t ncUnlockWindowEndMs;       /* 0 = окно не активно; иначе момент окончания окна */
+    uint32_t ncLockAfterCloseStartMs;   /* 0 = не ждём; иначе начало отсчёта задержки */
+    uint8_t  ncLockAfterClosePending;   /* 1 = ожидание блокировки после закрытия */
+    uint8_t  _rsvd_nc;
+
     /* Временная отметка изменения “чего-то важного” (по месту использования) */
     uint32_t lastChangeMs;
 
@@ -134,3 +140,9 @@ uint32_t DoorsCfg_GetOpenTimeoutMs(void);
 /* post-close timeout индивидуальный на дверь, 0 = применить немедленно */
 uint8_t  DoorsCfg_SetPostCloseTimeoutMs(uint8_t door_id, uint32_t timeout_ms);
 uint32_t DoorsCfg_GetPostCloseTimeoutMs(uint8_t door_id);
+
+/* NC-дверь: окно разблокировки и задержка блокировки после закрытия (глобальные) */
+uint8_t  DoorsCfg_SetNcUnlockWindowMs(uint32_t ms);
+uint32_t DoorsCfg_GetNcUnlockWindowMs(void);
+uint8_t  DoorsCfg_SetNcLockDelayAfterCloseMs(uint32_t ms);
+uint32_t DoorsCfg_GetNcLockDelayAfterCloseMs(void);

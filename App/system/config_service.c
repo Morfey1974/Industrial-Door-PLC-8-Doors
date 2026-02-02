@@ -64,6 +64,14 @@ static void apply_cfg_runtime(const project_config_t *cfg)
 {
     if (!cfg) return;
 
+    /* 0) Валидация: не применяем невалидный конфиг (защита от блокировки всех дверей при ошибке) */
+    cfg_validate_error_t err;
+    memset(&err, 0, sizeof(err));
+    if (Config_Validate(cfg, &err) != CFG_VALIDATE_OK) {
+        log_msg("[CFG] apply: skip invalid cfg: %s\r\n", err.text);
+        return;
+    }
+
     /* 1) Global open timeout (same for all doors, set from WEB later) */
     if (DoorsCfg_SetOpenTimeoutMs) {
         log_msg("[CFG] apply: openTimeoutMs=%lu\r\n", (unsigned long)cfg->openTimeoutMs);
@@ -71,6 +79,12 @@ static void apply_cfg_runtime(const project_config_t *cfg)
     } else {
         log_msg("[CFG] apply: DoorsCfg_SetOpenTimeoutMs not available\r\n");
     }
+
+    /* 1b) NC: окно разблокировки и задержка блокировки после закрытия */
+    log_msg("[CFG] apply: ncUnlockWindowMs=%lu ncLockDelayAfterCloseMs=%lu\r\n",
+            (unsigned long)cfg->ncUnlockWindowMs, (unsigned long)cfg->ncLockDelayAfterCloseMs);
+    DoorsCfg_SetNcUnlockWindowMs(cfg->ncUnlockWindowMs);
+    DoorsCfg_SetNcLockDelayAfterCloseMs(cfg->ncLockDelayAfterCloseMs);
 
     /* 2) Per-door post-close timeout and door type
      *    - cfg->postCloseTimeoutMs[] is indexed by globalDoorId-1 (1..80)
@@ -80,7 +94,7 @@ static void apply_cfg_runtime(const project_config_t *cfg)
     if (DoorsCfg_SetPostCloseTimeoutMs) {
         log_msg("[CFG] apply: postCloseTimeouts for %u doors\r\n", (unsigned)cfg->doorCount);
         uint8_t appliedCount = 0U;
-        for (uint16_t i = 0; i < cfg->doorCount; i++) {
+        for (uint16_t i = 0; i < cfg->doorCount && i < CFG_MAX_DOORS; i++) {
             const cfg_door_t *d = &cfg->doors[i];
             if (d->nodeId != System_GetNodeId()) {
                 continue;
@@ -91,6 +105,10 @@ static void apply_cfg_runtime(const project_config_t *cfg)
 
             const uint8_t gid = Config_MakeGlobalDoorId(d->nodeId, d->localDoor);
             if (gid < 1U || gid > CFG_MAX_DOORS) {
+                continue;
+            }
+            /* Защита от выхода за границу массива postCloseTimeoutMs */
+            if ((size_t)(gid - 1U) >= CFG_MAX_DOORS) {
                 continue;
             }
 
