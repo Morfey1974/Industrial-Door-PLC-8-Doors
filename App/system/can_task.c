@@ -1,7 +1,6 @@
 #include "can_task.h"
 
 #include <string.h>
-#include <stdio.h>
 
 #include "cmsis_os.h"
 
@@ -147,13 +146,7 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
                 
                 if (openTimeoutMs <= 300000U) /* 0 = нет автосигнализации, макс 300 с */
                 {
-                    printf("CAN_SLAVE: received openTimeoutMs=%lu ms from MASTER\r\n", (unsigned long)openTimeoutMs);
-                    /* Функция DoorsCfg_SetOpenTimeoutMs всегда доступна (не weak) */
                     DoorsCfg_SetOpenTimeoutMs(openTimeoutMs);
-                }
-                else
-                {
-                    printf("CAN_SLAVE: received invalid openTimeoutMs=%lu ms, ignored\r\n", (unsigned long)openTimeoutMs);
                 }
             }
         }
@@ -225,54 +218,18 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
             
             if (wantUnlock)
             {
-                /* ЛОГИРОВАНИЕ: получение команды UNLOCK от MASTER */
-                printf("CAN_SLAVE: Door%u UNLOCK cmd, stateOk=%u locked=%u closed=%u alarming=%u\r\n",
-                       (unsigned)localDoor, (unsigned)doorStateOk,
-                       doorStateOk ? (unsigned)doorState.locked : 999U,
-                       doorStateOk ? (unsigned)doorState.physClosed : 999U,
-                       doorStateOk ? (unsigned)doorState.alarming : 999U);
-                
-                /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: не вызываем Doors_RequestLock для UNLOCK,
-                 * если дверь уже разблокирована. Это предотвращает установку pending
-                 * и ненужные переключения.
-                 */
+                /* Не вызываем Doors_RequestLock для UNLOCK, если дверь уже разблокирована */
                 if (doorStateOk && (doorState.locked == 0U))
-                {
-                    /* Дверь уже разблокирована - не отправляем команду, чтобы избежать дергания */
-                    printf("CAN_SLAVE: Door%u UNLOCK IGNORED (already unlocked)\r\n", (unsigned)localDoor);
                     continue;
-                }
-                
-                /* Дверь заблокирована - отправляем команду UNLOCK.
-                 * Команда будет применена немедленно в updateOneDoor, так как дверь заблокирована.
-                 */
-                uint8_t result = Doors_RequestLock(localDoor, 0U, (uint32_t)APP_SRC_CAN, 2000U);
-                printf("CAN_SLAVE: Door%u UNLOCK RequestLock result=%u\r\n", (unsigned)localDoor, (unsigned)result);
+                (void)Doors_RequestLock(localDoor, 0U, (uint32_t)APP_SRC_CAN, 2000U);
             }
             else if (wantLock)
             {
-                /* ЛОГИРОВАНИЕ: получение команды LOCK от MASTER */
-                printf("CAN_SLAVE: Door%u LOCK cmd, stateOk=%u locked=%u closed=%u alarming=%u\r\n",
-                       (unsigned)localDoor, (unsigned)doorStateOk,
-                       doorStateOk ? (unsigned)doorState.locked : 999U,
-                       doorStateOk ? (unsigned)doorState.physClosed : 999U,
-                       doorStateOk ? (unsigned)doorState.alarming : 999U);
-                
-                /* Отправляем LOCK только если дверь разблокирована и закрыта.
-                 * Если дверь уже заблокирована, игнорируем команду.
-                 */
+                /* Не отправляем LOCK, если дверь уже заблокирована и закрыта */
                 if (doorStateOk && (doorState.locked != 0U) && doorState.physClosed)
-                {
-                    /* Дверь уже заблокирована и закрыта - не отправляем команду, чтобы избежать дергания */
-                    printf("CAN_SLAVE: Door%u LOCK IGNORED (already locked)\r\n", (unsigned)localDoor);
                     continue;
-                }
-                /* Увеличиваем TTL команды блокировки, чтобы она не истекала между обновлениями.
-                 * CAN команды приходят каждые ~200 мс (CAN_STATUS_PERIOD_MS) или раз в 1000 мс (keepalive),
-                 * поэтому TTL должен быть больше этого интервала.
-                 */
-                uint8_t result = Doors_RequestLock(localDoor, 1U, (uint32_t)APP_SRC_CAN, 2000U);
-                printf("CAN_SLAVE: Door%u LOCK RequestLock result=%u\r\n", (unsigned)localDoor, (unsigned)result);
+                /* TTL 2000 мс — больше интервала CAN команд (~200 мс) */
+                (void)Doors_RequestLock(localDoor, 1U, (uint32_t)APP_SRC_CAN, 2000U);
             }
         }
 
@@ -337,10 +294,7 @@ void CanTask_SendConfigParams(void)
     
     /* Валидация: отправляем только валидные значения */
     if (openTimeoutMs > 300000U) /* 0 = нет автосигнализации, макс 300 с */
-    {
-        printf("CAN_MASTER: openTimeoutMs=%lu invalid, skip sending\r\n", (unsigned long)openTimeoutMs);
         return;
-    }
     
     can_svc_payload_t svc = {0};
     svc.serviceCode = (uint8_t)CAN_SVC_CONFIG_PARAM;
@@ -361,13 +315,7 @@ void CanTask_SendConfigParams(void)
             uint32_t id = CanProto_MakeStdId(CAN_MSG_SERVICE, 1U /* MASTER src */, nodeId);
             (void)CAN_Link_SendStd(id, (const uint8_t *)&svc, 8U, 0U);
             sentCount++;
-            printf("CAN_MASTER: sent openTimeoutMs=%lu ms to SLAVE node%u\r\n", 
-                   (unsigned long)openTimeoutMs, (unsigned)nodeId);
         }
-    }
-    if (sentCount == 0U)
-    {
-        printf("CAN_MASTER: no online SLAVE nodes, openTimeoutMs not sent\r\n");
     }
 }
 

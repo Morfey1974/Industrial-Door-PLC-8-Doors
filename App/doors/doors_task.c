@@ -854,7 +854,9 @@ static void updateOneDoor(uint8_t door1based)
     }
 
     /* --------------------------------------------------------
-     * 5b) NC: истечение окна разблокировки и задержка блокировки после закрытия
+     * 5b) NC: истечение окна разблокировки и задержка блокировки после закрытия.
+     *     Также: NC закрытая без активного окна и без pending задержки — заблокирована
+     *     (старт/применение конфига без перехода OPEN→CLOSE).
      * -------------------------------------------------------- */
     if (door_is_nc_type(door1based) && closed)
     {
@@ -874,6 +876,13 @@ static void updateOneDoor(uint8_t door1based)
                 s_doors[idx].ncLockAfterCloseStartMs = 0U;
                 s_doors[idx].lastChangeMs = now;
             }
+        }
+        /* NC закрытая, нет активного окна разблокировки — безопасное состояние: замок */
+        if ((s_doors[idx].ncUnlockWindowEndMs == 0U || now >= s_doors[idx].ncUnlockWindowEndMs) &&
+            !s_doors[idx].ncLockAfterClosePending)
+        {
+            s_doors[idx].locked = 1U;
+            s_doors[idx].lastChangeMs = now;
         }
     }
 
@@ -917,7 +926,12 @@ static void updateOneDoor(uint8_t door1based)
                     if (door_is_nc_type(door1based) && closed &&
                         (s_doors[idx].ncUnlockWindowEndMs == 0U || now >= s_doors[idx].ncUnlockWindowEndMs))
                     {
-                        s_lockReq[idx].pending = 0U; /* игнорируем unlock, NC остаётся заблокированной */
+                        /* Игнорируем unlock; NC закрытая должна быть заблокирована.
+                         * Явно ставим locked=1: при загрузке конфига LOCK от apply_cfg_runtime
+                         * мог быть перезаписан UNLOCK от LogicCore до применения в цикле. */
+                        s_doors[idx].locked = 1U;
+                        s_doors[idx].lastChangeMs = now;
+                        s_lockReq[idx].pending = 0U;
                     }
                     else if (s_doors[idx].locked != 0U)
                     {

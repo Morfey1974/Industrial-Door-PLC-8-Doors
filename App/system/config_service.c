@@ -81,8 +81,6 @@ static void apply_cfg_runtime(const project_config_t *cfg)
     }
 
     /* 1b) NC: окно разблокировки и задержка блокировки после закрытия */
-    log_msg("[CFG] apply: ncUnlockWindowMs=%lu ncLockDelayAfterCloseMs=%lu\r\n",
-            (unsigned long)cfg->ncUnlockWindowMs, (unsigned long)cfg->ncLockDelayAfterCloseMs);
     DoorsCfg_SetNcUnlockWindowMs(cfg->ncUnlockWindowMs);
     DoorsCfg_SetNcLockDelayAfterCloseMs(cfg->ncLockDelayAfterCloseMs);
 
@@ -125,9 +123,8 @@ static void apply_cfg_runtime(const project_config_t *cfg)
                 /* For NC doors, check if door is closed and apply lock */
                 AppDoorState_t state;
                 if (Doors_GetState(d->localDoor, &state)) {
-                    if (state.physClosed && !state.alarming) {
+                        if (state.physClosed && !state.alarming) {
                         /* Door is closed and not in alarm - apply lock for NC type */
-                        log_msg("[CFG] apply: door%u (NC type) initial lock\r\n", (unsigned)d->localDoor);
                         Doors_RequestLock(d->localDoor, 1U, (uint32_t)APP_SRC_SUPERVISOR, 0U);
                     }
                 }

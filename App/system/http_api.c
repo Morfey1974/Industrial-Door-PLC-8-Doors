@@ -949,8 +949,6 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     Config_Finalize(&cfg);
     AppLog("CFG:3 finalize ok");
 
-    /* printf идёт напрямую в UART — виден даже при краше/обрыве логов */
-    printf("CFG: persist start\r\n");
     AppLog("CFG:4 persist");
     cfg_storage_status_t st;
     {
@@ -959,7 +957,6 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
         st = ConfigService_Persist(&cfg);
         (void)osThreadSetPriority(httpTaskHandle, prev_prio);
     }
-    printf("CFG: persist done st=%d\r\n", (int)st);
     if (st != CFGST_OK) {
         AppLog("CFG: persist fail %u", (unsigned)st);
         (void)jw_appendf(&w, "{\"ok\":0,\"persistStatus\":%u}", (unsigned)st);
@@ -1003,7 +1000,6 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
 
-    printf("CFG full: start (body=%u)\r\n", (unsigned)body_len);
     AppLog("CFG full: body len=%u", (unsigned)body_len);
     if (!body || body_len == 0 || body[0] == 0) {
         AppLog("CFG full: empty body");
@@ -1195,12 +1191,10 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     }
 
     /* Валидация */
-    printf("CFG full: validate\r\n");
     AppLog("CFG full: validate");
     cfg_validate_error_t err;
     memset(&err, 0, sizeof(err));
     if (Config_Validate(cfg, &err) != CFG_VALIDATE_OK) {
-        printf("CFG full: validate FAIL %s\r\n", err.text);
         AppLog("CFG full: validate fail %s", err.text);
         /* Экранируем текст ошибки для JSON, чтобы ответ всегда был валидным */
         char err_esc[96];
@@ -1208,11 +1202,9 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"%s\"}", err_esc);
         return 400;
     }
-    printf("CFG full: validate ok\r\n");
     AppLog("CFG full: finalize");
     Config_Finalize(cfg);
 
-    printf("CFG full: persist start\r\n");
     AppLog("CFG full: persist");
     cfg_storage_status_t st;
     {
@@ -1221,7 +1213,6 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         st = ConfigService_Persist(cfg);
         (void)osThreadSetPriority(httpTaskHandle, prev_prio);
     }
-    printf("CFG full: persist done st=%d\r\n", (int)st);
     if (st != CFGST_OK) {
         AppLog("CFG full: persist fail %u", (unsigned)st);
         (void)jw_appendf(&w, "{\"ok\":0,\"persistStatus\":%u}", (unsigned)st);
@@ -1232,11 +1223,9 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     /* Применяем конфигурацию к runtime модулям (doors, etc.)
      * Это нужно, чтобы таймауты работали сразу, даже до перезагрузки.
      */
-    printf("CFG full: apply runtime\r\n");
     AppLog("CFG full: apply runtime");
     ConfigService_ApplyRuntime(cfg);
     
-    printf("CFG full: done 200\r\n");
     AppLog("CFG full: send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg->seq);
