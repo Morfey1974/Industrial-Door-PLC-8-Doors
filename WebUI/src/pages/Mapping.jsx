@@ -312,6 +312,18 @@ const Mapping = () => {
     }
   }, [handleSaveToFile, navigate, configBaseName, isDirty]);
 
+  // Выход из маппинга без сохранения. При несохранённых изменениях — предупреждение.
+  const handleCancelExit = useCallback(async () => {
+    if (isDirty) {
+      const confirmed = await showConfirm(
+        'В карте маппинга есть несохранённые изменения. Выйти без сохранения?',
+        'Выход из маппинга'
+      );
+      if (!confirmed) return;
+    }
+    navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
+  }, [isDirty, showConfirm, navigate, configBaseName]);
+
   // Загрузка карты из файла с компьютера
   const triggerLoadFromFile = useCallback(() => {
     fileInputRef.current?.click();
@@ -518,6 +530,7 @@ const Mapping = () => {
       <MappingHeader
         mapDisplayName={mapFileName || projectName || 'Без имени'}
         onSaveAndExit={handleSaveAndExit}
+        onCancelExit={handleCancelExit}
         mode={mode}
         onModeChange={(m) => {
           if (m === 'view') startTransition(() => setMode(m));

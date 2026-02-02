@@ -8,6 +8,7 @@ import './MappingHeader.css';
 const MappingHeader = ({
   mapDisplayName,
   onSaveAndExit,
+  onCancelExit,
   mode,
   onModeChange,
   canEdit,
@@ -114,6 +115,11 @@ const MappingHeader = ({
             <Button onClick={onClear} variant="secondary" size="small">
               Очистить карту
             </Button>
+            {onCancelExit && (
+              <Button onClick={onCancelExit} variant="secondary" size="small" title="Выйти из маппинга без сохранения">
+                Отмена
+              </Button>
+            )}
             {onSaveAndExit && (
               <Button onClick={onSaveAndExit} variant="primary" size="small" title="Сохранить карту в файл и вернуться в редактор конфигурации">
                 Сохранить и выйти в конфигуратор
