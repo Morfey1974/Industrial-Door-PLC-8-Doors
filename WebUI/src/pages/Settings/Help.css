@@ -1,37 +1,37 @@
 /**
- * Стили страницы «Помощь»
- * Оглавление слева, поиск, подробные разделы, плейсхолдеры под скриншоты
+ * Стили страницы «Помощь» — в стиле проекта DCM
+ * Цвета: primary #3A6577, accent #E6332A, фон #EDEDED, карточки #fff
  */
 
 .help-page {
-  max-width: 1100px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 0 20px 40px;
+  padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
 }
 
 /* Шапка и поиск */
 .help-header {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 24px 28px;
-  margin-bottom: 28px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  background: var(--color-white);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  margin-bottom: var(--spacing-xl, 32px);
+  box-shadow: var(--shadow-md);
 }
 
 .help-title {
-  margin: 0 0 10px 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: #1e293b;
-  letter-spacing: -0.02em;
+  margin: 0 0 var(--spacing-sm, 8px) 0;
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+  letter-spacing: 0.02em;
 }
 
 .help-intro {
-  margin: 0 0 20px 0;
-  font-size: 15px;
-  line-height: 1.6;
-  color: #475569;
+  margin: 0 0 var(--spacing-lg, 24px) 0;
+  font-size: var(--font-size-base, 1rem);
+  line-height: var(--line-height-relaxed, 1.75);
+  color: var(--color-text-dark);
 }
 
 .help-search-wrap {
@@ -41,84 +41,77 @@
 
 .help-search-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
+  margin-bottom: var(--spacing-xs, 4px);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
 }
 
 .help-search-input {
   width: 100%;
-  padding: 12px 40px 12px 16px;
-  font-size: 15px;
-  border: 1px solid #94a3b8;
-  border-radius: 10px;
-  background: #fff;
-  color: #1e293b;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  padding: var(--spacing-md, 16px) 44px var(--spacing-md, 16px) var(--spacing-md, 16px);
+  font-size: var(--font-size-base, 1rem);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-white);
+  color: var(--color-text-dark);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .help-search-input::placeholder {
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .help-search-input:focus {
   outline: none;
-  border-color: #0066cc;
-  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glass, rgba(230, 51, 42, 0.15));
 }
 
 .help-search-clear {
   position: absolute;
-  right: 12px;
+  right: var(--spacing-sm, 8px);
   top: 50%;
   transform: translateY(-50%);
   width: 28px;
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 6px;
-  background: #e2e8f0;
-  color: #64748b;
-  font-size: 14px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-secondary);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm, 0.875rem);
   cursor: pointer;
   line-height: 1;
-  transition: background 0.2s, color 0.2s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .help-search-clear:hover {
-  background: #cbd5e1;
-  color: #334155;
+  background: var(--color-border);
+  color: var(--color-text-dark);
 }
 
-/* Двухколоночный макет: оглавление + контент */
-.help-layout {
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
-}
-
-/* Оглавление (липкое) */
+/* Оглавление (TOC) — если используется */
 .help-toc {
   flex: 0 0 260px;
   position: sticky;
-  top: 24px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 18px 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  top: var(--spacing-lg, 24px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-lg, 24px) 0;
+  box-shadow: var(--shadow-sm);
 }
 
 .help-toc-title {
-  margin: 0 20px 12px;
-  padding-bottom: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #475569;
+  margin: 0 var(--spacing-md, 16px) var(--spacing-md, 16px);
+  padding-bottom: var(--spacing-sm, 8px);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid var(--color-accent);
 }
 
 .help-toc-list {
@@ -131,42 +124,41 @@
   margin: 0;
 }
 
-.help-toc-item--empty {
-  padding: 12px 20px;
-  font-size: 14px;
-  color: #94a3b8;
-}
-
 .help-toc-link {
   display: block;
   width: 100%;
-  padding: 10px 20px;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
   text-align: left;
-  font-size: 14px;
+  font-size: var(--font-size-sm, 0.875rem);
   line-height: 1.35;
-  color: #334155;
+  color: var(--color-text-dark);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, padding-left 0.15s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .help-toc-link:hover {
-  background: #f1f5f9;
-  color: #0066cc;
-  padding-left: 24px;
+  background: var(--color-secondary);
+  color: var(--color-accent);
 }
 
 /* Главная страница помощи — список разделов */
 .help-index-content {
-  max-width: 640px;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  box-shadow: var(--shadow-sm);
 }
 
 .help-index-title {
-  margin: 0 0 16px 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #334155;
+  margin: 0 0 var(--spacing-lg, 24px) 0;
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  padding-bottom: var(--spacing-md, 16px);
+  border-bottom: 2px solid var(--color-accent);
 }
 
 .help-index-list {
@@ -176,57 +168,71 @@
 }
 
 .help-index-item {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--spacing-sm, 8px) 0;
 }
 
 .help-index-link {
   display: block;
-  padding: 12px 16px;
-  font-size: 15px;
+  padding: var(--spacing-md, 16px) var(--spacing-lg, 24px);
+  font-size: var(--font-size-base, 1rem);
   line-height: 1.4;
-  color: #0066cc;
+  color: var(--color-accent);
   text-decoration: none;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .help-index-link:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0052a3;
+  background: var(--color-secondary);
+  border-color: var(--color-accent);
+  color: var(--color-accent-dark, #c42a22);
 }
 
 .help-index-empty {
   margin: 0;
-  padding: 20px;
-  font-size: 15px;
-  color: #64748b;
+  padding: var(--spacing-lg, 24px);
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-muted);
 }
 
 /* Страница одного раздела */
 .help-section-page {
-  max-width: 800px;
+  max-width: 720px;
 }
 
 .help-section-back {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md, 16px);
 }
 
 .help-back-link {
-  font-size: 14px;
-  color: #0066cc;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-accent);
   text-decoration: none;
+  font-weight: var(--font-weight-medium, 500);
 }
 
 .help-back-link:hover {
   text-decoration: underline;
 }
 
+.help-section-only {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  box-shadow: var(--shadow-sm);
+}
+
 .help-section-only .help-section-title {
-  margin: 0 0 20px 0;
-  font-size: 22px;
+  margin: 0 0 var(--spacing-lg, 24px) 0;
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+  padding-bottom: var(--spacing-md, 16px);
+  border-bottom: 2px solid var(--color-accent);
 }
 
 .help-section-body {
@@ -234,43 +240,17 @@
 }
 
 .help-not-found {
-  margin: 0 0 16px 0;
-  font-size: 15px;
-  color: #64748b;
+  margin: 0 0 var(--spacing-md, 16px) 0;
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-muted);
 }
 
-/* Контент */
-.help-content {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.help-section {
-  margin-bottom: 40px;
-  padding-bottom: 32px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.help-section:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.help-section-title {
-  margin: 0 0 16px 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.3;
-  scroll-margin-top: 24px;
-}
-
+/* Контент разделов */
 .help-content p {
-  margin: 0 0 14px 0;
-  font-size: 15px;
-  line-height: 1.7;
-  color: #334155;
+  margin: 0 0 var(--spacing-md, 16px) 0;
+  font-size: var(--font-size-base, 1rem);
+  line-height: var(--line-height-relaxed, 1.75);
+  color: var(--color-text-dark);
 }
 
 .help-content p:last-of-type {
@@ -278,28 +258,28 @@
 }
 
 .help-content strong {
-  color: #1e293b;
-  font-weight: 600;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold, 600);
 }
 
 .help-h3 {
-  margin: 20px 0 10px 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: #334155;
+  margin: var(--spacing-lg, 24px) 0 var(--spacing-sm, 8px) 0;
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
   line-height: 1.4;
 }
 
 .help-content ul {
-  margin: 0 0 14px 0;
-  padding-left: 24px;
-  font-size: 15px;
-  line-height: 1.7;
-  color: #334155;
+  margin: 0 0 var(--spacing-md, 16px) 0;
+  padding-left: var(--spacing-lg, 24px);
+  font-size: var(--font-size-base, 1rem);
+  line-height: var(--line-height-relaxed, 1.75);
+  color: var(--color-text-dark);
 }
 
 .help-content ul li {
-  margin-bottom: 6px;
+  margin-bottom: var(--spacing-xs, 4px);
 }
 
 .help-content ul li:last-child {
@@ -308,15 +288,16 @@
 
 .help-content code {
   padding: 2px 6px;
-  font-size: 13px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  color: #1e293b;
+  font-size: var(--font-size-sm, 0.875rem);
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs, 4px);
+  color: var(--color-text-dark);
 }
 
 /* Плейсхолдер под скриншот */
 .help-figure {
-  margin: 20px 0 24px 0;
+  margin: var(--spacing-lg, 24px) 0;
 }
 
 .help-image-placeholder {
@@ -325,114 +306,82 @@
   align-items: center;
   justify-content: center;
   min-height: 200px;
-  padding: 32px;
-  background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 2px dashed #cbd5e1;
-  border-radius: 12px;
-  color: #64748b;
+  padding: var(--spacing-xl, 32px);
+  background: var(--color-secondary);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  color: var(--color-text-muted);
 }
 
 .help-placeholder-icon {
   font-size: 48px;
-  margin-bottom: 12px;
+  margin-bottom: var(--spacing-md, 16px);
   opacity: 0.7;
 }
 
 .help-placeholder-text {
-  font-size: 15px;
-  font-weight: 500;
-  color: #64748b;
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-text-muted);
 }
 
 .help-placeholder-hint {
-  font-size: 13px;
-  margin-top: 6px;
-  color: #94a3b8;
+  font-size: var(--font-size-sm, 0.875rem);
+  margin-top: var(--spacing-xs, 4px);
+  color: var(--color-text-muted);
+  opacity: 0.9;
 }
 
 .help-figcaption {
-  margin-top: 10px;
-  font-size: 13px;
-  color: #64748b;
+  margin-top: var(--spacing-sm, 8px);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
   line-height: 1.5;
   text-align: center;
 }
 
 /* Адаптив */
-@media (max-width: 900px) {
-  .help-layout {
-    flex-direction: column;
-  }
-
-  .help-toc {
-    position: static;
-    flex: none;
-    width: 100%;
-  }
-
-  .help-toc-title {
-    margin-bottom: 10px;
-  }
-
-  .help-toc-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 16px 8px;
-  }
-
-  .help-toc-item {
-    flex: 0 0 auto;
-  }
-
-  .help-toc-link {
-    display: inline-block;
-    width: auto;
-    padding: 8px 14px;
-    border-radius: 8px;
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
-  }
-
-  .help-toc-link:hover {
-    padding-left: 14px;
-    background: #e2e8f0;
-  }
-}
-
 @media (max-width: 600px) {
   .help-page {
-    padding: 0 12px 32px;
+    padding: var(--spacing-md) var(--spacing-sm);
   }
 
   .help-header {
-    padding: 18px 20px;
+    padding: var(--spacing-lg);
   }
 
   .help-title {
-    font-size: 22px;
+    font-size: var(--font-size-xl, 1.25rem);
   }
 
   .help-intro {
-    font-size: 14px;
+    font-size: var(--font-size-sm, 0.875rem);
   }
 
   .help-search-input {
-    padding: 10px 36px 10px 14px;
-    font-size: 14px;
+    padding: var(--spacing-sm, 8px) 40px var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+    font-size: var(--font-size-sm, 0.875rem);
   }
 
-  .help-section-title {
-    font-size: 18px;
+  .help-index-content {
+    padding: var(--spacing-lg);
+  }
+
+  .help-section-only {
+    padding: var(--spacing-lg);
+  }
+
+  .help-section-only .help-section-title {
+    font-size: var(--font-size-lg, 1.125rem);
   }
 
   .help-content p {
-    font-size: 14px;
+    font-size: var(--font-size-sm, 0.875rem);
   }
 
   .help-image-placeholder {
     min-height: 160px;
-    padding: 24px;
+    padding: var(--spacing-lg);
   }
 
   .help-placeholder-icon {

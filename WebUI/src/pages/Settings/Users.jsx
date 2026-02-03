@@ -73,11 +73,13 @@ const Users = () => {
 
   const handleEdit = (userToEdit) => {
     setEditingUser(userToEdit);
+    // Супер-администратор всегда включён; при редактировании его не даём менять «Включен»
+    const isSuperAdmin = userToEdit.role === 'super_admin';
     setFormData({
       username: userToEdit.username,
-      password: '', // Не показываем пароль
+      password: '',
       role: userToEdit.role,
-      enabled: userToEdit.enabled
+      enabled: isSuperAdmin ? true : userToEdit.enabled
     });
     setFormError(null);
     setShowEditModal(true);
@@ -135,13 +137,15 @@ const Users = () => {
         }
       } else {
         // Редактирование
+        const isSuperAdmin = editingUser.role === 'super_admin';
         const updateData = {
           currentUser: user.username,
-          role: formData.role,
-          enabled: formData.enabled ? 1 : 0
+          // Супер-администратор: не меняем роль, всегда включён
+          ...(isSuperAdmin
+            ? { enabled: 1 }
+            : { role: formData.role, enabled: formData.enabled ? 1 : 0 })
         };
-        
-        // Пароль обновляем только если указан
+
         if (formData.password && formData.password.length > 0) {
           if (formData.password.length < 8) {
             setFormError('Пароль должен содержать минимум 8 символов');
@@ -301,7 +305,7 @@ const Users = () => {
             >
               <option value="operator">Оператор</option>
               <option value="admin">Администратор</option>
-              <option value="super_admin">Супер-администратор</option>
+              {/* Супер-администратор создаётся по умолчанию, новых с этой ролью создавать нельзя */}
             </select>
           </div>
 
@@ -362,32 +366,47 @@ const Users = () => {
             Минимум 8 символов. Оставьте пустым, чтобы не менять пароль.
           </small>
 
-          <div className="form-group">
-            <label style={{ color: '#333' }}>Роль *</label>
-            <select
-              className="form-control"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              required
-              disabled={formLoading}
-            >
-              <option value="operator">Оператор</option>
-              <option value="admin">Администратор</option>
-              <option value="super_admin">Супер-администратор</option>
-            </select>
-          </div>
+          {/* Для Супер-администратора показываем только роль текстом; роль и «Включен» не редактируются */}
+          {editingUser?.role === 'super_admin' ? (
+            <div className="form-group">
+              <label style={{ color: '#333' }}>Роль</label>
+              <div style={{ padding: '8px 12px', backgroundColor: '#f5f5f5', borderRadius: '4px', color: '#333' }}>
+                Супер-администратор (всегда включён)
+              </div>
+              <small className="form-help" style={{ display: 'block', marginTop: '6px', color: '#666' }}>
+                У Супер-администратора можно изменить только пароль. Отключить его нельзя.
+              </small>
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label style={{ color: '#333' }}>Роль *</label>
+                <select
+                  className="form-control"
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  required
+                  disabled={formLoading}
+                >
+                  <option value="operator">Оператор</option>
+                  <option value="admin">Администратор</option>
+                  <option value="super_admin">Супер-администратор</option>
+                </select>
+              </div>
 
-          <div className="form-group">
-            <label style={{ color: '#333', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="checkbox"
-                checked={formData.enabled}
-                onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                disabled={formLoading}
-              />
-              <span style={{ color: '#333' }}>Включен</span>
-            </label>
-          </div>
+              <div className="form-group">
+                <label style={{ color: '#333', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.enabled}
+                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                    disabled={formLoading}
+                  />
+                  <span style={{ color: '#333' }}>Включен</span>
+                </label>
+              </div>
+            </>
+          )}
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
             <Button type="button" onClick={() => { setShowEditModal(false); setEditingUser(null); }} disabled={formLoading}>

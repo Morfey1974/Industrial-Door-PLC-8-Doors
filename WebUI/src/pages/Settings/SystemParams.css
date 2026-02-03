@@ -1,169 +1,173 @@
 /**
- * Стили для страницы «Параметры системы»
+ * Стили страницы «Параметры системы» — в стиле проекта DCM
+ * Цвета: primary #3A6577, accent #E6332A, карточки #fff
  */
 
 .settings-system-params {
-  max-width: 700px;
+  max-width: 720px;
   margin: 0 auto;
+  padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
 }
 
 .settings-system-params h1 {
-  margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-text-dark, #333);
+  margin: 0 0 var(--spacing-sm, 8px) 0;
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+  letter-spacing: 0.02em;
 }
 
 .settings-system-params .system-params-page-intro {
-  margin-bottom: 24px;
-  color: var(--color-text-muted, #666);
-  font-size: 14px;
-  line-height: 1.5;
+  margin-bottom: var(--spacing-lg, 24px);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: var(--line-height-relaxed, 1.75);
 }
 
+/* Секции — карточки */
+.system-params-section {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  margin-bottom: var(--spacing-lg, 24px);
+  box-shadow: var(--shadow-sm);
+}
+
+.system-params-section h2 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md, 16px);
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: var(--spacing-sm, 8px);
+}
+
+.system-params-section p {
+  margin: 0;
+  color: var(--color-text-dark);
+  font-size: var(--font-size-base, 1rem);
+  line-height: var(--line-height-relaxed, 1.75);
+}
+
+.system-params-intro {
+  margin-bottom: var(--spacing-md, 16px) !important;
+}
+
+.system-params-note {
+  margin-top: var(--spacing-md, 16px) !important;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Безопасность */
 .system-params-section-security {
-  border-left: 4px solid var(--color-accent, #0066cc);
+  border-left: 4px solid var(--color-accent);
 }
 
 .system-params-security-checklist {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md, 16px);
 }
 
 .system-params-security-checklist h3 {
   margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-dark, #333);
+  margin-bottom: var(--spacing-sm, 8px);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
 }
 
 .system-params-security-checklist ul {
   margin: 0;
-  padding-left: 20px;
-  font-size: 14px;
+  padding-left: var(--spacing-lg, 24px);
+  font-size: var(--font-size-sm, 0.875rem);
   line-height: 1.6;
-  color: var(--color-text-dark, #333);
+  color: var(--color-text-dark);
 }
 
 .system-params-security-checklist li {
-  margin-bottom: 8px;
+  margin-bottom: var(--spacing-xs, 4px);
 }
 
 .system-params-security-warning {
-  padding: 12px 16px;
-  background: #fff8e6;
-  border: 1px solid #ffd966;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 13px;
-  color: #7d5a00;
+  padding: var(--spacing-md, 16px);
+  background: var(--color-warning-light, #fef3c7);
+  border: 2px solid var(--color-warning, #f59e0b);
+  border-radius: var(--radius-md, 10px);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
 }
 
+/* VPN */
 .system-params-section-vpn {
-  border-left: 4px solid #2e7d32;
+  border-left: 4px solid var(--color-success);
 }
 
 .system-params-vpn-options,
 .system-params-vpn-after {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md, 16px);
 }
 
 .system-params-vpn-options h3,
 .system-params-vpn-after h3 {
   margin-top: 0;
-  margin-bottom: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-dark, #333);
+  margin-bottom: var(--spacing-sm, 8px);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
 }
 
 .system-params-vpn-options ul,
 .system-params-vpn-after ol {
   margin: 0;
-  padding-left: 20px;
-  font-size: 14px;
+  padding-left: var(--spacing-lg, 24px);
+  font-size: var(--font-size-sm, 0.875rem);
   line-height: 1.6;
-  color: var(--color-text-dark, #333);
+  color: var(--color-text-dark);
 }
 
 .system-params-vpn-options li,
 .system-params-vpn-after li {
-  margin-bottom: 10px;
+  margin-bottom: var(--spacing-sm, 8px);
 }
 
 .system-params-vpn-options code,
 .system-params-vpn-after code {
-  font-size: 13px;
-  background: #f5f5f5;
+  font-size: var(--font-size-sm, 0.875rem);
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
+  color: var(--color-text-dark);
 }
 
+/* Сообщения */
 .system-params-message {
-  padding: 12px 16px;
-  border-radius: var(--radius-sm, 6px);
-  margin-bottom: 20px;
-  font-size: 14px;
+  padding: var(--spacing-md, 16px);
+  border-radius: var(--radius-md, 10px);
+  margin-bottom: var(--spacing-lg, 24px);
+  font-size: var(--font-size-sm, 0.875rem);
 }
 
 .system-params-error {
-  background: #fdecea;
-  border: 1px solid #f5c6cb;
-  color: var(--color-accent, #c82333);
+  background: var(--color-error-light, #fee2e2);
+  border: 2px solid var(--color-accent);
+  color: var(--color-error);
 }
 
 .system-params-success {
-  background: #e8f5e9;
-  border: 1px solid #c8e6c9;
-  color: #2e7d32;
+  background: var(--color-success-light, #d1fae5);
+  border: 2px solid var(--color-success);
+  color: var(--color-success);
 }
 
-.system-params-section {
-  background: #fff;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: var(--radius-md, 8px);
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.system-params-section h2 {
-  margin-top: 0;
-  margin-bottom: 16px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-dark, #333);
-  border-bottom: 2px solid var(--color-accent, #0066cc);
-  padding-bottom: 10px;
-}
-
-.system-params-section p {
-  margin: 0;
-  color: var(--color-text-muted, #666);
-  font-size: 14px;
-}
-
-.system-params-intro {
-  margin-bottom: 16px !important;
-  line-height: 1.5;
-}
-
-.system-params-note {
-  margin-top: 16px !important;
-  font-size: 13px;
-  color: var(--color-text-muted, #666);
-  font-style: italic;
-}
-
+/* Формы */
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-@media (max-width: 600px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
+  gap: var(--spacing-md, 16px);
 }
 
 .system-params-form .form-group {
@@ -172,34 +176,39 @@
 
 .system-params-form .form-group label {
   display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  color: var(--color-text-dark, #333);
+  margin-bottom: var(--spacing-xs, 4px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm, 0.875rem);
 }
 
 .system-params-form .form-group small {
   display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--color-text-muted, #666);
+  margin-top: var(--spacing-xs, 4px);
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-muted);
 }
 
 .form-input {
   width: 100%;
   max-width: 200px;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: var(--radius-sm, 4px);
-  font-size: 14px;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-dark);
+  background: var(--color-white);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .form-input:focus {
   outline: none;
-  border-color: var(--color-accent, #0066cc);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glass, rgba(230, 51, 42, 0.15));
 }
 
 .form-input:disabled {
-  background: var(--color-secondary, #f5f5f5);
+  background: var(--color-secondary);
   cursor: not-allowed;
 }
 
@@ -208,16 +217,16 @@
 }
 
 .form-input-error {
-  border-color: var(--color-accent, #c82333) !important;
+  border-color: var(--color-accent) !important;
 }
 
 .form-checkbox-label {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--spacing-sm, 8px);
   cursor: pointer;
-  font-weight: 500;
-  color: var(--color-text-dark, #333);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-text-dark);
 }
 
 .form-checkbox {
@@ -226,6 +235,7 @@
   height: 18px;
   flex-shrink: 0;
   cursor: pointer;
+  accent-color: var(--color-accent);
 }
 
 .form-checkbox:disabled {
@@ -233,28 +243,50 @@
 }
 
 .system-params-actions {
-  margin-top: 20px;
+  margin-top: var(--spacing-lg, 24px);
 }
 
+/* Информационная сетка */
 .system-params-info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: var(--spacing-md, 16px);
 }
 
 .system-params-info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-xs, 4px);
+  padding: var(--spacing-md, 16px);
+  background: var(--color-secondary);
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--color-border);
 }
 
 .system-params-info-label {
-  font-size: 13px;
-  color: var(--color-text-muted, #666);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .system-params-info-value {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--color-text-dark, #333);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-text-dark);
+}
+
+@media (max-width: 600px) {
+  .settings-system-params {
+    padding: var(--spacing-md);
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .system-params-section {
+    padding: var(--spacing-lg);
+  }
 }

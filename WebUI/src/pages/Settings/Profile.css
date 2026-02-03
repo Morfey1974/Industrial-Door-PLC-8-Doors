@@ -1,100 +1,156 @@
 /**
- * Стили для страницы профиля
+ * Стили страницы «Профиль» — в стиле проекта DCM
+ * Цвета: primary #3A6577, accent #E6332A, карточки #fff
  */
 
 .settings-profile {
   max-width: 600px;
   margin: 0 auto;
+  padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
+}
+
+.settings-profile h1 {
+  margin: 0 0 var(--spacing-lg, 24px) 0;
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+  letter-spacing: 0.02em;
 }
 
 .profile-section {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  margin-bottom: var(--spacing-lg, 24px);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-section h2 {
   margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-  border-bottom: 2px solid #0066cc;
-  padding-bottom: 10px;
+  margin-bottom: var(--spacing-lg, 24px);
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: var(--spacing-sm, 8px);
 }
 
 .profile-info {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: var(--spacing-md, 16px);
 }
 
 .profile-info-item {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--spacing-xs, 4px);
 }
 
 .profile-info-item label {
-  font-weight: 600;
-  color: #666;
-  font-size: 14px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm, 0.875rem);
 }
 
 .profile-info-item span {
-  font-size: 16px;
-  color: #333;
-  padding: 8px 12px;
-  background: #f5f5f5;
-  border-radius: 4px;
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-dark);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  background: var(--color-secondary);
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--color-border);
+}
+
+.profile-info-item input.form-control {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  padding: var(--spacing-md, 16px);
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-dark);
+  background: var(--color-white);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.profile-info-item input.form-control:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glass, rgba(230, 51, 42, 0.15));
+}
+
+.profile-help {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-normal, 1.5);
 }
 
 .profile-form {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: var(--spacing-md, 16px);
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.settings-profile .form-group {
+  margin-bottom: var(--spacing-md, 16px);
 }
 
-.form-group label {
-  font-weight: 600;
-  color: #333;
-  font-size: 14px;
+.settings-profile .form-group label {
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm, 0.875rem);
 }
 
-.form-control {
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: border-color 0.2s;
+.settings-profile .form-control {
+  padding: var(--spacing-md, 16px);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  font-size: var(--font-size-base, 1rem);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.form-control:focus {
+.settings-profile .form-control:focus {
   outline: none;
-  border-color: #0066cc;
-  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glass, rgba(230, 51, 42, 0.15));
 }
 
-.form-control:disabled {
-  background-color: #f5f5f5;
+.settings-profile .form-control:disabled {
+  background: var(--color-secondary);
   cursor: not-allowed;
 }
 
-.form-help {
-  font-size: 12px;
-  color: #666;
-  margin-top: -5px;
+.settings-profile .form-help {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-xs, 4px);
 }
 
-.error-message,
-.success-message {
-  font-size: 14px;
+.settings-profile .error-message,
+.settings-profile .success-message {
+  font-size: var(--font-size-sm, 0.875rem);
+  padding: var(--spacing-md, 16px);
+  border-radius: var(--radius-md, 10px);
+}
+
+.settings-profile .error-message {
+  background: var(--color-error-light, #fee2e2);
+  border: 2px solid var(--color-accent);
+  color: var(--color-error);
+}
+
+.settings-profile .success-message {
+  background: var(--color-success-light, #d1fae5);
+  border: 2px solid var(--color-success);
+  color: var(--color-success);
+}
+
+@media (max-width: 600px) {
+  .settings-profile {
+    padding: var(--spacing-md);
+  }
+
+  .profile-section {
+    padding: var(--spacing-lg);
+  }
 }

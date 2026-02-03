@@ -10,6 +10,7 @@ import EventsTable from '../../components/ui/EventsTable';
 import EventsFilterBar from '../../components/ui/EventsFilterBar';
 import Pagination from '../../components/ui/Pagination';
 import Button from '../../components/common/Button';
+import './Monitoring.css';
 
 const Events = () => {
   const [offset, setOffset] = useState(0);

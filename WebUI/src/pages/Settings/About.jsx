@@ -1,6 +1,6 @@
 /**
- * О нас — информация о компании DCM (Doors Control Making) и контактные данные
- * Данные с сайта www.dcmaking.co.il
+ * О нас — бренд DCM (Doors Control Making) и контактная информация
+ * Оформление в стиле проекта: центрирование, симметрия, цветовая схема DCM
  */
 
 import './About.css';
@@ -8,10 +8,12 @@ import './About.css';
 const About = () => {
   return (
     <div className="settings-about">
-      <h1>О нас</h1>
+      <div className="about-hero">
+        <h1 className="about-title">Doors Control Making</h1>
+        <p className="about-subtitle">(DCM)</p>
+      </div>
 
       <section className="about-company">
-        <h2>Doors Control Making (DCM)</h2>
         <p>
           <strong>Doors Control Making</strong> — молодая и динамично развивающаяся компания, специализирующаяся на разработке и производстве электронных систем блокировки дверей для чистых помещений в фармацевтической, химической, пищевой и микроэлектронной отраслях.
         </p>
@@ -27,7 +29,7 @@ const About = () => {
       </section>
 
       <section className="about-contact">
-        <h2>Контактная информация</h2>
+        <h2 className="about-contact-title">Контактная информация</h2>
         <div className="about-contact-grid">
           <div className="about-contact-item">
             <span className="about-contact-label">Адрес</span>

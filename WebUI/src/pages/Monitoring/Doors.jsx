@@ -8,6 +8,7 @@ import { useDoorsData } from '../../context/DoorsDataContext';
 import DoorTable from '../../components/ui/DoorTable';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
+import './Monitoring.css';
 
 const Doors = () => {
   const [filters, setFilters] = useState({
@@ -31,22 +32,22 @@ const Doors = () => {
         <p>Полная таблица состояния всех дверей системы</p>
       </div>
 
-      {/* Панель фильтров */}
+      {/* Панель фильтров и строка: статус, ID двери, всего дверей, Обновить */}
       <div className="filters-section">
-        <FilterBar filters={filters} onFilterChange={setFilters} />
-      </div>
-
-      {/* Информация о количестве дверей и миниатюрная кнопка Обновить слева */}
-      {!loading && !error && doors && doors.doors && (
-        <div className="doors-info doors-info-row">
-          <Button variant="secondary" size="small" onClick={() => refetch(false)}>
-            Обновить
-          </Button>
-          <p className="doors-info-text">
-            Всего дверей: <strong>{doors.doors.length}</strong>
-          </p>
+        <div className="filters-row">
+          <FilterBar filters={filters} onFilterChange={setFilters} />
+          {!loading && !error && doors && doors.doors && (
+            <div className="doors-info-inline">
+              <span className="doors-info-text">
+                Всего дверей: <strong>{doors.doors.length}</strong>
+              </span>
+              <Button variant="secondary" size="small" onClick={() => refetch(false)}>
+                Обновить
+              </Button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Скелетон таблицы при первой загрузке — страница сразу имеет структуру */}
       {loading && !doors && (

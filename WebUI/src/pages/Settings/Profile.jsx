@@ -1,30 +1,56 @@
 /**
  * Profile страница - профиль пользователя
- * 
+ *
  * Реализует:
- * - Отображение информации о текущем пользователе
- * - Изменение пароля (для всех ролей)
- * - Отображение роли пользователя
+ * - Отображение информации о текущем пользователе (имя, роль, email)
+ * - Редактирование email (сохраняется в браузере по имени пользователя)
+ * Изменение пароля — в разделе «Настройки → Пользователи».
  */
 
-import { useState, useContext } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import Button from '../../components/common/Button';
-import PasswordInput from '../../components/common/PasswordInput';
-import ForgotPasswordModal from '../../components/common/ForgotPasswordModal';
 import './Profile.css';
 
-const Profile = () => {
-  const { user, changePassword } = useContext(AuthContext);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+const PROFILE_EMAIL_KEY = 'profile_email';
 
-  // Получаем название роли для отображения
+const getStoredEmail = (username) => {
+  if (!username) return '';
+  try {
+    const raw = localStorage.getItem(PROFILE_EMAIL_KEY);
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    return data[username] ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const setStoredEmail = (username, email) => {
+  if (!username) return;
+  try {
+    const raw = localStorage.getItem(PROFILE_EMAIL_KEY) || '{}';
+    const data = JSON.parse(raw);
+    data[username] = email || '';
+    localStorage.setItem(PROFILE_EMAIL_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore */
+  }
+};
+
+const Profile = () => {
+  const { user } = useContext(AuthContext);
+  const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    setEmail(getStoredEmail(user?.username));
+  }, [user?.username]);
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value.trim();
+    setEmail(value);
+    setStoredEmail(user?.username, value);
+  };
+
   const getRoleName = (role) => {
     const roleNames = {
       'super_admin': 'Супер-администратор',
@@ -35,59 +61,10 @@ const Profile = () => {
     return roleNames[role] || role;
   };
 
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
-    // Валидация
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError('Все поля обязательны для заполнения');
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      setError('Новый пароль должен содержать минимум 8 символов');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('Новый пароль и подтверждение не совпадают');
-      return;
-    }
-
-    if (currentPassword === newPassword) {
-      setError('Новый пароль должен отличаться от текущего');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await changePassword(currentPassword, newPassword);
-      if (result.success) {
-        setSuccess('Пароль успешно изменен');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        setError(result.error || 'Ошибка изменения пароля');
-      }
-    } catch (err) {
-      setError(err.message || 'Ошибка подключения к серверу');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="settings-profile">
-      <ForgotPasswordModal 
-        isOpen={showForgotPasswordModal} 
-        onClose={() => setShowForgotPasswordModal(false)} 
-      />
       <h1>Профиль пользователя</h1>
 
-      {/* Информация о пользователе */}
       <section className="profile-section">
         <h2>Информация о пользователе</h2>
         <div className="profile-info">
@@ -99,88 +76,23 @@ const Profile = () => {
             <label>Роль:</label>
             <span>{user?.role ? getRoleName(user.role) : '—'}</span>
           </div>
+          <div className="profile-info-item">
+            <label htmlFor="profile-email">Email:</label>
+            <input
+              id="profile-email"
+              type="email"
+              className="form-control"
+              value={email}
+              onChange={handleEmailChange}
+              placeholder="example@company.com"
+              autoComplete="email"
+              style={{ maxWidth: '320px' }}
+            />
+          </div>
         </div>
-      </section>
-
-      {/* Изменение пароля */}
-      <section className="profile-section">
-        <h2>Изменение пароля</h2>
-        <form className="profile-form" onSubmit={handleChangePassword}>
-          {error && (
-            <div className="error-message" style={{ 
-              padding: '10px', 
-              marginBottom: '15px', 
-              backgroundColor: '#ffebee', 
-              border: '1px solid #f44336',
-              borderRadius: '4px',
-              color: '#c62828'
-            }}>
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="success-message" style={{ 
-              padding: '10px', 
-              marginBottom: '15px', 
-              backgroundColor: '#e8f5e9', 
-              border: '1px solid #4caf50',
-              borderRadius: '4px',
-              color: '#2e7d32'
-            }}>
-              {success}
-            </div>
-          )}
-          
-          <PasswordInput
-            id="currentPassword"
-            label="Текущий пароль"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="Введите текущий пароль"
-            required
-            disabled={loading}
-            showForgotPassword={true}
-            onForgotPassword={() => {
-              setShowForgotPasswordModal(true);
-            }}
-          />
-
-          <PasswordInput
-            id="newPassword"
-            label="Новый пароль"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Минимум 8 символов"
-            required
-            disabled={loading}
-            minLength={8}
-            showForgotPassword={false}
-          />
-          <small className="form-help" style={{ display: 'block', marginTop: '-10px', marginBottom: '15px' }}>
-            Минимальная длина: 8 символов
-          </small>
-
-          <PasswordInput
-            id="confirmPassword"
-            label="Подтверждение пароля"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Повторите новый пароль"
-            required
-            disabled={loading}
-            minLength={8}
-            showForgotPassword={false}
-          />
-
-          <Button 
-            type="submit" 
-            variant="primary" 
-            disabled={loading}
-            style={{ marginTop: '10px' }}
-          >
-            {loading ? 'Изменение...' : 'Изменить пароль'}
-          </Button>
-        </form>
+        <p className="profile-help" style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+          Изменение пароля пользователей — в разделе <strong>Настройки → Пользователи</strong>.
+        </p>
       </section>
     </div>
   );

@@ -1,0 +1,374 @@
+/**
+ * Общие стили страниц мониторинга — в стиле проекта DCM
+ * Двери, События, Алармы, Статистика
+ * Цвета: primary #3A6577, accent #E6332A, карточки #fff
+ */
+
+/* Общие контейнеры */
+.monitoring-doors,
+.monitoring-events,
+.monitoring-alarms,
+.monitoring-statistics {
+  padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Шапка страницы */
+.monitoring-doors .page-header,
+.monitoring-events .page-header,
+.monitoring-alarms .page-header,
+.monitoring-statistics .page-header {
+  margin-bottom: var(--spacing-lg, 24px);
+  padding-bottom: var(--spacing-md, 16px);
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.monitoring-doors .page-header h1,
+.monitoring-events .page-header h1,
+.monitoring-alarms .page-header h1,
+.monitoring-statistics .page-header h1 {
+  margin: 0 0 var(--spacing-xs, 4px) 0;
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+  letter-spacing: 0.02em;
+}
+
+.monitoring-doors .page-header p,
+.monitoring-events .page-header p,
+.monitoring-alarms .page-header p,
+.monitoring-statistics .page-header p {
+  margin: 0;
+  font-size: var(--font-size-base, 1rem);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+/* Секция фильтров */
+.monitoring-doors .filters-section,
+.monitoring-events .filters-section,
+.monitoring-alarms .filters-section {
+  margin-bottom: var(--spacing-md, 16px);
+  padding: var(--spacing-md, 16px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Строка фильтров + инфо + кнопка Обновить (страница Двери) */
+.monitoring-doors .filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md, 16px);
+}
+
+.monitoring-doors .filters-row .filter-bar {
+  flex: 1;
+  min-width: 200px;
+}
+
+.monitoring-doors .doors-info-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+}
+
+.monitoring-doors .doors-info-inline .doors-info-text {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
+}
+
+/* Инфо-строка (количество дверей/событий) */
+.monitoring-doors .doors-info,
+.monitoring-events .events-info,
+.monitoring-alarms .alarms-info {
+  padding: var(--spacing-md, 16px) var(--spacing-lg, 24px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  margin-bottom: var(--spacing-md, 16px);
+  box-shadow: var(--shadow-xs);
+}
+
+.monitoring-doors .doors-info p,
+.monitoring-events .events-info p,
+.monitoring-alarms .alarms-info p {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
+}
+
+/* Алармы: надпись и кнопка Обновить в одну строку */
+.monitoring-alarms .alarms-info-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md, 16px);
+  flex-wrap: wrap;
+}
+
+.monitoring-alarms .alarms-info-row .alarms-info-text {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
+}
+
+.monitoring-alarms .alarms-info-row .alarms-info-total {
+  opacity: 0.85;
+}
+
+/* Таблицы */
+.monitoring-doors .doors-table-section,
+.monitoring-events .events-table-section,
+.monitoring-alarms .alarms-table-section {
+  margin-top: var(--spacing-md, 16px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.monitoring-doors .door-table,
+.monitoring-doors .doors-table,
+.monitoring-events .events-table,
+.monitoring-alarms .alarms-table {
+  margin: 0;
+  background: var(--color-white);
+}
+
+.monitoring-doors .doors-table th,
+.monitoring-events .events-table-content th,
+.monitoring-alarms .alarms-table th {
+  background: var(--color-primary);
+  color: var(--color-text-light);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 600);
+  letter-spacing: 0.02em;
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.monitoring-doors .doors-table td,
+.monitoring-events .events-table-content td,
+.monitoring-alarms .alarms-table td {
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.monitoring-doors .doors-table tbody tr:hover,
+.monitoring-events .events-table-content tbody tr:hover,
+.monitoring-alarms .alarms-table tbody tr:hover {
+  background: var(--color-secondary);
+}
+
+/* Пагинация */
+.monitoring-events .pagination-section {
+  margin-top: var(--spacing-lg, 24px);
+  padding: var(--spacing-lg, 24px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Состояния загрузки и ошибок */
+.monitoring-doors .loading-state,
+.monitoring-events .loading-state,
+.monitoring-alarms .loading-state,
+.monitoring-statistics .loading-state {
+  padding: var(--spacing-xl, 32px);
+  text-align: center;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  margin-top: var(--spacing-md, 16px);
+  color: var(--color-text-dark);
+}
+
+.monitoring-doors .error-state,
+.monitoring-events .error-state,
+.monitoring-alarms .error-state,
+.monitoring-statistics .error-state {
+  padding: var(--spacing-xl, 32px);
+  text-align: center;
+  background: var(--color-error-light, #fee2e2);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-lg, 16px);
+  margin-top: var(--spacing-md, 16px);
+}
+
+.monitoring-doors .error-state h3,
+.monitoring-events .error-state h3,
+.monitoring-alarms .error-state h3,
+.monitoring-statistics .error-state h3 {
+  color: var(--color-accent);
+  margin-bottom: var(--spacing-sm, 8px);
+  font-size: var(--font-size-lg, 1.125rem);
+}
+
+.monitoring-doors .no-data-state,
+.monitoring-events .no-data-state,
+.monitoring-alarms .no-data-state,
+.monitoring-statistics .no-data-state {
+  padding: var(--spacing-xl, 32px);
+  text-align: center;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  margin-top: var(--spacing-md, 16px);
+  color: var(--color-text-muted);
+}
+
+.monitoring-doors .warning-state,
+.monitoring-events .warning-state {
+  padding: var(--spacing-md, 16px);
+  background: var(--color-warning-light, #fef3c7);
+  border: 2px solid var(--color-warning, #f59e0b);
+  border-radius: var(--radius-md, 10px);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-dark);
+}
+
+/* Статистика — карточки */
+.monitoring-statistics .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-lg, 24px);
+  margin-bottom: var(--spacing-xl, 32px);
+}
+
+.monitoring-statistics .stats-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: var(--spacing-xl, 32px);
+  box-shadow: var(--shadow-sm);
+}
+
+.monitoring-statistics .stats-card h2 {
+  margin: 0 0 var(--spacing-md, 16px) 0;
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-primary);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: var(--spacing-sm, 8px);
+}
+
+.monitoring-statistics .stats-card .stats-value {
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-primary);
+}
+
+.monitoring-statistics .stats-card ul {
+  margin: 0;
+  padding-left: var(--spacing-lg, 24px);
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: 1.6;
+  color: var(--color-text-dark);
+}
+
+.monitoring-statistics .stats-card .stats-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monitoring-statistics .stats-card .stats-list li {
+  padding: var(--spacing-xs, 4px) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.monitoring-statistics .stats-card .stats-list li:last-child {
+  border-bottom: none;
+}
+
+.monitoring-statistics .stats-card .stats-label {
+  margin: 0 0 var(--spacing-md, 16px) 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+}
+
+.monitoring-statistics .stats-card .stats-warning {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.monitoring-statistics .stats-card .stats-muted {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+}
+
+.monitoring-statistics .stats-actions {
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.monitoring-statistics .stats-card-full {
+  grid-column: 1 / -1;
+}
+
+.monitoring-statistics .stats-events-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.monitoring-statistics .stats-events-list li {
+  display: grid;
+  grid-template-columns: 160px 1fr 80px 100px;
+  gap: var(--spacing-md, 16px);
+  padding: var(--spacing-sm, 8px) 0;
+  border-bottom: 1px solid var(--color-border);
+  align-items: center;
+}
+
+.monitoring-statistics .stats-events-list li:last-child {
+  border-bottom: none;
+}
+
+.monitoring-statistics .stats-event-time {
+  color: var(--color-text-muted);
+}
+
+.monitoring-statistics .stats-event-type {
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-primary);
+}
+
+.monitoring-statistics .stats-event-door {
+  color: var(--color-text-dark);
+}
+
+.monitoring-statistics .stats-event-source {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 768px) {
+  .monitoring-statistics .stats-events-list li {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xs, 4px);
+  }
+
+  .monitoring-statistics .stats-event-time {
+    grid-column: 1 / -1;
+  }
+
+  .monitoring-doors .doors-table th,
+  .monitoring-doors .doors-table td,
+  .monitoring-events .events-table-content th,
+  .monitoring-events .events-table-content td,
+  .monitoring-alarms .alarms-table th,
+  .monitoring-alarms .alarms-table td {
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+    font-size: var(--font-size-xs, 0.75rem);
+  }
+}
