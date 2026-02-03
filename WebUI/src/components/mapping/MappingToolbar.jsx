@@ -81,6 +81,7 @@ const MappingToolbar = ({
     { id: 'select', label: 'Выбор', icon: '↖' },
     { id: 'wall', label: 'Стена', icon: '━' },
     { id: 'door', label: 'Дверь', icon: '🚪' },
+    { id: 'cardreader', label: 'CARD READER', icon: '🔑' },
     { id: 'comment', label: 'Комментарий', icon: '💬' },
     { id: 'view', label: 'Вид', icon: '⊞' },
   ];
@@ -329,7 +330,7 @@ const MappingToolbar = ({
       )}
 
       {/* Свойства выбранного объекта ИЛИ «Выбрано N объектов» ИЛИ параметры инструмента */}
-      {(selectedObject || sel.length > 1 || (selectedTool === 'wall' && (wallShape === 'rectangle' || wallShape === 'segment')) || selectedTool === 'comment') && (
+      {(selectedObject || sel.length > 1 || (selectedTool === 'wall' && (wallShape === 'rectangle' || wallShape === 'segment')) || selectedTool === 'comment' || selectedTool === 'cardreader') && (
         <div ref={propertiesSectionRef} className="toolbar-section toolbar-section-properties">
           <h3 className="toolbar-section-title">
             {sel.length > 1
@@ -338,6 +339,8 @@ const MappingToolbar = ({
                 ? 'Свойства'
                 : selectedTool === 'comment'
                   ? 'Комментарий'
+                : selectedTool === 'cardreader'
+                  ? 'CARD READER'
                   : wallShape === 'rectangle'
                     ? 'Параметры прямоугольника'
                     : 'Параметры отрезка'}
@@ -359,9 +362,10 @@ const MappingToolbar = ({
               <span className="property-value">
                 {selectedObject.type === 'wall' && 'Стена'}
                 {selectedObject.type === 'door' && 'Дверь'}
+                {selectedObject.type === 'cardreader' && 'CARD READER'}
                 {selectedObject.type === 'label' && 'Номер'}
                 {selectedObject.type === 'comment' && 'Комментарий'}
-                {!['wall','door','label','comment'].includes(selectedObject.type) && selectedObject.type}
+                {!['wall','door','cardreader','label','comment'].includes(selectedObject.type) && selectedObject.type}
               </span>
             </div>
             {(selectedObject.type === 'wall') && (
@@ -555,6 +559,32 @@ const MappingToolbar = ({
                     />
                     <span className="toolbar-checkbox-text">Видимость ID</span>
                   </label>
+                </div>
+              </>
+            )}
+            {(selectedObject.type === 'cardreader') && (
+              <>
+                <div className="property-item">
+                  <span className="property-label">Имя на карте:</span>
+                  <input
+                    type="text"
+                    value={selectedObject.text ?? 'CARD READER'}
+                    onChange={(e) => onObjectChange({ ...selectedObject, text: e.target.value.slice(0, 64) })}
+                    onKeyDown={(e) => { e.stopPropagation(); }}
+                    maxLength={64}
+                    placeholder="CARD READER"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '4px 4px' }}
+                  />
+                </div>
+                <div className="property-item">
+                  <span className="property-label">Размер шрифта:</span>
+                  <input
+                    type="number"
+                    min="8"
+                    max="24"
+                    value={selectedObject.fontSize ?? 12}
+                    onChange={(e) => onObjectChange({ ...selectedObject, fontSize: Math.max(8, Math.min(24, Number(e.target.value) || 12)) })}
+                  />
                 </div>
               </>
             )}

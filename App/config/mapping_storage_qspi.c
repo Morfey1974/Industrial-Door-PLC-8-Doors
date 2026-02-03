@@ -61,7 +61,10 @@ int MappingStorage_SaveToQspi(void)
 {
     if (s_mapping_len == 0U)
         return 0;
+    /* Область 8 KiB — стираем оба сектора по 4 KiB */
     if (qspi_erase_4k((uint32_t)QSPI_MAPPING_BASE) != 0)
+        return -1;
+    if (qspi_erase_4k((uint32_t)QSPI_MAPPING_BASE + 4096U) != 0)
         return -1;
     uint8_t hdr[8];
     hdr[0] = (uint8_t)(MAPPING_MAGIC);

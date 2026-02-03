@@ -849,8 +849,8 @@ const DoorsConfig = () => {
         nodeId: d.nodeId,
         localDoor: d.localDoor,
         globalDoorId: d.globalDoorId ?? ((d.nodeId - 1) * 8 + d.localDoor),
-        type: d.type === 'NO' ? 'NO' : d.type === 'CARD_READER' ? 'CARD_READER' : 'NC',
-        typeCode: d.typeCode ?? (d.type === 'NO' ? 1 : d.type === 'CARD_READER' ? 2 : 0),
+        type: d.type === 'NO' ? 'NO' : 'NC',
+        typeCode: d.typeCode ?? (d.type === 'NO' ? 1 : 0),
         comment: d.comment ?? '',
       }));
 

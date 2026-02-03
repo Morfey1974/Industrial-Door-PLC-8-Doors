@@ -58,10 +58,10 @@ typedef struct
 #define QSPI_USERS_DB_BASE         0xF60000UL
 #define QSPI_USERS_DB_SIZE         (128U * 1024U)
 
-/* Область карты маппинга (редактор схем): 4 KiB, один сектор.
+/* Область карты маппинга (редактор схем): 8 KiB, два сектора по 4 KiB.
  * Отдельная «полка» от конфигурации (CONFIG SLOT A/B) и от USERS/EVENT_LOG. */
-#define QSPI_MAPPING_BASE          0xF5F000UL
-#define QSPI_MAPPING_SIZE          (4U * 1024U)
+#define QSPI_MAPPING_BASE          0xF5E000UL
+#define QSPI_MAPPING_SIZE          (8U * 1024U)
 
 /* Область журнала событий (добавим в Этапе 7B): */
 #define QSPI_EVENT_LOG_BASE        0xF80000UL

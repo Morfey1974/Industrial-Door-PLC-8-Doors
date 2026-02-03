@@ -60,7 +60,7 @@ void Config_Default(project_config_t *cfg)
         cfg_door_t *d = &cfg->doors[i];
         d->nodeId = 1U;
         d->localDoor = (uint8_t)(i + 1U);
-        d->type = (uint8_t)DOOR_TYPE_NO;
+        d->type = (uint8_t)DOOR_TYPE_NC;
         d->techId = (uint16_t)(i + 1U);
         d->drawingId = (uint16_t)(i + 1U);
         memset(d->comment, 0, sizeof(d->comment));

@@ -46,7 +46,6 @@ typedef enum
 {
     DOOR_TYPE_NC = 0,
     DOOR_TYPE_NO = 1,
-    DOOR_TYPE_CARD_READER = 2,
 } door_type_t;
 
 /* Описание двери в конфиге */

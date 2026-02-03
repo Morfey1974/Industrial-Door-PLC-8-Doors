@@ -368,7 +368,8 @@ const Mapping = () => {
       setInfoModal({ isOpen: true, title: 'Готово', message: 'Карта выгружена в контроллер.' });
     } catch (err) {
       console.error('Ошибка выгрузки карты в контроллер:', err);
-      alert('Не удалось выгрузить карту в контроллер: ' + (err.message || 'ошибка сети'));
+      const msg = err.response?.data?.error || err.message || 'ошибка сети';
+      alert('Не удалось выгрузить карту в контроллер: ' + msg);
     }
   }, [mappingData, showConfirm]);
 

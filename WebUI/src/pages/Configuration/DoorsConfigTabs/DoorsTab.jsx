@@ -94,7 +94,7 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
     if (!doorData.typeCode) {
       if (doorData.type === 'NC') doorData.typeCode = 0;
       else if (doorData.type === 'NO') doorData.typeCode = 1;
-      else if (doorData.type === 'CARD_READER') doorData.typeCode = 2;
+      else doorData.typeCode = 0;
     }
     
     const updatedDoors = [...doors];

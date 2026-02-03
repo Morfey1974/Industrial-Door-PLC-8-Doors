@@ -89,8 +89,8 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
       }
     }
     
-    if (!formData.type || !['NC', 'NO', 'CARD_READER'].includes(formData.type)) {
-      newErrors.type = 'Тип двери должен быть NC, NO или CARD_READER';
+    if (!formData.type || !['NC', 'NO'].includes(formData.type)) {
+      newErrors.type = 'Тип двери должен быть NC или NO';
     }
     
     if (formData.comment && formData.comment.length > 100) {
@@ -127,7 +127,7 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
       nodeId: parseInt(formData.nodeId, 10),
       localDoor: parseInt(formData.localDoor, 10),
       globalDoorId,
-      typeCode: formData.type === 'NC' ? 0 : formData.type === 'NO' ? 1 : 2,
+      typeCode: formData.type === 'NO' ? 1 : 0,
       comment: (formData.comment || '').slice(0, 32), // Контроллер хранит макс. 32 символа
     };
     
@@ -221,7 +221,6 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
               >
                 <option value="NC">NC (Normally Closed)</option>
                 <option value="NO">NO (Normally Open)</option>
-                <option value="CARD_READER">CARD_READER</option>
               </select>
               {errors.type && <span className="error-message">{errors.type}</span>}
             </div>

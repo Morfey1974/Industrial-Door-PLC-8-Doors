@@ -13,7 +13,8 @@
 extern "C" {
 #endif
 
-#define MAPPING_STORAGE_MAX_LEN  2048U
+/* Область карты 8 KiB минус заголовок 8 байт */
+#define MAPPING_STORAGE_MAX_LEN  (8U * 1024U - 8U)
 
 /* Загрузить карту из QSPI в RAM. Вызывать при первом GET или при старте. */
 void MappingStorage_LoadFromQspi(void);

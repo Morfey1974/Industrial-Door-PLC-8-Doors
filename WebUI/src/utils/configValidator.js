@@ -85,8 +85,8 @@ export const validateConfig = (config) => {
       }
       
       // Проверка type
-      if (!door.type || !['NC', 'NO', 'CARD_READER'].includes(door.type)) {
-        errors.push(`${doorPrefix}Тип двери должен быть NC, NO или CARD_READER`);
+      if (!door.type || !['NC', 'NO'].includes(door.type)) {
+        errors.push(`${doorPrefix}Тип двери должен быть NC или NO`);
       }
       
       // Проверка comment (опционально, но если есть - проверим длину)
@@ -186,8 +186,8 @@ export const validateDoor = (door, existingDoors = []) => {
     }
   }
   
-  if (!door.type || !['NC', 'NO', 'CARD_READER'].includes(door.type)) {
-    errors.push('Тип двери должен быть NC, NO или CARD_READER');
+  if (!door.type || !['NC', 'NO'].includes(door.type)) {
+    errors.push('Тип двери должен быть NC или NO');
   }
   
   if (door.comment && door.comment.length > 32) {

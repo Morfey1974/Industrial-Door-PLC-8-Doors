@@ -572,12 +572,11 @@ const MappingCanvas = forwardRef(({
         const doorTolerance = 0;
         if (localX >= hitMinX - doorTolerance && localX <= hitMaxX + doorTolerance && localY >= hitMinY - doorTolerance && localY <= hitMaxY + doorTolerance) return o;
       }
-      if (o.type === 'label' || o.type === 'comment') {
+      if (o.type === 'label' || o.type === 'comment' || o.type === 'cardreader') {
         const fs = o.fontSize || 12;
         const lines = (o.text || '').split('\n');
-        const lineCount = Math.max(1, lines.length);
-        // Для комментария — кликабельная область на весь текст (перетаскивание ПКМ в любом месте)
-        const w = o.type === 'comment' ? 280 : 60;
+        const lineCount = Math.max(1, o.type === 'comment' ? lines.length : 1);
+        const w = o.type === 'comment' ? 280 : o.type === 'cardreader' ? 120 : 60;
         const h = o.type === 'comment' ? lineCount * (fs + 2) + 8 : fs + 4;
         const anchor = o.type === 'comment' ? (o.textAnchor || 'start') : 'start';
         const left = anchor === 'middle' ? (o.x ?? 0) - w / 2 : anchor === 'end' ? (o.x ?? 0) - w : (o.x ?? 0);
@@ -610,11 +609,11 @@ const MappingCanvas = forwardRef(({
       if (type === 'single' || type === 'electric') minY = leafY - leafW;
       return { minX: leafX, minY, maxX: leafX + leafW, maxY: leafY + leafH };
     }
-    if (o.type === 'label' || o.type === 'comment') {
+    if (o.type === 'label' || o.type === 'comment' || o.type === 'cardreader') {
       const fs = o.fontSize || 12;
       const lines = (o.text || '').split('\n');
-      const lineCount = Math.max(1, lines.length);
-      const w = o.type === 'comment' ? 280 : 60;
+      const lineCount = Math.max(1, o.type === 'comment' ? lines.length : 1);
+      const w = o.type === 'comment' ? 280 : o.type === 'cardreader' ? 120 : 60;
       const h = o.type === 'comment' ? lineCount * (fs + 2) + 8 : fs + 4;
       const anchor = o.type === 'comment' ? (o.textAnchor || 'start') : 'start';
       const left = anchor === 'middle' ? (o.x ?? 0) - w / 2 : anchor === 'end' ? (o.x ?? 0) - w : (o.x ?? 0);
@@ -651,7 +650,7 @@ const MappingCanvas = forwardRef(({
     // Правый клик по объекту (комментарий, дверь, стена, метка) — только перетаскивание; у комментария левый клик — редактирование
     if (e.button === 2 && selectedTool === 'select' && mode === 'edit') {
       const hitRight = hitTest(svgPoint.x, svgPoint.y);
-      if (hitRight && (hitRight.type === 'comment' || hitRight.type === 'door' || hitRight.type === 'wall' || hitRight.type === 'label')) {
+      if (hitRight && (hitRight.type === 'comment' || hitRight.type === 'door' || hitRight.type === 'wall' || hitRight.type === 'label' || hitRight.type === 'cardreader')) {
         e.preventDefault();
         e.stopPropagation();
         setIsMovingByRightButton(true);
@@ -682,7 +681,7 @@ const MappingCanvas = forwardRef(({
 
     const pt = findSnapPoint(svgPoint.x, svgPoint.y) || svgPoint;
 
-    // Вставка комментария — обрабатываем до блока «Выбор»; сразу открываем свойства (один обработчик в родителе добавляет и выбирает)
+    // Вставка комментария — обрабатываем до блока «Выбор»; сразу открываем свойства
     if (selectedTool === 'comment' && mode === 'edit') {
       e.preventDefault();
       e.stopPropagation();
@@ -694,6 +693,16 @@ const MappingCanvas = forwardRef(({
         onObjectSelect(newComment);
       }
       setEditingCommentId(newComment.id);
+      return;
+    }
+
+    // Вставка CARD READER — значок с редактируемым именем на карте
+    if (selectedTool === 'cardreader' && mode === 'edit') {
+      e.preventDefault();
+      e.stopPropagation();
+      const newCardReader = { id: `cardreader_${Date.now()}`, type: 'cardreader', x: pt.x, y: pt.y, text: 'CARD READER', fontSize: 12 };
+      onObjectsChange([...objects, newCardReader]);
+      onObjectSelect(newCardReader);
       return;
     }
 
@@ -774,7 +783,7 @@ const MappingCanvas = forwardRef(({
           setEditingCommentId(hit.id);
           return;
         }
-        if (hit.type === 'door' || hit.type === 'wall') return;
+        if (hit.type === 'door' || hit.type === 'wall' || hit.type === 'cardreader') return;
         setMoveStart({
           clientX: e.clientX,
           clientY: e.clientY,
@@ -1303,7 +1312,7 @@ const MappingCanvas = forwardRef(({
   };
 
   // Рендеринг объектов: стены всегда на заднем плане, двери — на переднем (порядок не зависит от редактирования)
-  const LAYER_ORDER = { wall: 0, label: 1, comment: 2, door: 3 };
+  const LAYER_ORDER = { wall: 0, label: 1, cardreader: 2, comment: 3, door: 4 };
   const renderObjects = () => {
     const valid = (objects || []).filter(o => o && o.type);
     const sorted = [...valid].sort((a, b) => {
@@ -1416,6 +1425,22 @@ const MappingCanvas = forwardRef(({
           >
             {obj.text || '№'}
           </text>
+        );
+      }
+      if (obj.type === 'cardreader') {
+        const fs = obj.fontSize || 12;
+        const name = obj.text || 'CARD READER';
+        return (
+          <g
+            key={obj.id}
+            className={sel.some(s => s.id === obj.id) ? 'selected' : ''}
+            onClick={(ev) => { ev.stopPropagation(); onObjectSelect(obj); }}
+            style={{ cursor: 'pointer' }}
+          >
+            <text x={obj.x} y={obj.y + fs} fontSize={fs} fill="#555" textAnchor="start">
+              🔑 {name}
+            </text>
+          </g>
         );
       }
       if (obj.type === 'comment') {
@@ -1568,8 +1593,8 @@ const MappingCanvas = forwardRef(({
           minY = Math.min(minY, obj.y, obj.y + oh);
           maxX = Math.max(maxX, obj.x, obj.x + ow);
           maxY = Math.max(maxY, obj.y, obj.y + oh);
-        } else if (obj.type === 'label' || obj.type === 'comment') {
-          const tw = 80;
+        } else if (obj.type === 'label' || obj.type === 'comment' || obj.type === 'cardreader') {
+          const tw = obj.type === 'cardreader' ? 120 : 80;
           const th = (obj.fontSize || 14) + 8;
           minX = Math.min(minX, obj.x);
           minY = Math.min(minY, obj.y);

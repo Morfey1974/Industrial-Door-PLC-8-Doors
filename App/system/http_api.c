@@ -381,9 +381,7 @@ static uint8_t build_config_full(jsonw_t *w)
         }
         
         /* Определяем тип двери как строку */
-        const char *type_str = "NC";
-        if (door->type == DOOR_TYPE_NO) type_str = "NO";
-        else if (door->type == DOOR_TYPE_CARD_READER) type_str = "CARD_READER";
+        const char *type_str = (door->type == DOOR_TYPE_NO) ? "NO" : "NC";
         
         /* Вычисляем globalDoorId */
         uint8_t globalDoorId = Config_MakeGlobalDoorId(door->nodeId, door->localDoor);
@@ -763,10 +761,13 @@ static int put_mapping(const char *body, size_t body_len, char *out_body, size_t
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
         return 400;
     }
-    size_t to_copy = body_len;
-    if (to_copy > MAPPING_STORAGE_MAX_LEN)
-        to_copy = MAPPING_STORAGE_MAX_LEN;
-    MappingStorage_SetData(body, to_copy);
+    /* Не обрезаем карту: при превышении лимита возвращаем ошибку, иначе после загрузки карта будет пустой (обрезанный JSON невалиден) */
+    if (body_len > MAPPING_STORAGE_MAX_LEN) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"map too large (max %u bytes)\",\"max\":%u}",
+            (unsigned)MAPPING_STORAGE_MAX_LEN, (unsigned)MAPPING_STORAGE_MAX_LEN);
+        return 413;
+    }
+    MappingStorage_SetData(body, body_len);
     {
         osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
         (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
@@ -1103,9 +1104,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             else {
                 char ts[16];
                 if (Json_GetString(elem_buf, "type", ts, sizeof(ts))) {
-                    if (strncmp(ts, "NO", 2) == 0) d->type = (uint8_t)DOOR_TYPE_NO;
-                    else if (strncmp(ts, "CARD_READER", 11) == 0) d->type = (uint8_t)DOOR_TYPE_CARD_READER;
-                    else d->type = (uint8_t)DOOR_TYPE_NC;
+                    d->type = (strncmp(ts, "NO", 2) == 0) ? (uint8_t)DOOR_TYPE_NO : (uint8_t)DOOR_TYPE_NC;
                 }
             }
             memset(d->comment, 0, sizeof(d->comment));
