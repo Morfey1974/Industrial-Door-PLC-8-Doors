@@ -6,6 +6,7 @@
 #include "config/users_format.h"
 #include "config/users_storage_qspi.h"
 #include "config/password_hash.h"
+#include "config/secure_random.h"
 #include "system/app_log.h"
 #include "stm32h7xx_hal.h"
 
@@ -246,7 +247,8 @@ void UsersService_UpdateLastLogin(const char *username)
 
 /* Структура для хранения токенов восстановления пароля */
 #define RESET_TOKEN_MAX_COUNT 10U
-#define RESET_TOKEN_LEN 32U
+#define RESET_TOKEN_BYTES 32U   /* 32 байта из RNG → 64 hex-символа */
+#define RESET_TOKEN_LEN 64U     /* длина строки токена в hex */
 #define RESET_TOKEN_EXPIRY_MS (15U * 60U * 1000U) /* 15 минут */
 
 typedef struct {
@@ -262,7 +264,7 @@ static uint32_t g_reset_token_count = 0U;
 /* Генерация токена восстановления пароля */
 uint8_t UsersService_GenerateResetToken(const char *username, char *out_token, size_t token_size)
 {
-    if (!username || !out_token || token_size < RESET_TOKEN_LEN + 1 || !g_users_db_loaded)
+    if (!username || !out_token || token_size < (RESET_TOKEN_LEN + 1) || !g_users_db_loaded)
         return 0U;
     
     /* Проверяем, существует ли пользователь */
@@ -300,23 +302,20 @@ uint8_t UsersService_GenerateResetToken(const char *username, char *out_token, s
     
     if (slot >= RESET_TOKEN_MAX_COUNT)
         return 0U; /* Нет свободных слотов */
-    
-    /* Генерируем токен на основе username + текущего времени + случайных данных */
-    uint32_t tick = HAL_GetTick();
-    char temp[64];
-    (void)snprintf(temp, sizeof(temp), "%s_%lu_%lu", username, (unsigned long)tick, (unsigned long)(tick ^ 0x12345678));
-    
-    /* Простой хеш для токена */
-    uint32_t hash = 0;
-    for (size_t i = 0; temp[i] && i < sizeof(temp) - 1; i++)
+
+    /* Криптостойкий токен: 32 байта из RNG, храним в виде hex-строки (64 символа) */
+    uint8_t raw[RESET_TOKEN_BYTES];
+    SecureRandom_Fill(raw, RESET_TOKEN_BYTES);
     {
-        hash = (hash << 5) - hash + (uint32_t)temp[i];
+        static const char hex[] = "0123456789abcdef";
+        size_t i;
+        for (i = 0; i < RESET_TOKEN_BYTES; i++) {
+            g_reset_tokens[slot].token[i * 2]     = hex[(raw[i] >> 4) & 0x0FU];
+            g_reset_tokens[slot].token[i * 2 + 1] = hex[raw[i] & 0x0FU];
+        }
+        g_reset_tokens[slot].token[RESET_TOKEN_LEN] = '\0';
     }
-    
-    /* Формируем токен в hex формате */
-    (void)snprintf(g_reset_tokens[slot].token, sizeof(g_reset_tokens[slot].token), 
-                   "%08lx%08lx", (unsigned long)hash, (unsigned long)(tick ^ hash));
-    
+
     (void)strncpy(g_reset_tokens[slot].username, username, sizeof(g_reset_tokens[slot].username) - 1);
     g_reset_tokens[slot].username[sizeof(g_reset_tokens[slot].username) - 1] = 0;
     g_reset_tokens[slot].expiresAt = now + RESET_TOKEN_EXPIRY_MS;
