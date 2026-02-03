@@ -41,7 +41,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
 
     setLoading(true);
     try {
-      const data = await requestPasswordReset(username.trim(), user.username);
+      const data = await requestPasswordReset(username.trim());
 
       if (data.ok) {
         setSuccess('Токен восстановления успешно сгенерирован');

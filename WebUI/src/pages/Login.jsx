@@ -3,7 +3,7 @@
  */
 
 import { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
@@ -31,6 +31,8 @@ const Login = () => {
   const [showControllerModal, setShowControllerModal] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const reasonConfigApplied = searchParams.get('reason') === 'config_applied';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -87,6 +89,18 @@ const Login = () => {
           </div>
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
+          {reasonConfigApplied && (
+            <div className="login-info-message" style={{
+              padding: '10px',
+              marginBottom: '15px',
+              backgroundColor: '#e3f2fd',
+              border: '1px solid #2196f3',
+              borderRadius: '4px',
+              color: '#1565c0',
+            }}>
+              Конфигурация успешно применена. Контроллер перезагрузился — войдите снова.
+            </div>
+          )}
           {error && (
             <div className="error" style={{ 
               padding: '10px', 

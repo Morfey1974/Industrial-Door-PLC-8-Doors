@@ -480,22 +480,12 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     }
 
     if (strcmp(method, "GET") == 0) {
-        /* API GET */
-        /* Буфер для ответов. Увеличен до 8KB для поддержки больших ответов /api/journal/dump.
-         * Одна запись в JSON занимает ~120-150 байт, поэтому 8KB достаточно для ~50 записей.
-         * Для большего количества записей нужно использовать пагинацию.
-         */
         char body[8192];
-        memset(body, 0, sizeof(body)); /* ВАЖНО: инициализируем нулями для корректного strlen() */
-        
-        /* Защита от зависания: устанавливаем общий таймаут на обработку запроса.
-         * Если обработка занимает больше 500мс, закрываем соединение.
-         */
+        memset(body, 0, sizeof(body));
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         AppLog("HTTP: building response for %s", path);
 #endif
-        const int api_code = HttpApi_HandleGet(path, body, sizeof(body));
-        
+        const int api_code = HttpApi_HandleGet(path, rx, r, body, sizeof(body));
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         const int body_len_check = (int)strlen(body);
         AppLog("HTTP: response code=%d body_len=%d", api_code, body_len_check);
@@ -503,9 +493,10 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             AppLog("HTTP: body preview: %.80s", body);
         }
 #endif
-        
         if (api_code == 200) {
             http_send_simple(cfd, 200, "application/json", body);
+        } else if (api_code == 401) {
+            http_send_simple(cfd, 401, "application/json", body);
         } else if (api_code == 404) {
             if (strcmp(path, "/") == 0) {
                 http_send_simple(cfd, 200, "text/plain", "Industrial Door PLC HTTP OK\n");
@@ -513,14 +504,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
                 http_send_simple(cfd, 404, "text/plain", "Not Found\n");
             }
         } else {
-            /* При ошибке 500 проверяем, есть ли в body JSON с описанием ошибки */
             if (body[0] == '{' && strstr(body, "errorMsg") != NULL) {
-                /* Если body содержит JSON с ошибкой (например, от build_journal_dump),
-                 * отправляем его как JSON, а не как plain text
-                 */
                 http_send_simple(cfd, 500, "application/json", body);
             } else {
-                /* Иначе отправляем стандартное сообщение об ошибке */
                 http_send_simple(cfd, 500, "text/plain", "Internal Error\n");
             }
         }
@@ -667,20 +653,18 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         
         AppLog("HTTP: body received OK (%d bytes)", copied);
 
-        /* Буфер ответа увеличен до 1024 байт для поддержки больших ответов
-         * при загрузке конфигураций с большим количеством дверей и зависимостей.
-         * Ответы могут содержать детальные сообщения об ошибках валидации.
-         */
+        const int hdr_len = (int)(hdr_end - hdr_start);
         char resp[1024];
-        const int api_code = HttpApi_HandlePut(path, req_body, (size_t)content_len, resp, sizeof(resp));
+        const int api_code = HttpApi_HandlePut(path, req_body, (size_t)content_len, hdr_start, hdr_len, resp, sizeof(resp));
         if (api_code == 200) {
             http_send_simple(cfd, 200, "application/json", resp);
+        } else if (api_code == 401) {
+            http_send_simple(cfd, 401, "application/json", resp);
         } else if (api_code == 400) {
             http_send_simple(cfd, 400, "application/json", resp);
         } else if (api_code == 404) {
             http_send_simple(cfd, 404, "text/plain", "Not Found\n");
         } else {
-            /* default */
             http_send_simple(cfd, 500, "application/json", resp);
         }
 
@@ -811,8 +795,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         
         req_body[content_len] = 0; /* null-terminate */
         
+        const int hdr_len_post = (int)(hdr_end - hdr_start);
         char resp[512];
-        const int api_code = HttpApi_HandlePost(path, req_body, (size_t)content_len, resp, sizeof(resp));
+        const int api_code = HttpApi_HandlePost(path, req_body, (size_t)content_len, hdr_start, hdr_len_post, resp, sizeof(resp));
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         AppLog("HTTP: POST response code=%d path=%s", api_code, path);
 #endif

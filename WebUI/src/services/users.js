@@ -4,9 +4,8 @@
 
 import apiClient from './api';
 
-export const getUsers = async (currentUser) => {
-  const url = currentUser ? `/users?currentUser=${encodeURIComponent(currentUser)}` : '/users';
-  const response = await apiClient.get(url);
+export const getUsers = async () => {
+  const response = await apiClient.get('/users');
   return response.data;
 };
 
@@ -20,9 +19,7 @@ export const updateUser = async (username, userData) => {
   return response.data;
 };
 
-export const deleteUser = async (username, currentUser) => {
-  const response = await apiClient.post(`/users/${username}/delete`, {
-    currentUser
-  });
+export const deleteUser = async (username) => {
+  const response = await apiClient.post(`/users/${username}/delete`, {});
   return response.data;
 };

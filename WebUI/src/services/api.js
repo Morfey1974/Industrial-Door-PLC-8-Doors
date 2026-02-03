@@ -14,9 +14,13 @@ const apiClient = axios.create({
   },
 });
 
-// Перед каждым запросом подставляем актуальный URL контроллера (для удалённого подключения)
+// Перед каждым запросом: актуальный URL и заголовок Authorization (Bearer-токен из сессии)
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getEffectiveApiUrl();
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
 
@@ -37,25 +41,35 @@ apiClient.interceptors.response.use(
     }
     
     // Обработка ответа сервера с кодом ошибки
-    // ВАЖНО: если есть error.response, это НЕ сетевая ошибка, а ответ сервера с кодом ошибки
     if (error.response) {
       const status = error.response.status;
       const url = error.config?.url || 'unknown';
       const data = error.response.data;
       
-      // Логируем детали ответа
+      if (status === 401) {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        if (typeof window !== 'undefined' && !url.includes('/auth/login')) {
+          // После применения конфигурации контроллер перезагружается — сессии теряются.
+          // Редирект с параметром, чтобы на странице входа показать пояснение.
+          const appliedAt = sessionStorage.getItem('config_just_applied');
+          if (appliedAt && (Date.now() - parseInt(appliedAt, 10)) < 60000) {
+            sessionStorage.removeItem('config_just_applied');
+            window.location.href = '/login?reason=config_applied';
+          } else {
+            window.location.href = '/login';
+          }
+        }
+      }
+      
       console.error(`API Server Response [${status}]:`, url);
       console.error('Response data:', data);
-      console.error('Response headers:', error.response.headers);
-      
       if (status >= 500) {
         console.error(`API Server Error [${status}]:`, url, data);
       } else {
         console.warn(`API Client Error [${status}]:`, url, data);
       }
       
-      // Пробрасываем ошибку дальше - она будет обработана в компоненте
-      // НЕ создаем новую ошибку, чтобы сохранить оригинальный response
       return Promise.reject(error);
     }
     
@@ -192,9 +206,11 @@ export const putMapping = async (mappingData, signal = null) => {
 // ВАЖНО: Операция сохранения конфигурации в QSPI Flash может занять до 90 секунд
 // (стирание сектора ~5-10 сек + запись данных ~5-10 сек + возможные задержки)
 export const putConfigFull = async (configData, signal = null) => {
+  const token = localStorage.getItem('auth_token');
   const requestConfig = {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     timeout: 90000, // 90 секунд для операций записи в Flash (стирание + запись)
     ...(signal ? { signal } : {}),

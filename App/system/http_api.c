@@ -526,8 +526,8 @@ static uint32_t parse_query_uint32(const char *path, const char *key, uint32_t d
     return val;
 }
 
-/* Парсер query параметра для строки */
-static uint8_t parse_query_string(const char *path, const char *key, char *out, size_t out_cap)
+/* Парсер query параметра для строки (оставлен для возможного использования) */
+static uint8_t __attribute__((unused)) parse_query_string(const char *path, const char *key, char *out, size_t out_cap)
 {
     if (!path || !key || !out || out_cap == 0) return 0U;
 
@@ -674,8 +674,97 @@ static uint8_t check_super_admin_access(const char *username)
     return (role == USER_ROLE_SUPER_ADMIN) ? 1U : 0U;
 }
 
+/* =========================================================
+ * Извлечение Bearer-токена из заголовков запроса
+ * Ищет "Authorization: Bearer <token>" (без учёта регистра)
+ * ========================================================= */
+static uint8_t get_bearer_token_from_headers(const char *req_buf, int req_len,
+                                             char *out_token, size_t token_sz)
+{
+    if (!req_buf || req_len <= 0 || !out_token || token_sz == 0U)
+        return 0U;
+    
+    const char *p = req_buf;
+    const char *end = req_buf + req_len;
+    
+    while (p < end)
+    {
+        const char *line_end = p;
+        while (line_end < end && *line_end != '\r' && *line_end != '\n')
+            line_end++;
+        
+        if (line_end - p >= 14 &&
+            (p[0] == 'A' || p[0] == 'a') &&
+            (p[1] == 'U' || p[1] == 'u') &&
+            (p[2] == 'T' || p[2] == 't') &&
+            (p[3] == 'H' || p[3] == 'h') &&
+            (p[4] == 'O' || p[4] == 'o') &&
+            (p[5] == 'R' || p[5] == 'r') &&
+            (p[6] == 'I' || p[6] == 'i') &&
+            (p[7] == 'Z' || p[7] == 'z') &&
+            (p[8] == 'A' || p[8] == 'a') &&
+            (p[9] == 'T' || p[9] == 't') &&
+            (p[10] == 'I' || p[10] == 'i') &&
+            (p[11] == 'O' || p[11] == 'o') &&
+            (p[12] == 'N' || p[12] == 'n') &&
+            (p[13] == ':'))
+        {
+            p += 14;
+            while (p < line_end && (*p == ' ' || *p == '\t'))
+                p++;
+            if (line_end - p >= 7 &&
+                (p[0] == 'B' || p[0] == 'b') &&
+                (p[1] == 'E' || p[1] == 'e') &&
+                (p[2] == 'A' || p[2] == 'a') &&
+                (p[3] == 'R' || p[3] == 'r') &&
+                (p[4] == 'E' || p[4] == 'e') &&
+                (p[5] == 'R' || p[5] == 'r') &&
+                (p[6] == ' '))
+            {
+                p += 7;
+                size_t j = 0U;
+                while (p < line_end && *p != ' ' && *p != '\t' && j < token_sz - 1U)
+                {
+                    out_token[j++] = *p++;
+                }
+                out_token[j] = '\0';
+                return (j > 0U) ? 1U : 0U;
+            }
+        }
+        
+        p = line_end;
+        while (p < end && (*p == '\r' || *p == '\n'))
+            p++;
+    }
+    return 0U;
+}
+
+/* Проверка токена; при невалидном пишет JSON в out_body и возвращает 401 */
+static int require_auth(const char *req_buf, int req_len,
+                        char *out_body, size_t out_sz,
+                        char *out_username, size_t username_sz)
+{
+    char token[64];
+    if (!get_bearer_token_from_headers(req_buf, req_len, token, sizeof(token)))
+    {
+        if (out_body && out_sz > 0U)
+            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Unauthorized\"}");
+        AppLog("AUTH: request without valid Bearer token");
+        return 401;
+    }
+    if (!UsersService_SessionValidate(token, out_username, username_sz))
+    {
+        if (out_body && out_sz > 0U)
+            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Unauthorized\"}");
+        AppLog("AUTH: invalid or expired token");
+        return 401;
+    }
+    return 200;
+}
+
 /* Forward declaration для put_users_update */
-static int put_users_update(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz);
+static int put_users_update(const char *username_param, const char *body, size_t body_len,
+                            const char *current_user, char *out_body, size_t out_sz);
 
 /* =========================================================
  * GET /api/users - список пользователей
@@ -782,16 +871,40 @@ static int put_mapping(const char *body, size_t body_len, char *out_body, size_t
     return 200;
 }
 
-int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
+int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len,
+                      char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
 
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
 
-    /* Важно: WEB/HTTP только на MASTER. Но HttpTask уже это проверяет.
-     * Здесь повторно не проверяем, чтобы не раздувать код.
-     */
+    /* Публичные GET без токена: только корень "/" (health check) */
+    if (strcmp(path, "/") == 0)
+    {
+        /* Обрабатывается в http_server.c — здесь не вызываем */
+        return 404;
+    }
+
+    /* GET /api/auth/session — проверка сессии по токену, возврат данных пользователя */
+    if (strcmp(path, "/api/auth/session") == 0)
+    {
+        char username[32];
+        int auth_code = require_auth(request_buf, request_len, out_body, out_sz, username, sizeof(username));
+        if (auth_code != 200)
+            return 401;
+        user_role_t role = UsersService_GetUserRole(username);
+        const char *role_str = (role == USER_ROLE_SUPER_ADMIN) ? "super_admin" :
+                               (role == USER_ROLE_ADMIN) ? "admin" : "operator";
+        (void)jw_appendf(&w, "{\"ok\":1,\"user\":{\"username\":\"%s\",\"role\":\"%s\"}}", username, role_str);
+        return 200;
+    }
+
+    /* Все остальные GET к маршрутам /api требуют валидный токен */
+    char current_user[32];
+    int auth_code = require_auth(request_buf, request_len, out_body, out_sz, current_user, sizeof(current_user));
+    if (auth_code != 200)
+        return 401;
 
     if (strcmp(path, "/api/state") == 0)
     {
@@ -807,7 +920,6 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
     }
     if (strcmp(path, "/api/config/full") == 0)
     {
-        /* Полная конфигурация для Web UI (все двери, зависимости, таймауты) */
         return build_config_full(&w) ? 200 : 500;
     }
     if (strcmp(path, "/api/config/mapping") == 0)
@@ -819,24 +931,18 @@ int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz)
         return build_journal_stat(&w) ? 200 : 500;
     }
 
-    /* /api/journal/dump с поддержкой query параметров offset и limit */
     if (strncmp(path, "/api/journal/dump", 16) == 0)
     {
         return build_journal_dump(&w, path) ? 200 : 500;
     }
 
-    /* GET /api/users - список пользователей (только для Super Admin) */
+    /* GET /api/users — только Super Admin (current_user уже из токена) */
     if (strcmp(path, "/api/users") == 0 || strncmp(path, "/api/users?", 11) == 0)
     {
-        /* Проверка прав доступа через query параметр currentUser */
-        char current_user[32];
-        if (parse_query_string(path, "currentUser", current_user, sizeof(current_user)))
+        if (!check_super_admin_access(current_user))
         {
-            if (!check_super_admin_access(current_user))
-            {
-                (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
-                return 403;
-            }
+            (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+            return 403;
         }
         return build_users_list(&w) ? 200 : 500;
     }
@@ -1234,26 +1340,31 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
 
 int HttpApi_HandlePut(const char *path,
                       const char *body, size_t body_len,
+                      const char *headers, int headers_len,
                       char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
+
+    /* Все PUT требуют валидный токен */
+    char current_user[32];
+    int auth_code = require_auth(headers, headers_len, out_body, out_sz, current_user, sizeof(current_user));
+    if (auth_code != 200)
+        return 401;
+
     if (strcmp(path, "/api/config") == 0) {
         return put_config_merge(body, body_len, out_body, out_sz);
     }
     if (strcmp(path, "/api/config/full") == 0) {
-        /* Полная конфигурация для Web UI */
         return put_config_full(body, body_len, out_body, out_sz);
     }
     if (strcmp(path, "/api/config/mapping") == 0) {
         return put_mapping(body, body_len, out_body, out_sz);
     }
     
-    /* PUT /api/users/:username - обновление пользователя (только Super Admin) */
     if (strncmp(path, "/api/users/", 11) == 0) {
-        return put_users_update(path + 11, body, body_len, out_body, out_sz);
+        return put_users_update(path + 11, body, body_len, current_user, out_body, out_sz);
     }
     
-    /* unknown path */
     if (out_body && out_sz) {
         out_body[0] = 0;
     }
@@ -1306,9 +1417,18 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
         /* Обновляем время последнего входа */
         UsersService_UpdateLastLogin(username);
         
-        /* Успешный вход */
-        (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"%s\",\"username\":\"%s\",\"token\":\"debug_token_%lu\"}",
-                         role_str, username, (unsigned long)HAL_GetTick());
+        /* Создаём сессию и возвращаем токен для последующих запросов */
+        char session_token[64];
+        if (UsersService_SessionCreate(username, session_token, sizeof(session_token)))
+        {
+            (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"%s\",\"username\":\"%s\",\"token\":\"%s\"}",
+                             role_str, username, session_token);
+        }
+        else
+        {
+            (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"%s\",\"username\":\"%s\",\"token\":\"debug_token_%lu\"}",
+                             role_str, username, (unsigned long)HAL_GetTick());
+        }
         AppLog("AUTH: login success for %s (role=%s)", username, role_str);
         return 200;
     }
@@ -1321,10 +1441,10 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
 
 /* =========================================================
  * POST /api/auth/change-password - изменение пароля
- * 
- * Использует UsersService для работы с базой пользователей в QSPI
+ * current_user из токена (вызывающий должен быть залогинен)
  * ========================================================= */
-static int post_auth_change_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int post_auth_change_password(const char *body, size_t body_len, const char *current_user,
+                                     char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1334,17 +1454,18 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
         return 400;
     }
     
-    /* Парсим username, currentPassword и newPassword из JSON */
     char username[32];
     char currentPassword[64];
     char newPassword[64];
     
-    /* Username опционален - если не указан, используем текущего пользователя из сессии */
-    /* TODO: В будущем получать из токена/сессии */
     if (!Json_GetString(body, "username", username, sizeof(username))) {
-        /* По умолчанию для отладки используем "admin" */
-        (void)strncpy(username, "admin", sizeof(username) - 1);
+        (void)strncpy(username, current_user ? current_user : "", sizeof(username) - 1);
         username[sizeof(username) - 1] = 0;
+    }
+    /* Менять пароль можно только себе, если не Super Admin */
+    if (strcmp(username, current_user) != 0 && !check_super_admin_access(current_user)) {
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied\"}");
+        return 403;
     }
     
     if (!Json_GetString(body, "currentPassword", currentPassword, sizeof(currentPassword))) {
@@ -1399,7 +1520,8 @@ static int post_auth_change_password(const char *body, size_t body_len, char *ou
  * POST /api/auth/forgot-password - запрос токена восстановления пароля
  * Только для Super Admin (для генерации токена)
  * ========================================================= */
-static int post_auth_forgot_password(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int post_auth_forgot_password(const char *body, size_t body_len, const char *current_user,
+                                     char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1409,19 +1531,10 @@ static int post_auth_forgot_password(const char *body, size_t body_len, char *ou
         return 400;
     }
     
-    /* Парсим username и currentUser (для проверки прав) */
     char username[32];
-    char current_user[32];
-    
     if (!Json_GetString(body, "username", username, sizeof(username))) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"username required\"}");
         return 400;
-    }
-    
-    /* Проверка прав доступа - только Super Admin может генерировать токены */
-    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
-        return 403;
     }
     
     if (!check_super_admin_access(current_user)) {
@@ -1494,9 +1607,10 @@ static int post_auth_reset_password(const char *body, size_t body_len, char *out
 
 /* =========================================================
  * POST /api/users - создание пользователя
- * Только для Super Admin
+ * Только для Super Admin; current_user из токена
  * ========================================================= */
-static int post_users_create(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int post_users_create(const char *body, size_t body_len, const char *current_user,
+                             char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1504,13 +1618,6 @@ static int post_users_create(const char *body, size_t body_len, char *out_body, 
     if (!body || body_len == 0) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
         return 400;
-    }
-    
-    /* Проверка прав доступа */
-    char current_user[32];
-    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
-        return 403;
     }
     
     if (!check_super_admin_access(current_user)) {
@@ -1569,9 +1676,10 @@ static int post_users_create(const char *body, size_t body_len, char *out_body, 
 
 /* =========================================================
  * PUT /api/users/:username - обновление пользователя
- * Только для Super Admin
+ * Только для Super Admin; current_user из токена
  * ========================================================= */
-static int put_users_update(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int put_users_update(const char *username_param, const char *body, size_t body_len,
+                            const char *current_user, char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1581,19 +1689,11 @@ static int put_users_update(const char *username_param, const char *body, size_t
         return 400;
     }
     
-    /* Извлекаем username из пути (убираем query параметры если есть) */
     char username[32];
     (void)strncpy(username, username_param, sizeof(username) - 1);
     username[sizeof(username) - 1] = 0;
     char *qmark = strchr(username, '?');
     if (qmark) *qmark = 0;
-    
-    /* Проверка прав доступа */
-    char current_user[32];
-    if (!Json_GetString(body, "currentUser", current_user, sizeof(current_user))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
-        return 403;
-    }
     
     if (!check_super_admin_access(current_user)) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
@@ -1648,9 +1748,10 @@ static int put_users_update(const char *username_param, const char *body, size_t
 
 /* =========================================================
  * DELETE /api/users/:username - удаление пользователя
- * Только для Super Admin
+ * Только для Super Admin; current_user из токена
  * ========================================================= */
-static int delete_users_remove(const char *username_param, const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int delete_users_remove(const char *username_param, const char *body, size_t body_len,
+                               const char *current_user, char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1660,23 +1761,11 @@ static int delete_users_remove(const char *username_param, const char *body, siz
         return 400;
     }
     
-    /* Извлекаем username из пути */
     char username[32];
     (void)strncpy(username, username_param, sizeof(username) - 1);
     username[sizeof(username) - 1] = 0;
     char *qmark = strchr(username, '?');
     if (qmark) *qmark = 0;
-    
-    /* Проверка прав доступа */
-    char current_user[32] = "";
-    if (body && body_len > 0) {
-        Json_GetString(body, "currentUser", current_user, sizeof(current_user));
-    }
-    
-    if (strlen(current_user) == 0) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"currentUser required\"}");
-        return 403;
-    }
     
     if (!check_super_admin_access(current_user)) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
@@ -1702,36 +1791,37 @@ static int delete_users_remove(const char *username_param, const char *body, siz
 
 int HttpApi_HandlePost(const char *path,
                       const char *body, size_t body_len,
+                      const char *headers, int headers_len,
                       char *out_body, size_t out_sz)
 {
     if (!path || !out_body || out_sz == 0U) return 500;
     
-    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: логирование для отладки аутентификации
-     * Используем printf для немедленного вывода в UART
-     */
-    /* Проверяем оба варианта пути: с /api и без (axios может отправлять без /api, если baseURL уже содержит /api) */
+    /* Публичные POST без токена: только логин и сброс пароля по токену */
     if (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/auth/login") == 0) {
         return post_auth_login(body, body_len, out_body, out_sz);
     }
-    
-    if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
-        return post_auth_change_password(body, body_len, out_body, out_sz);
-    }
-    
-    if (strcmp(path, "/api/auth/forgot-password") == 0 || strcmp(path, "/auth/forgot-password") == 0) {
-        return post_auth_forgot_password(body, body_len, out_body, out_sz);
-    }
-    
     if (strcmp(path, "/api/auth/reset-password") == 0 || strcmp(path, "/auth/reset-password") == 0) {
         return post_auth_reset_password(body, body_len, out_body, out_sz);
     }
     
-    /* POST /api/users - создание пользователя (только Super Admin) */
-    if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
-        return post_users_create(body, body_len, out_body, out_sz);
+    /* Остальные POST требуют валидный токен; current_user из сессии */
+    char current_user[32];
+    int auth_code = require_auth(headers, headers_len, out_body, out_sz, current_user, sizeof(current_user));
+    if (auth_code != 200)
+        return 401;
+    
+    if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
+        return post_auth_change_password(body, body_len, current_user, out_body, out_sz);
     }
     
-    /* POST /api/users/:username/delete - удаление пользователя (только Super Admin) */
+    if (strcmp(path, "/api/auth/forgot-password") == 0 || strcmp(path, "/auth/forgot-password") == 0) {
+        return post_auth_forgot_password(body, body_len, current_user, out_body, out_sz);
+    }
+    
+    if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
+        return post_users_create(body, body_len, current_user, out_body, out_sz);
+    }
+    
     if (strncmp(path, "/api/users/", 11) == 0) {
         const char *rest = path + 11;
         const char *delete_pos = strstr(rest, "/delete");
@@ -1741,7 +1831,7 @@ int HttpApi_HandlePost(const char *path,
             if (len < sizeof(username)) {
                 (void)strncpy(username, rest, len);
                 username[len] = 0;
-                return delete_users_remove(username, body, body_len, out_body, out_sz);
+                return delete_users_remove(username, body, body_len, current_user, out_body, out_sz);
             }
         }
     }

@@ -47,6 +47,10 @@ uint8_t UsersService_GenerateResetToken(const char *username, char *out_token, s
 /* Сброс пароля по токену */
 uint8_t UsersService_ResetPasswordByToken(const char *token, const char *new_password);
 
+/* Сессии (токен после логина для проверки доступа к API) */
+uint8_t UsersService_SessionCreate(const char *username, char *out_token, size_t token_size);
+uint8_t UsersService_SessionValidate(const char *token, char *out_username, size_t username_size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -18,26 +18,21 @@ extern "C" {
  * Each handler returns an HTTP status code.
  */
 
-int HttpApi_HandleGet(const char *path, char *out_body, size_t out_sz);
-
-/* PUT is currently used only for a "draft" config upload:
- *  - PUT /api/config
- *
- * On success: returns 200 and JSON body.
- * On validation error: returns 400 and JSON body {"ok":0,"error":"..."}
+/* request_buf: полный буфер запроса (request-line + headers) для извлечения Authorization.
+ * request_len: длина буфера. Для GET передаётся из http_server.
  */
-int HttpApi_HandlePut(const char *path,
-                      const char *body, size_t body_len,
+int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len,
                       char *out_body, size_t out_sz);
 
-/* POST is used for authentication:
- *  - POST /api/auth/login
- *
- * On success: returns 200 and JSON body {"ok":1,"role":"super_admin","token":"..."}
- * On error: returns 401 and JSON body {"ok":0,"error":"Invalid credentials"}
- */
+/* headers/haders_len: заголовки запроса для извлечения Authorization: Bearer <token> */
+int HttpApi_HandlePut(const char *path,
+                      const char *body, size_t body_len,
+                      const char *headers, int headers_len,
+                      char *out_body, size_t out_sz);
+
 int HttpApi_HandlePost(const char *path,
                        const char *body, size_t body_len,
+                       const char *headers, int headers_len,
                        char *out_body, size_t out_sz);
 
 /* После успешной записи конфигурации (PUT /api/config или /api/config/full)

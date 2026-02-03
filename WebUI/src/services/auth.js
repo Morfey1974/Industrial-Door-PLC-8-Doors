@@ -22,12 +22,18 @@ export const logout = async () => {
 };
 
 export const getSession = async () => {
-  // TODO: GET /api/auth/session (когда будет реализовано на backend)
-  // Пока проверяем localStorage
   const token = localStorage.getItem('auth_token');
-  const user = localStorage.getItem('auth_user');
-  if (token && user) {
-    return { ok: 1, user: JSON.parse(user), token };
+  if (!token) return { ok: 0 };
+  try {
+    const response = await apiClient.get('/auth/session');
+    if (response.data?.ok === 1 && response.data?.user) {
+      return { ok: 1, user: response.data.user, token };
+    }
+  } catch (err) {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+    }
   }
   return { ok: 0 };
 };
@@ -40,11 +46,8 @@ export const changePassword = async (currentPassword, newPassword) => {
   return response.data;
 };
 
-export const requestPasswordReset = async (username, currentUser) => {
-  const response = await apiClient.post('/auth/forgot-password', {
-    username,
-    currentUser,
-  });
+export const requestPasswordReset = async (username) => {
+  const response = await apiClient.post('/auth/forgot-password', { username });
   return response.data;
 };
 

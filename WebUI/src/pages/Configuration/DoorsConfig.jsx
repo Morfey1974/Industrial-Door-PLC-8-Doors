@@ -887,8 +887,16 @@ const DoorsConfig = () => {
       setHasUnsavedChanges(false);
       setHasDraft(false);
 
-      setSuccess('✅ Полная конфигурация успешно применена на контроллер (двери, зависимости, таймауты).');
-      setTimeout(() => setSuccess(null), 7000);
+      // Контроллер перезагружается после записи в Flash — сессии в RAM теряются.
+      sessionStorage.setItem('config_just_applied', Date.now().toString());
+
+      setSuccess('✅ Конфигурация применена. Контроллер перезагружается — через пару секунд откроется страница входа.');
+      setSaving(false);
+      // Перенаправляем на страницу входа с пояснением, чтобы пользователь не оставался
+      // на странице с «мёртвой» сессией и не получал 401 при следующем действии.
+      setTimeout(() => {
+        window.location.href = '/login?reason=config_applied';
+      }, 2500);
     } catch (err) {
       console.error('Ошибка применения конфигурации:', err);
       console.error('Детали ошибки:', {

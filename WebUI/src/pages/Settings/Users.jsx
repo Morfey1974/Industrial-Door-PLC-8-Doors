@@ -52,7 +52,7 @@ const Users = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await getUsers(user?.username);
+      const response = await getUsers();
       if (response.ok && response.users) {
         setUsers(response.users);
       } else {
@@ -92,7 +92,7 @@ const Users = () => {
 
     try {
       setFormLoading(true);
-      const response = await deleteUser(username, user.username);
+      const response = await deleteUser(username);
       if (response.ok) {
         await loadUsers();
       } else {
@@ -124,10 +124,7 @@ const Users = () => {
           return;
         }
 
-        const response = await createUser({
-          ...formData,
-          currentUser: user.username
-        });
+        const response = await createUser(formData);
 
         if (response.ok) {
           setShowCreateModal(false);
@@ -139,7 +136,6 @@ const Users = () => {
         // Редактирование
         const isSuperAdmin = editingUser.role === 'super_admin';
         const updateData = {
-          currentUser: user.username,
           // Супер-администратор: не меняем роль, всегда включён
           ...(isSuperAdmin
             ? { enabled: 1 }
