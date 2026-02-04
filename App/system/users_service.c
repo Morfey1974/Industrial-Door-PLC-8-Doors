@@ -385,11 +385,12 @@ uint8_t UsersService_ResetPasswordByToken(const char *token, const char *new_pas
 
 /* =========================================================
  * Сессии API (токен после логина)
- * Хранятся в RAM, срок жизни 24 ч
+ * Хранятся в RAM, срок жизни 24 ч. Токен — криптостойкая случайная строка (hex).
  * ========================================================= */
-#define SESSION_TOKEN_MAX 32U
-#define SESSION_MAX_COUNT 16U
-#define SESSION_EXPIRY_MS (24U * 60U * 60U * 1000U) /* 24 часа */
+#define SESSION_TOKEN_BYTES 15U   /* 15 байт RNG → 30 hex-символов + null */
+#define SESSION_TOKEN_MAX   32U
+#define SESSION_MAX_COUNT   16U
+#define SESSION_EXPIRY_MS   (24U * 60U * 60U * 1000U) /* 24 часа */
 
 typedef struct {
     char token[SESSION_TOKEN_MAX];
@@ -398,17 +399,15 @@ typedef struct {
 } session_entry_t;
 
 static session_entry_t g_sessions[SESSION_MAX_COUNT];
-static uint32_t g_session_counter = 0U;
 
 uint8_t UsersService_SessionCreate(const char *username, char *out_token, size_t token_size)
 {
-    if (!username || !out_token || token_size < 22U)
+    if (!username || !out_token || token_size < (SESSION_TOKEN_BYTES * 2U + 2U))
         return 0U;
-    
+
     uint32_t now = HAL_GetTick();
     uint32_t slot = SESSION_MAX_COUNT;
-    
-    /* Ищем свободный слот или истекшую сессию */
+
     for (uint32_t i = 0; i < SESSION_MAX_COUNT; i++)
     {
         if (g_sessions[i].expiry <= now || g_sessions[i].token[0] == 0)
@@ -417,21 +416,30 @@ uint8_t UsersService_SessionCreate(const char *username, char *out_token, size_t
             break;
         }
     }
-    
+
     if (slot >= SESSION_MAX_COUNT)
         return 0U;
-    
-    g_session_counter++;
-    (void)snprintf(g_sessions[slot].token, sizeof(g_sessions[slot].token),
-                  "sess_%08lx%08lx", (unsigned long)now, (unsigned long)g_session_counter);
+
+    /* Криптостойкий токен: RNG → hex-строка (как для reset token) */
+    uint8_t raw[SESSION_TOKEN_BYTES];
+    SecureRandom_Fill(raw, SESSION_TOKEN_BYTES);
+    {
+        static const char hex[] = "0123456789abcdef";
+        size_t i;
+        for (i = 0; i < SESSION_TOKEN_BYTES; i++) {
+            g_sessions[slot].token[i * 2]     = hex[(raw[i] >> 4) & 0x0FU];
+            g_sessions[slot].token[i * 2 + 1] = hex[raw[i] & 0x0FU];
+        }
+        g_sessions[slot].token[SESSION_TOKEN_BYTES * 2] = '\0';
+    }
+
     (void)strncpy(g_sessions[slot].username, username, sizeof(g_sessions[slot].username) - 1);
     g_sessions[slot].username[sizeof(g_sessions[slot].username) - 1] = 0;
     g_sessions[slot].expiry = now + SESSION_EXPIRY_MS;
-    
+
     (void)strncpy(out_token, g_sessions[slot].token, token_size - 1);
     out_token[token_size - 1] = 0;
-    
-    AppLog("[USERS] Session created for %s", username);
+
     return 1U;
 }
 

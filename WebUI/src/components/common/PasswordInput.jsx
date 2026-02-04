@@ -2,9 +2,11 @@
  * PasswordInput компонент - поле ввода пароля с иконкой показа/скрытия и кнопкой восстановления
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Button from './Button';
 import './PasswordInput.css';
+
+const PASSWORD_SHOW_DURATION_MS = 2000;
 
 const PasswordInput = ({
   id,
@@ -21,9 +23,28 @@ const PasswordInput = ({
   ...props
 }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+  }, []);
 
   const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+    if (showPassword) {
+      setShowPassword(false);
+    } else {
+      setShowPassword(true);
+      hideTimeoutRef.current = setTimeout(() => {
+        hideTimeoutRef.current = null;
+        setShowPassword(false);
+      }, PASSWORD_SHOW_DURATION_MS);
+    }
   };
 
   const handleForgotPassword = () => {
@@ -61,7 +82,7 @@ const PasswordInput = ({
           className="password-toggle-btn"
           onClick={togglePasswordVisibility}
           disabled={disabled}
-          title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+          title={showPassword ? 'Скрыть пароль (автоскрытие через 2 с)' : 'Показать пароль на 2 с'}
         >
           {showPassword ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

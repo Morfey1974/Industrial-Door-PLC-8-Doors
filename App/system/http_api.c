@@ -135,6 +135,22 @@ void HttpApi_ClearRebootRequest(void)
     s_reboot_after_config_apply = 0;
 }
 
+void HttpApi_GetCorsOrigin(char *buf, size_t sz)
+{
+    if (!buf || sz == 0) return;
+    /* Разрешённый origin из конфига: первые 64 байта reserved_u32 (см. config_format.h).
+     * При пустой или невалидной строке — "*" (обратная совместимость). */
+    const char *o = (const char *)&g_project_cfg.reserved_u32[0];
+    if (o[0] == '\0' || (unsigned char)o[0] < 32 || (unsigned char)o[0] > 126) {
+        (void)snprintf(buf, sz, "*");
+        return;
+    }
+    size_t n = 0;
+    while (n < sz - 1 && n < 64 && o[n] != '\0' && (unsigned char)o[n] >= 32 && (unsigned char)o[n] <= 126)
+        { buf[n] = o[n]; n++; }
+    buf[n] = '\0';
+}
+
 static uint32_t safe_uptime_s(void)
 {
     /* HAL_GetTick() wrap-around ~ 49 дней при 1ms. Для мониторинга достаточно. */
@@ -749,14 +765,18 @@ static int require_auth(const char *req_buf, int req_len,
     {
         if (out_body && out_sz > 0U)
             (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Unauthorized\"}");
+#if HTTP_DEBUG_ENABLED
         AppLog("AUTH: request without valid Bearer token");
+#endif
         return 401;
     }
     if (!UsersService_SessionValidate(token, out_username, username_sz))
     {
         if (out_body && out_sz > 0U)
             (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Unauthorized\"}");
+#if HTTP_DEBUG_ENABLED
         AppLog("AUTH: invalid or expired token");
+#endif
         return 401;
     }
     return 200;
@@ -1371,36 +1391,98 @@ int HttpApi_HandlePut(const char *path,
     return 404;
 }
 
+/* Rate limit логина: по username, 5 попыток за 15 минут (в RAM). */
+#define LOGIN_RATE_WINDOW_MS    (15U * 60U * 1000U)
+#define LOGIN_RATE_MAX_ATTEMPTS 5U
+#define LOGIN_RATE_SLOTS       20U
+#define LOGIN_RATE_DELAY_MS     3000U
+
+typedef struct {
+    char username[32];
+    uint32_t at;
+} login_fail_t;
+
+static login_fail_t s_login_fails[LOGIN_RATE_SLOTS];
+static uint32_t s_login_fail_count = 0U;
+
+/* Проверка «не старше 15 минут» с учётом переполнения HAL_GetTick() (~49 дней) */
+static uint8_t login_fail_is_recent(uint32_t at, uint32_t now)
+{
+    return ((uint32_t)(now - at) <= LOGIN_RATE_WINDOW_MS) ? 1U : 0U;
+}
+
+static uint32_t login_fail_count_recent(const char *username)
+{
+    uint32_t now = HAL_GetTick();
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < s_login_fail_count; i++) {
+        if (login_fail_is_recent(s_login_fails[i].at, now) && strcmp(s_login_fails[i].username, username) == 0)
+            n++;
+    }
+    return n;
+}
+
+static void login_fail_add(const char *username)
+{
+    uint32_t now = HAL_GetTick();
+    /* Удаляем устаревшие (с учётом переполнения tick) */
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < s_login_fail_count; i++) {
+        if (login_fail_is_recent(s_login_fails[i].at, now)) {
+            if (j != i) s_login_fails[j] = s_login_fails[i];
+            j++;
+        }
+    }
+    s_login_fail_count = j;
+    if (s_login_fail_count >= LOGIN_RATE_SLOTS) {
+        /* Вытесняем самый старый */
+        s_login_fail_count--;
+        for (uint32_t i = 0; i < s_login_fail_count; i++)
+            s_login_fails[i] = s_login_fails[i + 1];
+    }
+    (void)strncpy(s_login_fails[s_login_fail_count].username, username, sizeof(s_login_fails[0].username) - 1);
+    s_login_fails[s_login_fail_count].username[sizeof(s_login_fails[0].username) - 1] = '\0';
+    s_login_fails[s_login_fail_count].at = now;
+    s_login_fail_count++;
+}
+
 /* =========================================================
  * POST /api/auth/login - базовая аутентификация
- * 
- * Для отладки: только один пользователь admin/admin (Super Admin)
- * В будущем: добавить хранение пользователей в QSPI, хеширование паролей
  * ========================================================= */
 static int post_auth_login(const char *body, size_t body_len, char *out_body, size_t out_sz)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
-    
+
+    /* Единое сообщение при любой ошибке входа (не раскрываем, логин или пароль) */
     if (!body || body_len == 0) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"empty body\"}");
-        return 400;
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":%lu}",
+                         (unsigned long)LOGIN_RATE_MAX_ATTEMPTS);
+        return 401;
     }
-    
-    /* Парсим username и password из JSON */
+
     char username[32];
     char password[32];
-    
+
     if (!Json_GetString(body, "username", username, sizeof(username))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"username required\"}");
-        return 400;
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":%lu}",
+                         (unsigned long)LOGIN_RATE_MAX_ATTEMPTS);
+        return 401;
     }
-    
+
     if (!Json_GetString(body, "password", password, sizeof(password))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"password required\"}");
-        return 400;
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":%lu}",
+                         (unsigned long)LOGIN_RATE_MAX_ATTEMPTS);
+        return 401;
     }
-    
+
+    /* Ограничение перебора: 5 неудачных попыток по username за 15 минут */
+    if (login_fail_count_recent(username) >= LOGIN_RATE_MAX_ATTEMPTS) {
+        HAL_Delay(LOGIN_RATE_DELAY_MS);
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":0}");
+        return 429;
+    }
+
     /* Проверяем учетные данные через UsersService */
     if (UsersService_VerifyPassword(username, password))
     {
@@ -1429,13 +1511,23 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
             (void)jw_appendf(&w, "{\"ok\":1,\"role\":\"%s\",\"username\":\"%s\",\"token\":\"debug_token_%lu\"}",
                              role_str, username, (unsigned long)HAL_GetTick());
         }
+#if HTTP_DEBUG_ENABLED
         AppLog("AUTH: login success for %s (role=%s)", username, role_str);
+#endif
         return 200;
     }
     
-    /* Неверные учетные данные */
-    (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Invalid credentials\"}");
+    /* Неверные учётные данные: единое сообщение + сколько попыток осталось */
+    login_fail_add(username);
+    {
+        uint32_t count = login_fail_count_recent(username);
+        uint32_t remaining = (count >= LOGIN_RATE_MAX_ATTEMPTS) ? 0U : (LOGIN_RATE_MAX_ATTEMPTS - count);
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":%lu}",
+                         (unsigned long)remaining);
+    }
+#if HTTP_DEBUG_ENABLED
     AppLog("AUTH: login failed for %s", username);
+#endif
     return 401;
 }
 
@@ -1493,7 +1585,9 @@ static int post_auth_change_password(const char *body, size_t body_len, const ch
     /* Проверяем текущий пароль */
     if (!UsersService_VerifyPassword(username, currentPassword)) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Current password is incorrect\"}");
+#if HTTP_DEBUG_ENABLED
         AppLog("AUTH: change password failed - incorrect current password for %s", username);
+#endif
         return 401;
     }
     
@@ -1507,12 +1601,16 @@ static int post_auth_change_password(const char *body, size_t body_len, const ch
     user_role_t role = UsersService_GetUserRole(username);
     if (!UsersService_UpdateUser(username, newPassword, role, 1U)) {
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Failed to update password\"}");
+#if HTTP_DEBUG_ENABLED
         AppLog("AUTH: change password failed - update error for %s", username);
+#endif
         return 500;
     }
-    
+
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"Password changed successfully\"}");
+#if HTTP_DEBUG_ENABLED
     AppLog("AUTH: password changed successfully for %s", username);
+#endif
     return 200;
 }
 
@@ -1550,7 +1648,9 @@ static int post_auth_forgot_password(const char *body, size_t body_len, const ch
     }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"token\":\"%s\",\"message\":\"Reset token generated. Token expires in 15 minutes.\"}", token);
+#if HTTP_DEBUG_ENABLED
     AppLog("AUTH: reset token generated for %s by %s", username, current_user);
+#endif
     return 200;
 }
 
@@ -1601,7 +1701,9 @@ static int post_auth_reset_password(const char *body, size_t body_len, char *out
     }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"Password reset successfully\"}");
+#if HTTP_DEBUG_ENABLED
     AppLog("AUTH: password reset via token");
+#endif
     return 200;
 }
 
@@ -1670,7 +1772,9 @@ static int post_users_create(const char *body, size_t body_len, const char *curr
     }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User created successfully\"}");
+#if HTTP_DEBUG_ENABLED
     AppLog("USERS: created user %s by %s", username, current_user);
+#endif
     return 200;
 }
 
@@ -1742,7 +1846,9 @@ static int put_users_update(const char *username_param, const char *body, size_t
     }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User updated successfully\"}");
+#if HTTP_DEBUG_ENABLED
     AppLog("USERS: updated user %s by %s", username, current_user);
+#endif
     return 200;
 }
 
@@ -1785,7 +1891,9 @@ static int delete_users_remove(const char *username_param, const char *body, siz
     }
     
     (void)jw_appendf(&w, "{\"ok\":1,\"message\":\"User deleted successfully\"}");
+#if HTTP_DEBUG_ENABLED
     AppLog("USERS: deleted user %s by %s", username, current_user);
+#endif
     return 200;
 }
 

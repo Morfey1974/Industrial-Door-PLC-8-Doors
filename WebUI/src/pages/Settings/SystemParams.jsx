@@ -152,6 +152,12 @@ const SystemParams = () => {
         Полный удалённый доступ к контроллеру имеет только Супер-администратор. Настройки для подключения и обеспечения безопасного удалённого доступа.
       </p>
 
+      {typeof window !== 'undefined' && window.location?.protocol === 'http:' && (
+        <div className="system-params-message" style={{ backgroundColor: '#fff8e1', border: '1px solid #ffa000', color: '#e65100' }} role="status">
+          Подключение по HTTP — трафик не шифруется. Для защиты данных рекомендуется использовать HTTPS.
+        </div>
+      )}
+
       {error && (
         <div className="system-params-message system-params-error" role="alert">
           {error}

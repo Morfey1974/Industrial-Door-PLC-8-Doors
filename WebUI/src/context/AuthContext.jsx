@@ -47,11 +47,33 @@ export const AuthProvider = ({ children }) => {
         
         return { success: true };
       } else {
-        return { success: false, error: response.error || 'Ошибка входа' };
+        /* Единое русское сообщение (response.error может быть с сервера на английском) */
+        return {
+          success: false,
+          error: 'Неверные учётные данные',
+          remainingAttempts: response.remainingAttempts,
+        };
       }
     } catch (error) {
       console.error('Ошибка входа:', error);
-      return { success: false, error: error.message || 'Ошибка подключения к серверу' };
+      const status = error.response?.status;
+      const data = error.response?.data;
+      if (status === 429 || String(error.message || '').includes('429')) {
+        return { success: false, error: 'Слишком много попыток входа. Подождите около 15 минут.' };
+      }
+      /* Всегда показываем русское сообщение при 401 (не доверяем data.error — может быть старая прошивка или не JSON) */
+      if (status === 401) {
+        return {
+          success: false,
+          error: 'Неверные учётные данные',
+          remainingAttempts: data?.remainingAttempts,
+        };
+      }
+      return {
+        success: false,
+        error: data?.error || error.message || 'Ошибка подключения к серверу',
+        remainingAttempts: data?.remainingAttempts,
+      };
     }
   };
 

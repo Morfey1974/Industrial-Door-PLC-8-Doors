@@ -49,24 +49,28 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
     if (!body) body = "";
 
     const int body_len = (int)strlen(body);
-    
+
+    char cors_origin[80];
+    HttpApi_GetCorsOrigin(cors_origin, sizeof(cors_origin));
+
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
     AppLog("HTTP: send code=%d len=%d type=%s", code, body_len, ctype);
 #endif
-    char hdr[256];
+    char hdr[320];
     const int n = snprintf(hdr, sizeof(hdr),
                            "HTTP/1.1 %d %s\r\n"
                            "Connection: close\r\n"
                            "Content-Type: %s\r\n"
                            "Content-Length: %d\r\n"
-                           "Access-Control-Allow-Origin: *\r\n"
+                           "Access-Control-Allow-Origin: %s\r\n"
                            "Access-Control-Allow-Methods: GET,PUT,OPTIONS\r\n"
                            "Access-Control-Allow-Headers: Content-Type,Authorization\r\n"
                            "\r\n",
                            code,
                            (code == 200) ? "OK" : (code == 404) ? "Not Found" : "Error",
                            ctype,
-                           body_len);
+                           body_len,
+                           cors_origin);
     if (n > 0) {
         /* Отправляем заголовок с обработкой частичной отправки и non-blocking режима */
         int sent = 0;
@@ -142,7 +146,9 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
         int sent = 0;
         int attempts = 0;
         int consecutive_errors = 0;
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
         int last_body_errno = 0; /* последний errno при send error для диагностики INCOMPLETE */
+#endif
         const int max_attempts = 400; /* больше попыток (≈6 с при 15 ms) для устойчивости */
         const int max_consecutive_errors = 50;
         
@@ -208,7 +214,9 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                 /* Ошибка: lwip_send возвращает -1, errno указывает причину
                  * (например EAGAIN/EWOULDBLOCK, ECONNRESET, ENOTCONN).
                  */
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
                 last_body_errno = errno;
+#endif
                 attempts++;
                 consecutive_errors++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
@@ -243,18 +251,22 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
 
 static void http_send_no_body(int fd, int code)
 {
-    char hdr[256];
+    char cors_origin[80];
+    HttpApi_GetCorsOrigin(cors_origin, sizeof(cors_origin));
+
+    char hdr[320];
     const int n = snprintf(hdr, sizeof(hdr),
                            "HTTP/1.1 %d %s\r\n"
                            "Connection: close\r\n"
-                           "Access-Control-Allow-Origin: *\r\n"
+                           "Access-Control-Allow-Origin: %s\r\n"
                            "Access-Control-Allow-Methods: GET,PUT,OPTIONS\r\n"
                            "Access-Control-Allow-Headers: Content-Type,Authorization\r\n"
                            "Access-Control-Max-Age: 600\r\n"
                            "Content-Length: 0\r\n"
                            "\r\n",
                            code,
-                           (code == 204) ? "No Content" : (code == 200) ? "OK" : "Error");
+                           (code == 204) ? "No Content" : (code == 200) ? "OK" : "Error",
+                           cors_origin);
     if (n > 0) {
         /* Отправляем заголовок с обработкой частичной отправки */
         int sent = 0;
@@ -592,7 +604,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         while (copied < content_len) {
             /* Проверяем общий таймаут */
             if ((HAL_GetTick() - recv_start_ms) > recv_timeout_ms) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 AppLog("HTTP: body recv timeout (copied=%d/%d)", copied, content_len);
+#endif
                 break;
             }
             
@@ -608,7 +622,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             if (sel_recv <= 0) {
                 recv_attempts++;
                 if (recv_attempts >= max_recv_attempts) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                     AppLog("HTTP: body recv max attempts reached (copied=%d/%d)", copied, content_len);
+#endif
                     break;
                 }
                 /* Небольшая задержка перед повторной попыткой */
@@ -626,7 +642,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
                 copied += rr;
             } else if (rr == 0) {
                 /* Соединение закрыто */
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 AppLog("HTTP: body recv connection closed (copied=%d/%d)", copied, content_len);
+#endif
                 break;
             } else {
                 /* Ошибка чтения - проверяем errno */
@@ -639,19 +657,25 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
                         continue;
                     }
                 }
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 AppLog("HTTP: body recv error errno=%d (copied=%d/%d)", err, copied, content_len);
+#endif
                 break;
             }
         }
         
         if (copied != content_len) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
             AppLog("HTTP: body incomplete (copied=%d/%d, attempts=%d)", copied, content_len, recv_attempts);
+#endif
             http_send_simple(cfd, 400, "text/plain", "Bad Body\n");
             (void)lwip_close(cfd);
             return;
         }
         
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         AppLog("HTTP: body received OK (%d bytes)", copied);
+#endif
 
         const int hdr_len = (int)(hdr_end - hdr_start);
         char resp[1024];
@@ -805,6 +829,8 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             http_send_simple(cfd, 200, "application/json", resp);
         } else if (api_code == 401) {
             http_send_simple(cfd, 401, "application/json", resp);
+        } else if (api_code == 429) {
+            http_send_simple(cfd, 429, "application/json", resp);
         } else if (api_code == 404) {
             http_send_simple(cfd, 404, "application/json", resp);
         } else {

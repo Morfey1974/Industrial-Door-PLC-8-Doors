@@ -9,8 +9,6 @@ import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
 import SplashScreen from '../components/common/SplashScreen';
 import ForgotPasswordModal from '../components/common/ForgotPasswordModal';
-import ControllerConnectionModal from '../components/common/ControllerConnectionModal';
-import { getControllerUrlForDisplay } from '../utils/constants';
 import '../styles/layout.css';
 
 let logoImage;
@@ -28,7 +26,6 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
-  const [showControllerModal, setShowControllerModal] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -44,10 +41,33 @@ const Login = () => {
       if (result.success) {
         navigate('/');
       } else {
-        setError(result.error || 'Ошибка входа');
+        let msg = result.error || 'Ошибка входа';
+        if (msg.includes('429')) {
+          msg = 'Слишком много попыток входа. Подождите около 15 минут.';
+        } else if (result.remainingAttempts !== undefined && result.remainingAttempts !== null) {
+          msg += `. Осталось попыток до блокировки: ${result.remainingAttempts}`;
+        }
+        setError(msg);
       }
     } catch (err) {
-      setError(err.message || 'Ошибка подключения к серверу');
+      const status = err.response?.status;
+      const data = err.response?.data;
+      const isRateLimit = status === 429 || String(err.message || '').includes('429');
+      if (isRateLimit) {
+        setError('Слишком много попыток входа. Подождите около 15 минут.');
+      } else if (status === 401) {
+        let msg = 'Неверные учётные данные';
+        if (data?.remainingAttempts !== undefined && data?.remainingAttempts !== null) {
+          msg += `. Осталось попыток до блокировки: ${data.remainingAttempts}`;
+        }
+        setError(msg);
+      } else {
+        let msg = data?.error || err.message || 'Ошибка подключения к серверу';
+        if (data?.remainingAttempts !== undefined && data?.remainingAttempts !== null) {
+          msg += `. Осталось попыток до блокировки: ${data.remainingAttempts}`;
+        }
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -63,10 +83,6 @@ const Login = () => {
       <ForgotPasswordModal 
         isOpen={showForgotPasswordModal} 
         onClose={() => setShowForgotPasswordModal(false)} 
-      />
-      <ControllerConnectionModal 
-        isOpen={showControllerModal} 
-        onClose={() => setShowControllerModal(false)} 
       />
       <div 
         className={`login-container ${showSplash ? 'login-container-hidden' : 'login-container-visible'}`}
@@ -99,6 +115,19 @@ const Login = () => {
               color: '#1565c0',
             }}>
               Конфигурация успешно применена. Контроллер перезагрузился — войдите снова.
+            </div>
+          )}
+          {typeof window !== 'undefined' && window.location?.protocol === 'http:' && (
+            <div style={{
+              padding: '8px 10px',
+              marginBottom: '15px',
+              backgroundColor: '#fff8e1',
+              border: '1px solid #ffa000',
+              borderRadius: '4px',
+              color: '#e65100',
+              fontSize: '13px',
+            }}>
+              Подключение по HTTP — трафик не шифруется. Для защиты данных рекомендуется использовать HTTPS.
             </div>
           )}
           {error && (
@@ -146,16 +175,6 @@ const Login = () => {
           >
             {loading ? 'Вход...' : 'Вход'}
           </Button>
-          <div style={{ marginTop: '15px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
-            Для отладки: admin / admin
-          </div>
-          <button
-            type="button"
-            className="login-controller-link"
-            onClick={() => setShowControllerModal(true)}
-          >
-            Подключение к контроллеру ({getControllerUrlForDisplay()})
-          </button>
         </form>
       </div>
     </div>

@@ -111,7 +111,7 @@ typedef struct
     /* Сеть (служебно) */
     cfg_net_t net;
 
-    /* Зарезервировано под будущее расширение */
+    /* Зарезервировано. reserved_u32[0..15] (64 байта) — CORS allowed origin (строка, при пустой — "*"). */
     uint32_t reserved_u32[32];
 } project_config_t;
 

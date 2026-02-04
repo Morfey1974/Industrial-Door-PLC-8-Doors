@@ -41,6 +41,10 @@ int HttpApi_HandlePost(const char *path,
 int HttpApi_ConfigApplyRequestsReboot(void);
 void HttpApi_ClearRebootRequest(void);
 
+/* CORS: разрешённый origin для заголовка Access-Control-Allow-Origin.
+ * buf заполняется строкой (например "*" или "http://192.168.1.50:8080"); при пустом конфиге — "*". */
+void HttpApi_GetCorsOrigin(char *buf, size_t sz);
+
 #ifdef __cplusplus
 }
 #endif
