@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { useStateData } from '../../context/StateDataContext';
 import { useLeaveConfirm } from '../../context/LeaveConfirmContext';
+import { useLanguage } from '../../context/LanguageContext';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import Button from '../common/Button';
 import { formatIpAddress } from '../../utils/formatters';
@@ -24,6 +25,7 @@ const Header = () => {
   const navigate = useNavigate();
   const { user, logout } = useContext(AuthContext);
   const { tryNavigate } = useLeaveConfirm();
+  const { t, language, setLanguage } = useLanguage();
   const { data: state, loading: stateLoading, error: stateError, refetch: refetchState } = useStateData();
   const goHome = () => (tryNavigate || navigate)('/');
 
@@ -75,11 +77,30 @@ const Header = () => {
         </Link>
       </div>
       <div className="header-right">
+        {/* Переключатель языка — слева от статуса сети */}
+        <div className="header-lang-switcher" role="group" aria-label="Язык / Language">
+          <button
+            type="button"
+            className={`header-lang-btn ${language === 'ru' ? 'active' : ''}`}
+            onClick={() => setLanguage('ru')}
+            title="Русский"
+          >
+            RU
+          </button>
+          <button
+            type="button"
+            className={`header-lang-btn ${language === 'en' ? 'active' : ''}`}
+            onClick={() => setLanguage('en')}
+            title="English"
+          >
+            EN
+          </button>
+        </div>
         {/* Статусы и ошибка связи — видны на всех страницах */}
         {!stateLoading && (state || stateError) && (
           <div className="header-status">
             <div className="header-status-indicators">
-              <div className="header-status-item" title={netReady ? 'Сеть готова' : 'Сеть не готова'}>
+              <div className="header-status-item" title={netReady ? t('header.networkReady') : t('header.networkNotReady')}>
                 <span
                   className="header-status-dot"
                   style={{
@@ -88,9 +109,9 @@ const Header = () => {
                     boxShadow: netReady ? '0 0 6px rgba(40, 167, 69, 0.5)' : 'none'
                   }}
                 />
-                <span className="header-status-label">Сеть</span>
+                <span className="header-status-label">{t('header.network')}</span>
               </div>
-              <div className="header-status-item" title={linkUp ? 'Link UP' : 'Link DOWN'}>
+              <div className="header-status-item" title={linkUp ? t('header.linkUp') : t('header.linkDown')}>
                 <span
                   className="header-status-dot"
                   style={{
@@ -99,21 +120,21 @@ const Header = () => {
                     boxShadow: linkUp ? '0 0 6px rgba(40, 167, 69, 0.5)' : 'none'
                   }}
                 />
-                <span className="header-status-label">Link</span>
+                <span className="header-status-label">{t('header.link')}</span>
               </div>
             </div>
             <div className="header-status-values">
-              <span className="header-status-ip" title="IP адрес">
+              <span className="header-status-ip" title={t('header.ipAddress')}>
                 {offline ? '—' : (state?.ip ? formatIpAddress(state.ip) : '—')}
               </span>
             </div>
             {stateError && (
               <div className="header-status-error">
                 <span className="header-status-error-text" title={stateError}>
-                  Нет связи
+                  {t('header.noConnection')}
                 </span>
                 <Button variant="secondary" size="small" onClick={handleRetry}>
-                  Повторить
+                  {t('common.retry')}
                 </Button>
               </div>
             )}
@@ -121,7 +142,7 @@ const Header = () => {
         )}
         <div className="user-profile" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <span className="user-name" style={{ fontSize: '14px' }}>
-            {user ? user.username : 'Пользователь'}
+            {user ? user.username : t('common.user')}
             {user && user.role === 'super_admin' && (
               <span style={{ marginLeft: '8px', fontSize: '12px', opacity: 0.8 }}>(Super Admin)</span>
             )}
@@ -132,7 +153,7 @@ const Header = () => {
             onClick={handleLogout}
             style={{ padding: '5px 15px', fontSize: '12px' }}
           >
-            Выход
+            {t('header.logout')}
           </Button>
         </div>
       </div>

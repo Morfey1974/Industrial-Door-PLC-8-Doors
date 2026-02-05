@@ -8,6 +8,7 @@ import { useCallback } from 'react';
 import useApi from '../../hooks/useApi';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useDoorsData } from '../../context/DoorsDataContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { getJournalStat, getJournalDump } from '../../services/api';
 import { formatTimestamp } from '../../utils/formatters';
 import Button from '../../components/common/Button';
@@ -16,6 +17,7 @@ import './Monitoring.css';
 const LAST_EVENTS_LIMIT = 10;
 
 const Statistics = () => {
+  const { t } = useLanguage();
   const { data: doors, loading: doorsLoading, error: doorsError, refetch: refetchDoors } = useDoorsData();
 
   const fetchStat = useCallback((signal) => getJournalStat(signal), []);
@@ -40,14 +42,14 @@ const Statistics = () => {
   return (
     <div className="monitoring-statistics">
       <div className="page-header">
-        <h1>Статистика</h1>
-        <p>Сводка по журналу событий, дверям и последним событиям. Данные обновляются каждые 10 с.</p>
+        <h1>{t('pages.statistics.title')}</h1>
+        <p>{t('pages.statistics.subtitle')}</p>
       </div>
 
       {!loading && !error && (
         <div className="stats-actions">
           <Button variant="secondary" size="small" onClick={() => refetchAll(false)}>
-            Обновить
+            {t('common.refresh')}
           </Button>
         </div>
       )}
@@ -60,10 +62,10 @@ const Statistics = () => {
 
       {error && !journalStat && !doors && (
         <div className="error-state">
-          <h3>Ошибка загрузки данных</h3>
+          <h3>{t('pages.statistics.errorLoad')}</h3>
           <p>{error}</p>
           <Button variant="primary" onClick={() => refetchAll(false)}>
-            Повторить попытку
+            {t('common.retryAgain')}
           </Button>
         </div>
       )}
@@ -72,7 +74,7 @@ const Statistics = () => {
         <div className="stats-grid">
           {/* Журнал событий */}
           <div className="stats-card">
-            <h2>Журнал событий</h2>
+            <h2>{t('pages.statistics.journal')}</h2>
             <p className="stats-value">{journalStat.recordsWritten ?? 0}</p>
             <p className="stats-label">записей записано</p>
             <ul className="stats-list">
@@ -90,7 +92,7 @@ const Statistics = () => {
 
           {/* Двери и аварии */}
           <div className="stats-card">
-            <h2>Двери</h2>
+            <h2>{t('pages.statistics.doors')}</h2>
             {!doorsLoading && doors ? (
               <>
                 <p className="stats-value">{totalDoors}</p>
@@ -109,7 +111,7 @@ const Statistics = () => {
 
       {/* Последние события */}
       <div className="stats-card stats-card-full">
-        <h2>Последние события</h2>
+        <h2>{t('pages.statistics.recentEvents')}</h2>
         {eventsLoading && !lastEvents?.records?.length && (
           <p className="stats-muted">Загрузка событий…</p>
         )}

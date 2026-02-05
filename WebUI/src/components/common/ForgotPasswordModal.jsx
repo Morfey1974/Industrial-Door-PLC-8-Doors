@@ -8,12 +8,14 @@
 import { useState, useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import Modal from './Modal';
+import { useLanguage } from '../../context/LanguageContext';
 import Button from './Button';
 import Input from './Input';
 import { requestPasswordReset } from '../../services/auth';
 import './ForgotPasswordModal.css';
 
 const ForgotPasswordModal = ({ isOpen, onClose }) => {
+  const { t } = useLanguage();
   const { user } = useContext(AuthContext);
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,7 +71,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
   return (
     <Modal isOpen={isOpen} onClose={handleClose}>
       <div className="forgot-password-modal">
-        <h2>Восстановление пароля</h2>
+        <h2>{t('modals.forgotPassword')}</h2>
         
         {!isSuperAdmin ? (
           <div className="forgot-password-info">

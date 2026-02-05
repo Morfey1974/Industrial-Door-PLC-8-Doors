@@ -98,6 +98,55 @@
   gap: var(--spacing-lg);
 }
 
+/* Переключатель языка: слева от статуса сети, в стиле шапки */
+.header-lang-switcher {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 var(--spacing-xs);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all var(--transition-base);
+  box-sizing: border-box;
+}
+
+.header-lang-switcher:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.header-lang-btn {
+  padding: 6px 14px;
+  margin: 0 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.header-lang-btn:hover {
+  color: var(--color-text-light);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.header-lang-btn.active {
+  color: var(--color-text-light);
+  background: var(--gradient-accent);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(230, 51, 42, 0.35);
+}
+
+.header-lang-btn.active:hover {
+  background: var(--gradient-accent-hover);
+  box-shadow: 0 4px 12px rgba(230, 51, 42, 0.4);
+}
+
 /* Общая высота блока статуса и блока пользователя в шапке */
 .header .header-status,
 .header .user-profile {
@@ -439,6 +488,27 @@
 .login-header {
   text-align: center;
   margin-bottom: var(--spacing-xl);
+  position: relative;
+}
+
+/* Переключатель языка на странице входа */
+.login-lang-switcher {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 4px;
+}
+
+.login-lang-switcher .header-lang-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.login-lang-switcher .header-lang-btn.active {
+  background: var(--gradient-accent);
+  color: var(--color-text-light);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .login-form {

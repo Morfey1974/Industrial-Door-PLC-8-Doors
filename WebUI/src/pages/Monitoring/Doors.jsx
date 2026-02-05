@@ -5,12 +5,14 @@
 import { useState } from 'react';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useDoorsData } from '../../context/DoorsDataContext';
+import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import './Monitoring.css';
 
 const Doors = () => {
+  const { t } = useLanguage();
   const [filters, setFilters] = useState({
     status: 'all',
     doorId: '',
@@ -28,8 +30,8 @@ const Doors = () => {
   return (
     <div className="monitoring-doors">
       <div className="page-header">
-        <h1>Мониторинг дверей</h1>
-        <p>Полная таблица состояния всех дверей системы</p>
+        <h1>{t('pages.doors.title')}</h1>
+        <p>{t('pages.doors.subtitle')}</p>
       </div>
 
       {/* Панель фильтров и строка: статус, ID двери, всего дверей, Обновить */}
@@ -39,10 +41,10 @@ const Doors = () => {
           {!loading && !error && doors && doors.doors && (
             <div className="doors-info-inline">
               <span className="doors-info-text">
-                Всего дверей: <strong>{doors.doors.length}</strong>
+                {t('pages.dashboard.totalDoors')}: <strong>{doors.doors.length}</strong>
               </span>
               <Button variant="secondary" size="small" onClick={() => refetch(false)}>
-                Обновить
+                {t('pages.doors.refresh')}
               </Button>
             </div>
           )}
@@ -53,7 +55,7 @@ const Doors = () => {
       {loading && !doors && (
         <div className="doors-table-section door-table-skeleton" aria-busy="true">
           <div className="door-table" style={{ padding: '1rem' }}>
-            <p style={{ margin: '0 0 0.75rem 0', color: 'var(--color-text-dark)' }}>Загрузка данных о дверях…</p>
+            <p style={{ margin: '0 0 0.75rem 0', color: 'var(--color-text-dark)' }}>{t('pages.doors.loadingDoors')}</p>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -84,11 +86,11 @@ const Doors = () => {
       {/* Обработка ошибок - показываем только если нет данных */}
       {error && !doors && (
         <div className="error-state">
-          <h3>Ошибка загрузки данных</h3>
+          <h3>{t('pages.doors.errorLoad')}</h3>
           <p>{error}</p>
           <p>Проверьте, что контроллер доступен по адресу: http://192.168.1.50</p>
           <Button variant="primary" onClick={() => refetch(false)}>
-            Повторить попытку
+            {t('common.retryAgain')}
           </Button>
         </div>
       )}

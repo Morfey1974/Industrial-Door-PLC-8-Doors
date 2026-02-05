@@ -2,6 +2,7 @@
  * Верхняя панель редактора карт
  */
 
+import { useLanguage } from '../../context/LanguageContext';
 import Button from '../common/Button';
 import './MappingHeader.css';
 
@@ -25,10 +26,11 @@ const MappingHeader = ({
   onFitToView,
   onRefreshDoors,
 }) => {
+  const { t } = useLanguage();
   return (
     <div className="mapping-header">
       <div className="mapping-header-name-row">
-        <span className="mapping-header-title">Маппинг:</span>
+        <span className="mapping-header-title">{t('pages.mapping.title')}:</span>
         <span className="mapping-header-map-name" title="Название карты (привязана к конфигурации с тем же именем)">
           {mapDisplayName}
         </span>

@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useLanguage } from '../../context/LanguageContext';
 import { getSectionContent } from './HelpContent';
 import './Help.css';
 
@@ -26,6 +27,7 @@ export const HELP_SECTIONS = [
  * Главная страница помощи — список разделов (каждый открывается отдельной страницей)
  */
 function HelpIndex() {
+  const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredSections = useMemo(() => {
@@ -72,7 +74,7 @@ function HelpIndex() {
       </header>
 
       <main className="help-index-content">
-        <h2 className="help-index-title">Содержание</h2>
+        <h2 className="help-index-title">{t('pages.help.contents')}</h2>
         {filteredSections.length === 0 ? (
           <p className="help-index-empty">Ничего не найдено</p>
         ) : (

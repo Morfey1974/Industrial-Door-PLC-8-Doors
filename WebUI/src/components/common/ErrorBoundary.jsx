@@ -3,6 +3,7 @@
  */
 
 import { Component } from 'react';
+import { LanguageContext } from '../../context/LanguageContext';
 
 export class ErrorBoundary extends Component {
   state = { error: null };
@@ -18,6 +19,8 @@ export class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
+        <LanguageContext.Consumer>
+          {({ t }) => (
         <div style={{
           padding: '24px',
           fontFamily: 'Arial, sans-serif',
@@ -28,7 +31,7 @@ export class ErrorBoundary extends Component {
           borderRadius: '8px',
           color: '#333',
         }}>
-          <h2 style={{ color: '#d32f2f', marginTop: 0 }}>Ошибка на странице</h2>
+          <h2 style={{ color: '#d32f2f', marginTop: 0 }}>{t ? t('errors.pageError') : 'Ошибка на странице'}</h2>
           <pre style={{
             background: '#f5f5f5',
             padding: '12px',
@@ -55,6 +58,8 @@ export class ErrorBoundary extends Component {
             Закрыть
           </button>
         </div>
+          )}
+        </LanguageContext.Consumer>
       );
     }
     return this.props.children;

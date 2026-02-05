@@ -1,9 +1,14 @@
 /**
  * AuthContext - контекст для аутентификации
+ * При загрузке и периодически (каждые 10 мин) проверяем сессию на контроллере (24 ч).
+ * При истечении сессии (401) интерцептор api.js перенаправляет на /login.
  */
 
-import { createContext, useState, useEffect } from 'react';
+import { createContext, useState, useEffect, useRef } from 'react';
 import { login as apiLogin, logout as apiLogout, getSession } from '../services/auth';
+
+/** Интервал проверки сессии (мс). Контроллер считает сессию недействительной через 24 ч. */
+const SESSION_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 минут
 
 export const AuthContext = createContext(null);
 
@@ -11,8 +16,16 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const sessionCheckIntervalRef = useRef(null);
 
-  // Проверяем сессию при загрузке
+  const clearSessionState = () => {
+    setUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+  };
+
+  // Проверка сессии при загрузке и периодически
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -20,14 +33,44 @@ export const AuthProvider = ({ children }) => {
         if (session.ok && session.user) {
           setUser(session.user);
           setIsAuthenticated(true);
+        } else {
+          // Нет токена или контроллер вернул не OK — сбрасываем состояние
+          clearSessionState();
         }
       } catch (error) {
-        console.error('Ошибка проверки сессии:', error);
+        // 401 обрабатывается интерцептором api.js (редирект на /login)
+        if (error.response?.status !== 401) {
+          console.error('Ошибка проверки сессии:', error);
+          clearSessionState();
+        }
       } finally {
         setLoading(false);
       }
     };
+
     checkSession();
+
+    // Периодическая проверка: при истечении сессии на контроллере (24 ч) следующий запрос вернёт 401
+    sessionCheckIntervalRef.current = setInterval(() => {
+      if (!localStorage.getItem('auth_token')) return;
+      getSession().then((session) => {
+        if (!session.ok || !session.user) clearSessionState();
+        else setUser(session.user);
+      }).catch((err) => {
+        if (err.response?.status === 401) {
+          clearSessionState();
+          // Редирект делает интерцептор; на случай если запрос шёл не через него
+          if (typeof window !== 'undefined') window.location.href = '/login';
+        }
+      });
+    }, SESSION_CHECK_INTERVAL_MS);
+
+    return () => {
+      if (sessionCheckIntervalRef.current) {
+        clearInterval(sessionCheckIntervalRef.current);
+        sessionCheckIntervalRef.current = null;
+      }
+    };
   }, []);
 
   const login = async (username, password) => {

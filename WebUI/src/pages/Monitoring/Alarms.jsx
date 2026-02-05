@@ -6,11 +6,13 @@
 import { useState } from 'react';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useDoorsData } from '../../context/DoorsDataContext';
+import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
 import Button from '../../components/common/Button';
 import './Monitoring.css';
 
 const Alarms = () => {
+  const { t } = useLanguage();
   const { data: doors, loading, error, refetch } = useDoorsData();
 
   useAutoRefresh(() => refetch(true), 3000);
@@ -21,8 +23,8 @@ const Alarms = () => {
   return (
     <div className="monitoring-alarms">
       <div className="page-header">
-        <h1>Алармы</h1>
-        <p>Двери с активной аварией (долго открыта или иная причина). Данные обновляются каждые 3 с.</p>
+        <h1>{t('pages.alarms.title')}</h1>
+        <p>{t('pages.alarms.subtitle')}</p>
       </div>
 
       {!loading && !error && doors && (
@@ -34,7 +36,7 @@ const Alarms = () => {
             )}
           </span>
           <Button variant="secondary" size="small" onClick={() => refetch(false)}>
-            Обновить
+            {t('common.refresh')}
           </Button>
         </div>
       )}
@@ -47,10 +49,10 @@ const Alarms = () => {
 
       {error && !doors && (
         <div className="error-state">
-          <h3>Ошибка загрузки данных</h3>
+          <h3>{t('pages.alarms.errorLoad')}</h3>
           <p>{error}</p>
           <Button variant="primary" onClick={() => refetch(false)}>
-            Повторить попытку
+            {t('common.retryAgain')}
           </Button>
         </div>
       )}

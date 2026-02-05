@@ -5,6 +5,7 @@
 import { useState, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
 import SplashScreen from '../components/common/SplashScreen';
@@ -27,6 +28,7 @@ const Login = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const { login } = useContext(AuthContext);
+  const { t, language, setLanguage } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const reasonConfigApplied = searchParams.get('reason') === 'config_applied';
@@ -41,11 +43,11 @@ const Login = () => {
       if (result.success) {
         navigate('/');
       } else {
-        let msg = result.error || 'Ошибка входа';
+        let msg = result.error || t('login.errorLogin');
         if (msg.includes('429')) {
-          msg = 'Слишком много попыток входа. Подождите около 15 минут.';
+          msg = t('login.tooManyAttempts');
         } else if (result.remainingAttempts !== undefined && result.remainingAttempts !== null) {
-          msg += `. Осталось попыток до блокировки: ${result.remainingAttempts}`;
+          msg = `${t('login.errorInvalid')}. ${t('login.remainingAttempts')}: ${result.remainingAttempts}`;
         }
         setError(msg);
       }
@@ -54,17 +56,17 @@ const Login = () => {
       const data = err.response?.data;
       const isRateLimit = status === 429 || String(err.message || '').includes('429');
       if (isRateLimit) {
-        setError('Слишком много попыток входа. Подождите около 15 минут.');
+        setError(t('login.tooManyAttempts'));
       } else if (status === 401) {
-        let msg = 'Неверные учётные данные';
+        let msg = t('login.errorInvalid');
         if (data?.remainingAttempts !== undefined && data?.remainingAttempts !== null) {
-          msg += `. Осталось попыток до блокировки: ${data.remainingAttempts}`;
+          msg += `. ${t('login.remainingAttempts')}: ${data.remainingAttempts}`;
         }
         setError(msg);
       } else {
-        let msg = data?.error || err.message || 'Ошибка подключения к серверу';
+        let msg = data?.error || err.message || t('login.errorConnection');
         if (data?.remainingAttempts !== undefined && data?.remainingAttempts !== null) {
-          msg += `. Осталось попыток до блокировки: ${data.remainingAttempts}`;
+          msg += `. ${t('login.remainingAttempts')}: ${data.remainingAttempts}`;
         }
         setError(msg);
       }
@@ -91,6 +93,24 @@ const Login = () => {
         }}
       >
         <div className="login-header">
+          <div className="login-lang-switcher" role="group" aria-label="Язык / Language">
+            <button
+              type="button"
+              className={`header-lang-btn ${language === 'ru' ? 'active' : ''}`}
+              onClick={() => setLanguage('ru')}
+              title="Русский"
+            >
+              RU
+            </button>
+            <button
+              type="button"
+              className={`header-lang-btn ${language === 'en' ? 'active' : ''}`}
+              onClick={() => setLanguage('en')}
+              title="English"
+            >
+              EN
+            </button>
+          </div>
           <div className="logo">
             {logoImage && (
               <img src={logoImage} alt="DCM Logo" className="logo-image" onError={(e) => {
@@ -114,7 +134,7 @@ const Login = () => {
               borderRadius: '4px',
               color: '#1565c0',
             }}>
-              Конфигурация успешно применена. Контроллер перезагрузился — войдите снова.
+              {t('login.configApplied')}
             </div>
           )}
           {typeof window !== 'undefined' && window.location?.protocol === 'http:' && (
@@ -127,7 +147,7 @@ const Login = () => {
               color: '#e65100',
               fontSize: '13px',
             }}>
-              Подключение по HTTP — трафик не шифруется. Для защиты данных рекомендуется использовать HTTPS.
+              {t('login.httpWarning')}
             </div>
           )}
           {error && (
@@ -143,7 +163,7 @@ const Login = () => {
             </div>
           )}
           <div className="form-group">
-            <label>Логин</label>
+            <label>{t('login.loginLabel')}</label>
             <input
               type="text"
               className="form-control"
@@ -156,13 +176,14 @@ const Login = () => {
           </div>
           <PasswordInput
             id="login-password"
-            label="Пароль"
+            label={t('login.passwordLabel')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="admin"
             required
             disabled={loading}
             showForgotPassword={true}
+            forgotPasswordLabel={t('login.restorePassword')}
             onForgotPassword={() => {
               setShowForgotPasswordModal(true);
             }}
@@ -173,7 +194,7 @@ const Login = () => {
             disabled={loading}
             style={{ width: '100%', marginTop: '10px' }}
           >
-            {loading ? 'Вход...' : 'Вход'}
+            {loading ? t('login.entering') : t('login.enter')}
           </Button>
         </form>
       </div>

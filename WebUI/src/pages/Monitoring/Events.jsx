@@ -5,6 +5,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import useApi from '../../hooks/useApi';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
+import { useLanguage } from '../../context/LanguageContext';
 import { getJournalDump, getJournalStat } from '../../services/api';
 import EventsTable from '../../components/ui/EventsTable';
 import EventsFilterBar from '../../components/ui/EventsFilterBar';
@@ -13,6 +14,7 @@ import Button from '../../components/common/Button';
 import './Monitoring.css';
 
 const Events = () => {
+  const { t } = useLanguage();
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(20);
   const [filters, setFilters] = useState({
@@ -157,7 +159,7 @@ const Events = () => {
   return (
     <div className="monitoring-events">
       <div className="page-header">
-        <h1>Журнал событий</h1>
+        <h1>{t('pages.events.title')}</h1>
         <p>История всех событий системы с возможностью фильтрации и пагинации</p>
       </div>
 
@@ -208,7 +210,7 @@ const Events = () => {
       {/* Сообщение, если журнал не загрузился — без формулировки «ошибка сети», с предложением подождать и обновить */}
       {error && !events && (
         <div className="error-state">
-          <h3>Журнал событий пока не загрузился</h3>
+          <h3>{t('pages.events.notLoaded')}</h3>
           <p>
             Нажмите «Обновить» — при медленном ответе контроллера загрузка может занять до 30 секунд.
             Если после повторной попытки данные не появятся, проверьте подключение к контроллеру.

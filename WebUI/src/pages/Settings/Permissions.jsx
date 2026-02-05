@@ -9,6 +9,7 @@
 import { useContext, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { PermissionsContext } from '../../context/PermissionsContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { PERMISSION_SECTIONS, PERMISSION_OPTIONS, DEFAULT_PERMISSIONS } from '../../utils/permissionsConfig';
 import './Permissions.css';
 
@@ -18,6 +19,7 @@ function getOptionLabel(value) {
 }
 
 const Permissions = () => {
+  const { t } = useLanguage();
   const { user } = useContext(AuthContext);
   const {
     permissions,
@@ -45,7 +47,7 @@ const Permissions = () => {
 
   return (
     <div className="settings-permissions">
-      <h1>Права доступа по ролям</h1>
+      <h1>{t('pages.permissions.title')}</h1>
 
       <div className="permissions-info">
         <p>
@@ -117,7 +119,7 @@ const Permissions = () => {
         {/* Блок с описанием уровней доступа — доступен и для Admin, и для Super Admin */}
         {(currentRole === 'super_admin' || currentRole === 'admin') && (
           <div className="permissions-levels-info">
-            <h2>Значения пунктов выпадающего списка</h2>
+            <h2>{t('pages.permissions.dropdownValues')}</h2>
             <ul className="permission-levels-list">
               <li>
                 <strong>Нет доступа</strong> — раздел для этой роли недоступен: пункт не показывается в меню, при прямом заходе по ссылке отображается «Доступ запрещён».
@@ -153,23 +155,23 @@ const Permissions = () => {
       )}
 
       <div className="permissions-roles-info">
-        <h2>Описание ролей</h2>
+        <h2>{t('pages.permissions.rolesDesc')}</h2>
         <div className="role-descriptions">
           <div className="role-description">
-            <h3>Super Admin (Супер-администратор)</h3>
+            <h3>{t('pages.permissions.superAdmin')}</h3>
             <p>
               Полный удалённый доступ к контроллеру — только Супер-администратор. Может изменять права для ролей Admin и Operator.
               Свои права не настраиваются. Раздел «Параметры системы» доступен только Супер-администратору.
             </p>
           </div>
           <div className="role-description">
-            <h3>Admin (Администратор)</h3>
+            <h3>{t('pages.permissions.admin')}</h3>
             <p>
               Права Admin задаёт Super Admin. Admin может изменять права только для роли Operator.
             </p>
           </div>
           <div className="role-description">
-            <h3>Operator (Оператор)</h3>
+            <h3>{t('pages.permissions.operator')}</h3>
             <p>
               Права настраиваются Super Admin или Admin. Обычно: только просмотр мониторинга
               и изменение пароля в профиле.

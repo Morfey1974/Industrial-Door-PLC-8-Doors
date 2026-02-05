@@ -3,9 +3,11 @@
  * Оформление в стиле проекта: центрирование, симметрия, цветовая схема DCM
  */
 
+import { useLanguage } from '../../context/LanguageContext';
 import './About.css';
 
 const About = () => {
+  const { t } = useLanguage();
   return (
     <div className="settings-about">
       <div className="about-hero">
@@ -29,7 +31,7 @@ const About = () => {
       </section>
 
       <section className="about-contact">
-        <h2 className="about-contact-title">Контактная информация</h2>
+        <h2 className="about-contact-title">{t('pages.about.contactTitle')}</h2>
         <div className="about-contact-grid">
           <div className="about-contact-item">
             <span className="about-contact-label">Адрес</span>

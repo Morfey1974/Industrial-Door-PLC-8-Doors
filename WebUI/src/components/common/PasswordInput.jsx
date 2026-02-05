@@ -19,6 +19,7 @@ const PasswordInput = ({
   minLength,
   showForgotPassword = true,
   onForgotPassword,
+  forgotPasswordLabel,
   className = '',
   ...props
 }) => {
@@ -61,7 +62,6 @@ const PasswordInput = ({
       {label && (
         <label htmlFor={id} className="password-input-label">
           {label}
-          {required && <span style={{ color: '#d32f2f', marginLeft: '4px' }}>*</span>}
         </label>
       )}
       <div className="password-input-wrapper">
@@ -105,7 +105,7 @@ const PasswordInput = ({
             onClick={handleForgotPassword}
             disabled={disabled}
           >
-            Восстановить пароль
+            {forgotPasswordLabel ?? 'Восстановить пароль'}
           </button>
         </div>
       )}

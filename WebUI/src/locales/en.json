@@ -1,0 +1,158 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "user": "User",
+    "retry": "Retry",
+    "retryAgain": "Retry",
+    "refresh": "Refresh"
+  },
+  "header": {
+    "network": "Network",
+    "link": "Link",
+    "noConnection": "No connection",
+    "logout": "Logout",
+    "networkReady": "Network ready",
+    "networkNotReady": "Network not ready",
+    "linkUp": "Link UP",
+    "linkDown": "Link DOWN",
+    "ipAddress": "IP address"
+  },
+  "login": {
+    "loginLabel": "Login",
+    "passwordLabel": "Password",
+    "enter": "Sign in",
+    "entering": "Signing in...",
+    "restorePassword": "Restore password",
+    "configApplied": "Configuration applied successfully. Controller has rebooted — please sign in again.",
+    "httpWarning": "Connection over HTTP — traffic is not encrypted. HTTPS is recommended for data protection.",
+    "errorInvalid": "Invalid credentials",
+    "remainingAttempts": "Attempts remaining until lockout",
+    "tooManyAttempts": "Too many login attempts. Please wait about 15 minutes.",
+    "errorConnection": "Connection to server failed",
+    "errorLogin": "Login error"
+  },
+  "nav": {
+    "monitoring": "Monitoring",
+    "configuration": "Configuration",
+    "settings": "Settings",
+    "doors": "Doors",
+    "events": "Events",
+    "alarms": "Alarms",
+    "statistics": "Statistics",
+    "doorsConfig": "Door settings",
+    "profile": "Profile",
+    "systemParams": "System parameters",
+    "permissions": "Permissions",
+    "users": "Users",
+    "about": "About",
+    "help": "Help"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Overview of door status by board",
+      "totalDoors": "Total doors",
+      "errorDoors": "Error loading doors",
+      "noData": "No door data"
+    },
+    "doors": {
+      "title": "Door monitoring",
+      "subtitle": "Full table of all doors status",
+      "refresh": "Refresh",
+      "loadingDoors": "Loading door data…",
+      "errorLoad": "Error loading data"
+    },
+    "events": {
+      "title": "Event log",
+      "notLoaded": "Event log not loaded yet"
+    },
+    "alarms": {
+      "title": "Alarms",
+      "subtitle": "Doors with active alarm (open too long or other reason). Data updates every 3 s.",
+      "errorLoad": "Error loading data"
+    },
+    "statistics": {
+      "title": "Statistics",
+      "subtitle": "Summary of event log, doors and recent events. Data updates every 10 s.",
+      "journal": "Event log",
+      "doors": "Doors",
+      "recentEvents": "Recent events",
+      "errorLoad": "Error loading data"
+    },
+    "config": {
+      "configList": "Configuration list",
+      "savedConfigs": "Saved configurations",
+      "editConfig": "Edit configuration"
+    },
+    "users": {
+      "title": "User management"
+    },
+    "profile": {
+      "title": "User profile",
+      "userInfo": "User information"
+    },
+    "systemParams": {
+      "title": "System parameters",
+      "section1": "Network connection",
+      "section2": "Security and remote access",
+      "section2h3": "Industrial security recommendations",
+      "section3": "VPN setup for remote access",
+      "section3options": "Setup options",
+      "section3after": "After connecting to VPN",
+      "section4": "Time and identification",
+      "section5": "Controller information"
+    },
+    "permissions": {
+      "title": "Role permissions",
+      "dropdownValues": "Dropdown list values",
+      "rolesDesc": "Role descriptions",
+      "superAdmin": "Super Admin",
+      "admin": "Admin",
+      "operator": "Operator"
+    },
+    "about": {
+      "contactTitle": "Contact information"
+    },
+    "help": {
+      "title": "System help",
+      "contents": "Contents"
+    },
+    "resetPassword": {
+      "title": "Password reset"
+    },
+    "mapping": {
+      "title": "Mapping"
+    },
+    "generalTab": {
+      "projectName": "Project name",
+      "configInfo": "Configuration information"
+    },
+    "timeoutsTab": {
+      "postCloseTitle": "Individual post-close timeouts",
+      "board": "Board"
+    },
+    "dependenciesTab": {
+      "title": "Door dependencies",
+      "createEdit": "Create/edit dependency",
+      "listAll": "All dependencies list"
+    },
+    "doorsTab": {
+      "doorsCount": "Doors"
+    },
+    "doorEdit": {
+      "edit": "Edit door",
+      "add": "Add door"
+    }
+  },
+  "modals": {
+    "forgotPassword": "Password recovery",
+    "controllerConnection": "Connect to controller"
+  },
+  "errors": {
+    "pageError": "Page error",
+    "accessDenied": "Access denied",
+    "appLoad": "Application load error",
+    "renderError": "Render error",
+    "criticalError": "Critical application error"
+  }
+}

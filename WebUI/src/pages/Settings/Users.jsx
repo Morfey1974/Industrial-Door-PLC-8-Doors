@@ -12,6 +12,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { getUsers, createUser, updateUser, deleteUser } from '../../services/users';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -19,6 +20,7 @@ import PasswordInput from '../../components/common/PasswordInput';
 import './Users.css';
 
 const Users = () => {
+  const { t } = useLanguage();
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
@@ -181,7 +183,7 @@ const Users = () => {
   if (user && user.role !== 'super_admin') {
     return (
       <div className="settings-users">
-        <h1>Управление пользователями</h1>
+        <h1>{t('pages.users.title')}</h1>
         <div className="error-message" style={{ padding: '20px', backgroundColor: '#ffebee', border: '1px solid #f44336', borderRadius: '4px', color: '#c62828' }}>
           Доступ запрещен. Только для Супер-администратора.
         </div>
@@ -192,7 +194,7 @@ const Users = () => {
   return (
     <div className="settings-users">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Управление пользователями</h1>
+        <h1>{t('pages.users.title')}</h1>
         <Button onClick={handleCreate} variant="primary">
           + Создать пользователя
         </Button>

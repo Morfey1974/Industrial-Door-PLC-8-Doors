@@ -13,6 +13,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { flushSync } from 'react-dom';
+import { useLanguage } from '../../context/LanguageContext';
 import { getConfigFull, putConfigFull } from '../../services/api';
 import { 
   saveDraft, 
@@ -39,6 +40,7 @@ import DependenciesTab from './DoorsConfigTabs/DependenciesTab';
 import TimeoutsTab from './DoorsConfigTabs/TimeoutsTab';
 
 const DoorsConfig = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   // Режим отображения: 'list' - список конфигураций, 'edit' - редактирование
@@ -1016,7 +1018,7 @@ const DoorsConfig = () => {
     return (
       <div className="doors-config">
         <div className="doors-config-header">
-          <h1>Список конфигураций</h1>
+          <h1>{t('pages.config.configList')}</h1>
         </div>
         
         {/* Панель управления (только в режиме списка) */}
@@ -1193,7 +1195,7 @@ const DoorsConfig = () => {
   return (
     <div className="doors-config">
       <div className="doors-config-header">
-        <h1>Редактирование конфигурации</h1>
+        <h1>{t('pages.config.editConfig')}</h1>
         <div className="doors-config-status">
           {hasUnsavedChanges && lastSaved && (
             <span className="auto-save-indicator">

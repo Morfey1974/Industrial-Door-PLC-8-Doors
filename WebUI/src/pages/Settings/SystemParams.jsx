@@ -10,6 +10,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { getConfig, putConfig } from '../../services/api';
 import { useStateData } from '../../context/StateDataContext';
+import { useLanguage } from '../../context/LanguageContext';
 import Button from '../../components/common/Button';
 import './SystemParams.css';
 
@@ -42,6 +43,7 @@ const DEFAULT_NETMASK = '255.255.255.0';
 const DEFAULT_GATEWAY = '192.168.1.1';
 
 const SystemParams = () => {
+  const { t } = useLanguage();
   const stateData = useStateData();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -147,7 +149,7 @@ const SystemParams = () => {
 
   return (
     <div className="settings-system-params">
-      <h1>Параметры системы</h1>
+      <h1>{t('pages.systemParams.title')}</h1>
       <p className="system-params-page-intro">
         Полный удалённый доступ к контроллеру имеет только Супер-администратор. Настройки для подключения и обеспечения безопасного удалённого доступа.
       </p>
@@ -171,7 +173,7 @@ const SystemParams = () => {
 
       {/* 1. Подключение к сети — доступ к контроллеру */}
       <section className="system-params-section">
-        <h2>1. Подключение к сети</h2>
+        <h2>1. {t('pages.systemParams.section1')}</h2>
         <p className="system-params-intro">
           Параметры для доступа к контроллеру с любого устройства (ПК, планшет, смартфон). Укажите IP, маску, шлюз, порт — выданные IT-отделом или настраиваемые для LAN.
         </p>
@@ -293,12 +295,12 @@ const SystemParams = () => {
 
       {/* 2. Безопасность и удалённый доступ */}
       <section className="system-params-section system-params-section-security">
-        <h2>2. Безопасность и удалённый доступ</h2>
+        <h2>2. {t('pages.systemParams.section2')}</h2>
         <p className="system-params-intro">
           Рекомендации по защите контроллера от несанкционированного доступа при удалённой работе администратора.
         </p>
         <div className="system-params-security-checklist">
-          <h3>Рекомендации по промышленной безопасности</h3>
+          <h3>{t('pages.systemParams.section2h3')}</h3>
           <ul>
             <li><strong>VPN:</strong> при доступе через интернет или из другой подсети используйте VPN предприятия. Контроллер не должен быть доступен напрямую из интернета.</li>
             <li><strong>Локальная сеть:</strong> предпочтительно подключаться из той же подсети, что и контроллер (LAN).</li>
@@ -315,12 +317,12 @@ const SystemParams = () => {
 
       {/* 3. Настройка VPN для доступа из другого города */}
       <section className="system-params-section system-params-section-vpn">
-        <h2>3. Настройка VPN для удалённого доступа</h2>
+        <h2>3. {t('pages.systemParams.section3')}</h2>
         <p className="system-params-intro">
           VPN настраивается на <strong>роутере</strong> или на <strong>ПК в сети</strong>, не на контроллере. После подключения к VPN вы оказываетесь в локальной сети и можете открыть WebUI по адресу 192.168.1.x.
         </p>
         <div className="system-params-vpn-options">
-          <h3>Варианты настройки</h3>
+          <h3>{t('pages.systemParams.section3options')}</h3>
           <ul>
             <li><strong>VPN на роутере:</strong> если роутер поддерживает WireGuard или OpenVPN — включите VPN-сервер в веб-интерфейсе роутера, создайте пользователя/ключ. С телефона или ноутбука из другого города подключайтесь к этому VPN — затем откройте <code>http://IP_ПК:3000</code> и в «Подключение к контроллеру» укажите <code>http://IP_контроллера:порт</code>.</li>
             <li><strong>VPN на ПК:</strong> на компьютере, где запущен WebUI, установите VPN-сервер (WireGuard, OpenVPN). На роутере настройте переадресацию порта VPN на этот ПК. С удалённого устройства подключайтесь к VPN по внешнему IP или динамическому DNS.</li>
@@ -328,7 +330,7 @@ const SystemParams = () => {
           </ul>
         </div>
         <div className="system-params-vpn-after">
-          <h3>После подключения к VPN</h3>
+          <h3>{t('pages.systemParams.section3after')}</h3>
           <ol>
             <li>Откройте в браузере <code>http://IP_ПК_с_WebUI:3000</code> (IP — из локальной сети или из VPN, например Tailscale выдаёт свой IP).</li>
             <li>Нажмите «Подключение к контроллеру» и укажите адрес контроллера (<code>http://192.168.1.50:80</code>).</li>
@@ -342,7 +344,7 @@ const SystemParams = () => {
 
       {/* 4. Время и идентификация */}
       <section className="system-params-section">
-        <h2>4. Время и идентификация</h2>
+        <h2>4. {t('pages.systemParams.section4')}</h2>
         <p className="system-params-intro">
           Корректное время нужно для журнала событий. Hostname помогает идентифицировать устройство в сети.
         </p>
@@ -399,7 +401,7 @@ const SystemParams = () => {
 
       {/* 5. Информация о контроллере */}
       <section className="system-params-section">
-        <h2>5. Информация о контроллере</h2>
+        <h2>5. {t('pages.systemParams.section5')}</h2>
         <div className="system-params-info-grid">
           <div className="system-params-info-item">
             <span className="system-params-info-label">Текущий IP-адрес</span>

@@ -6,6 +6,7 @@ import { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { PermissionsContext } from '../../context/PermissionsContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 /**
  * @param {Object} props
@@ -14,6 +15,7 @@ import { PermissionsContext } from '../../context/PermissionsContext';
  * @param {string[]} [props.allowedRoles] - Массив разрешённых ролей (если path не передан)
  */
 const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
+  const { t } = useLanguage();
   const { user, isAuthenticated, loading } = useContext(AuthContext);
   const permissionsContext = useContext(PermissionsContext);
 
@@ -25,7 +27,7 @@ const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
         alignItems: 'center',
         height: '100vh',
       }}>
-        <div>Загрузка...</div>
+        <div>{t('common.loading')}</div>
       </div>
     );
   }
@@ -48,7 +50,7 @@ const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
         textAlign: 'center',
         fontFamily: 'Arial',
       }}>
-        <h1 style={{ color: '#d32f2f', marginBottom: '20px' }}>Доступ запрещён</h1>
+        <h1 style={{ color: '#d32f2f', marginBottom: '20px' }}>{t('errors.accessDenied')}</h1>
         <p style={{ color: '#666', marginBottom: '30px' }}>
           У вас нет прав доступа к этой странице.
         </p>

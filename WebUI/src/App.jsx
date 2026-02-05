@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { PermissionsProvider, PermissionsContext } from './context/PermissionsContext';
+import { useLanguage } from './context/LanguageContext';
 import { AppProvider } from './context/AppContext';
 import { StateDataProvider } from './context/StateDataContext';
 import { LeaveConfirmProvider, useLeaveConfirm } from './context/LeaveConfirmContext';
@@ -41,6 +42,7 @@ function AppContent() {
     const permissionsContext = useContext(PermissionsContext);
     const canAccessPath = permissionsContext?.canAccess ?? (() => true);
     const { tryNavigate } = useLeaveConfirm();
+    const { t } = useLanguage();
     const doNavigate = tryNavigate || navigate;
 
     // Определяем активную вкладку на основе текущего пути
@@ -94,7 +96,7 @@ function AppContent() {
           flexDirection: 'column',
           gap: '20px'
         }}>
-          <div>Загрузка...</div>
+          <div>{t('common.loading')}</div>
         </div>
       );
     }
@@ -116,42 +118,42 @@ function AppContent() {
     // Вкладки и пункты меню — по таблице прав (canAccessPath)
     const role = user?.role;
     const monitoringItems = [
-      { id: 'doors', label: 'Двери', path: '/monitoring/doors' },
-      { id: 'events', label: 'События', path: '/monitoring/events' },
-      { id: 'alarms', label: 'Алармы', path: '/monitoring/alarms' },
-      { id: 'statistics', label: 'Статистика', path: '/monitoring/statistics' },
+      { id: 'doors', label: t('nav.doors'), path: '/monitoring/doors' },
+      { id: 'events', label: t('nav.events'), path: '/monitoring/events' },
+      { id: 'alarms', label: t('nav.alarms'), path: '/monitoring/alarms' },
+      { id: 'statistics', label: t('nav.statistics'), path: '/monitoring/statistics' },
     ];
     const configurationItems = [
-      { id: 'doors-config', label: 'Настройка дверей', path: '/configuration/doors' },
+      { id: 'doors-config', label: t('nav.doorsConfig'), path: '/configuration/doors' },
     ];
     const monitoring = monitoringItems.filter((item) => canAccessPath(item.path, role));
     const configuration = configurationItems.filter((item) => canAccessPath(item.path, role));
     const settings = [];
     if (canAccessPath('/settings/profile', role)) {
-      settings.push({ id: 'profile', label: 'Профиль', path: '/settings/profile' });
+      settings.push({ id: 'profile', label: t('nav.profile'), path: '/settings/profile' });
     }
     if (canAccessPath('/settings/system', role)) {
-      settings.push({ id: 'system-params', label: 'Параметры системы', path: '/settings/system' });
+      settings.push({ id: 'system-params', label: t('nav.systemParams'), path: '/settings/system' });
     }
     if (canAccessPath('/settings/permissions', role)) {
-      settings.push({ id: 'permissions', label: 'Права доступа', path: '/settings/permissions' });
+      settings.push({ id: 'permissions', label: t('nav.permissions'), path: '/settings/permissions' });
     }
     if (canAccessPath('/settings/users', role)) {
-      settings.push({ id: 'users', label: 'Пользователи', path: '/settings/users' });
+      settings.push({ id: 'users', label: t('nav.users'), path: '/settings/users' });
     }
     if (canAccessPath('/settings/about', role)) {
-      settings.push({ id: 'about', label: 'О нас', path: '/settings/about' });
+      settings.push({ id: 'about', label: t('nav.about'), path: '/settings/about' });
     }
     if (canAccessPath('/settings/help', role)) {
-      settings.push({ id: 'help', label: 'Помощь', path: '/settings/help' });
+      settings.push({ id: 'help', label: t('nav.help'), path: '/settings/help' });
     }
 
     const tabs = (() => {
-      const result = [{ id: 'monitoring', label: 'Мониторинг' }];
+      const result = [{ id: 'monitoring', label: t('nav.monitoring') }];
       if (configuration.length > 0) {
-        result.push({ id: 'configuration', label: 'Конфигурация' });
+        result.push({ id: 'configuration', label: t('nav.configuration') });
       }
-      result.push({ id: 'settings', label: 'Настройки' });
+      result.push({ id: 'settings', label: t('nav.settings') });
       return result;
     })();
 
@@ -228,7 +230,7 @@ function AppContent() {
     console.error('Ошибка в AppContent:', error);
     return (
       <div style={{ padding: '20px', fontFamily: 'Arial' }}>
-        <h1>Ошибка рендеринга</h1>
+        <h1>{t('errors.renderError')}</h1>
         <p>{error.message}</p>
         <p>Проверьте консоль браузера (F12) для подробностей</p>
       </div>

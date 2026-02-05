@@ -9,6 +9,7 @@
 
 import { useContext, useState, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import './Profile.css';
 
 const PROFILE_EMAIL_KEY = 'profile_email';
@@ -38,6 +39,7 @@ const setStoredEmail = (username, email) => {
 };
 
 const Profile = () => {
+  const { t } = useLanguage();
   const { user } = useContext(AuthContext);
   const [email, setEmail] = useState('');
 
@@ -63,10 +65,10 @@ const Profile = () => {
 
   return (
     <div className="settings-profile">
-      <h1>Профиль пользователя</h1>
+      <h1>{t('pages.profile.title')}</h1>
 
       <section className="profile-section">
-        <h2>Информация о пользователе</h2>
+        <h2>{t('pages.profile.userInfo')}</h2>
         <div className="profile-info">
           <div className="profile-info-item">
             <label>Имя пользователя:</label>

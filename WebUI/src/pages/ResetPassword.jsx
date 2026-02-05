@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLanguage } from '../context/LanguageContext';
 import Button from '../components/common/Button';
 import PasswordInput from '../components/common/PasswordInput';
 import { resetPassword } from '../services/auth';
@@ -22,6 +23,7 @@ try {
 }
 
 const ResetPassword = () => {
+  const { t } = useLanguage();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
@@ -100,7 +102,7 @@ const ResetPassword = () => {
           </div>
         </div>
         
-        <h1>Сброс пароля</h1>
+        <h1>{t('pages.resetPassword.title')}</h1>
         
         {!token ? (
           <div className="error" style={{ 
