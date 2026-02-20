@@ -139,8 +139,8 @@ const Mapping = () => {
       loadDoors();
       return;
     }
-    const VIEW_POLL_MS = 1000;    // 1 с — мгновенная реакция на открытие/закрытие дверей (контроллер не держит мьютекс при /api/doors)
-    const VIEW_FIRST_DELAY_MS = 1000; // первый запрос через 1 с — переключение в Просмотр остаётся быстрым
+    const VIEW_POLL_MS = 800;    // 0.8 с — быстрая реакция на открытие/закрытие дверей (контроллер не держит мьютекс при /api/doors)
+    const VIEW_FIRST_DELAY_MS = 800;  // первый запрос через 0.8 с — переключение в Просмотр остаётся быстрым
     let intervalId = null;
     let firstId = null;
     const schedule = () => {

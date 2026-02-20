@@ -22,6 +22,8 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "FreeRTOS.h"
+#include "task.h"
 volatile uint32_t g_eth_irq = 0;
 /* USER CODE END Includes */
 
@@ -61,7 +63,7 @@ extern UART_HandleTypeDef huart3;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
-
+extern void xPortSysTickHandler(void);
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -205,5 +207,13 @@ void ETH_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-
+/**
+  * @brief Обработчик SysTick. Тик FreeRTOS идёт из TIM6 (HAL_TIM_PeriodElapsedCallback),
+  *        здесь только сброс флага, чтобы не висел прерывание.
+  */
+void SysTick_Handler(void)
+{
+  (void)SysTick->CTRL;  /* сброс флага */
+  /* xPortSysTickHandler вызывается из TIM6 callback в main.c */
+}
 /* USER CODE END 1 */

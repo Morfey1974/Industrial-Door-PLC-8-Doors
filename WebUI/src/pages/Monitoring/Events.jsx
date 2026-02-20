@@ -73,7 +73,7 @@ const Events = () => {
   // refreshKey используется для принудительного обновления при изменении limit
   const { data: events, loading, error, refetch } = useApi(fetchEvents, [offset, limit, totalRecords, refreshKey]);
 
-  // Автообновление каждые 10 секунд (только если нет активных фильтров)
+  // Автообновление каждые 5 с (только если нет активных фильтров)
   const hasActiveFilters =
     (filters.eventType && filters.eventType !== 'all') ||
     filters.doorId ||
@@ -94,7 +94,7 @@ const Events = () => {
         console.warn('Ошибка автообновления:', error);
       }
     }
-  }, 10000);
+  }, 5000);
 
   // Обработчики пагинации
   const handlePrevious = () => {

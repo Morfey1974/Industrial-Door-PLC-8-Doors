@@ -794,9 +794,9 @@ const DoorsConfig = () => {
 
     const doorCount = config.doors?.length ?? 0;
     const edgeCount = config.edges?.length ?? 0;
-    const LIMIT_DOORS_V1 = 16; // Увеличено для поддержки MASTER (8) + SLAVE (8)
-    const LIMIT_EDGES_V1 = 32; // Увеличено для поддержки большего количества зависимостей
-    const LIMIT_POST_CLOSE_V1 = 16; // Увеличено для поддержки 16 дверей
+    const LIMIT_DOORS_V1 = 32; // Поддержка до 32 дверей (например 4 узла × 8)
+    const LIMIT_EDGES_V1 = 64;
+    const LIMIT_POST_CLOSE_V1 = 32;
 
     if (doorCount > LIMIT_DOORS_V1) {
       setError(`В первой версии поддерживается не более ${LIMIT_DOORS_V1} дверей. Сейчас: ${doorCount}. Удалите лишние двери или сохраните конфигурацию и примените другую.`);

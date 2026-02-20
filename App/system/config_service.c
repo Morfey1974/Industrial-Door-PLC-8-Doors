@@ -186,14 +186,6 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
     const cfg_storage_status_t st = ConfigStorage_InitOrDefault(out_cfg, &info);
     (void)st;
 
-    /* Minimal diagnostics (видно сразу в UART, до старта LoggerTask) */
-    if (info.status == CFGST_OK && (info.used_slot == 1U || info.used_slot == 2U)) {
-        const char slot_ch = (info.used_slot == 1U) ? 'A' : 'B';
-        printf("CFG: slot %c OK (seq=%lu)\r\n", slot_ch, (unsigned long)info.seq);
-    } else {
-        printf("CFG: default (st=%u)\r\n", (unsigned)info.status);
-    }
-
     /* Optional external sink (if application sets ConfigService_LogWrite) */
     log_msg("[CFG] boot: status=%u slot=%d seq=%lu\r\n",
             (unsigned)info.status,
@@ -206,14 +198,15 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
     apply_cfg_runtime(out_cfg);
 }
 
-cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg)
+cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg,
+                                           const char *username,
+                                           uint32_t client_unix_sec)
 {
     if (!cfg) return CFGST_ARG;
     if (System_GetRole() != APP_ROLE_MASTER) return CFGST_NOT_MASTER;
 
     cfg_storage_info_t info;
     cfg_storage_status_t st = ConfigStorage_LoadActive(&g_project_cfg, &info);
-    /* If nothing active yet, still allow save (slot choice handled by storage layer) */
     if (st != CFGST_OK) {
         info.used_slot = 0U;
         info.seq = 0U;
@@ -226,7 +219,10 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg)
             (int)info.used_slot,
             (unsigned long)info.seq);
 
-    /* Журнал: попытка записи нового конфига (result = st) */
-    EventJournal_LogConfigAction(2 /*PERSIST*/, info.seq, 0, (uint32_t)st);
+    /* Журнал: из UI — имя пользователя и время с ПК; иначе — RTC (как раньше) */
+    if (username != NULL && client_unix_sec != 0U)
+        EventJournal_LogUserAction(2 /*CONFIG_SAVE*/, username, client_unix_sec, (uint32_t)st);
+    else
+        EventJournal_LogConfigAction(2 /*PERSIST*/, info.seq, 0, (uint32_t)st);
     return st;
 }

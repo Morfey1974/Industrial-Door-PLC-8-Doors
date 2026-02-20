@@ -68,6 +68,8 @@ static uint8_t parse_ipv4(const char *str, uint8_t *out)
 /* Сервис управления пользователями */
 #include "users_service.h"
 #include "config/users_format.h"
+/* RTC: чтение/установка времени для /api/time и журнала событий */
+#include "rtc_service.h"
 
 /* Active configuration stored by ConfigService (Этап 7) */
 extern project_config_t g_project_cfg;
@@ -482,6 +484,16 @@ static uint8_t build_config_full(jsonw_t *w)
     return 1U;
 }
 
+/* Ответ GET /api/time: текущее время контроллера (RTC). unix — секунды с 1970-01-01 для UI. */
+static uint8_t build_time_response(jsonw_t *w)
+{
+    uint32_t unix_sec = 0U;
+    if (RTC_GetUnixTime(&unix_sec))
+        return jw_appendf(w, "{\"ok\":1,\"unix\":%lu,\"source\":\"rtc\"}", (unsigned long)unix_sec);
+    (void)jw_appendf(w, "{\"ok\":0,\"unix\":0,\"source\":\"unavailable\"}");
+    return 1U;
+}
+
 static uint8_t build_journal_stat(jsonw_t *w)
 {
     journal_stats_t st;
@@ -618,7 +630,7 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
 
         const journal_record_t *r = &records[i];
         
-        /* Преобразуем type и source в строки для читаемости */
+        /* Преобразуем type и source в строки для читаемости; для type 12 (HTTP) arg = действие */
         const char *type_str = "UNKNOWN";
         switch (r->type)
         {
@@ -633,7 +645,14 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
             case 9: type_str = "CMD_UNLOCK"; break;
             case 10: type_str = "NET_LINK_UP"; break;
             case 11: type_str = "NET_LINK_DOWN"; break;
-            case 12: type_str = "SYSTEM_FAULT"; break;
+            case 12:
+                if (r->source == 6) { /* APP_SRC_HTTP: действия пользователя */
+                    if (r->arg == 2) type_str = "CONFIG_SAVE";
+                    else if (r->arg == 3) type_str = "USER_LOGIN";
+                    else if (r->arg == 4) type_str = "USER_LOGOUT";
+                    else type_str = "SYSTEM_FAULT";
+                } else type_str = "SYSTEM_FAULT";
+                break;
         }
 
         const char *source_str = "UNKNOWN";
@@ -658,8 +677,7 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
               "\"sourceCode\":%u,"
               "\"doorId\":%u,"
               "\"flags\":%u,"
-              "\"arg\":%lu"
-            "}",
+              "\"arg\":%lu",
             (unsigned long)r->recSeq,
             (unsigned long)r->timestamp,
             type_str,
@@ -670,6 +688,12 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
             (unsigned)r->flags,
             (unsigned long)r->arg
         )) return 0U;
+        if (r->username[0] != '\0') {
+            char uname_esc[JOURNAL_RECORD_USERNAME_MAX * 2];
+            json_escape_error(r->username, uname_esc, sizeof(uname_esc));
+            if (!jw_appendf(w, ",\"username\":\"%s\"", uname_esc)) return 0U;
+        }
+        if (!jw_appendf(w, "}")) return 0U;
     }
 
     if (!jw_appendf(w, "],\"count\":%lu,\"offset\":%lu,\"limit\":%lu}",
@@ -751,6 +775,43 @@ static uint8_t get_bearer_token_from_headers(const char *req_buf, int req_len,
         p = line_end;
         while (p < end && (*p == '\r' || *p == '\n'))
             p++;
+    }
+    return 0U;
+}
+
+/* Извлечь X-Client-Time (Unix секунды с ПК) из заголовков. Возвращает 1 при успехе. */
+static uint8_t get_client_time_from_headers(const char *headers, int headers_len, uint32_t *out_unix_sec)
+{
+    if (!headers || headers_len <= 0 || !out_unix_sec) return 0U;
+    *out_unix_sec = 0U;
+    static const char key[] = "x-client-time:";
+    const char *end = headers + headers_len;
+    const char *p = headers;
+    while (p < end)
+    {
+        const char *line_end = p;
+        while (line_end < end && *line_end != '\r' && *line_end != '\n') line_end++;
+        if ((size_t)(line_end - p) >= sizeof(key) - 1U)
+        {
+            size_t i = 0;
+            for (; i < sizeof(key) - 1U; i++)
+                if ((char)(p[i] | 0x20) != key[i]) break;
+            if (i == sizeof(key) - 1U)
+            {
+                p += sizeof(key) - 1U;
+                while (p < line_end && (*p == ' ' || *p == '\t')) p++;
+                uint32_t val = 0U;
+                while (p < line_end && *p >= '0' && *p <= '9')
+                {
+                    val = val * 10U + (uint32_t)(*p - '0');
+                    p++;
+                }
+                *out_unix_sec = val;
+                return 1U;
+            }
+        }
+        p = line_end;
+        while (p < end && (*p == '\r' || *p == '\n')) p++;
     }
     return 0U;
 }
@@ -950,6 +1011,10 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
     {
         return build_journal_stat(&w) ? 200 : 500;
     }
+    if (strcmp(path, "/api/time") == 0)
+    {
+        return build_time_response(&w) ? 200 : 500;
+    }
 
     if (strncmp(path, "/api/journal/dump", 16) == 0)
     {
@@ -985,7 +1050,8 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
  * Anything else is ignored for now.
  * ========================================================= */
 
-static int put_config_merge(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int put_config_merge(const char *body, size_t body_len, char *out_body, size_t out_sz,
+                            const char *current_user, uint32_t client_unix_sec)
 {
     (void)body_len;
 
@@ -1081,7 +1147,7 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     {
         osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
         (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
-        st = ConfigService_Persist(&cfg);
+        st = ConfigService_Persist(&cfg, current_user, client_unix_sec);
         (void)osThreadSetPriority(httpTaskHandle, prev_prio);
     }
     if (st != CFGST_OK) {
@@ -1122,7 +1188,8 @@ static project_config_t s_put_cfg;
  * Лимиты v1: 8 дверей, 16 edges, 8 postCloseTimeouts.
  * Обнуляем doors/edges/postClose, затем заполняем из JSON.
  */
-static int put_config_full(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int put_config_full(const char *body, size_t body_len, char *out_body, size_t out_sz,
+                           const char *current_user, uint32_t client_unix_sec)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1335,7 +1402,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     {
         osPriority_t prev_prio = osThreadGetPriority(httpTaskHandle);
         (void)osThreadSetPriority(httpTaskHandle, osPriorityAboveNormal);
-        st = ConfigService_Persist(cfg);
+        st = ConfigService_Persist(cfg, current_user, client_unix_sec);
         (void)osThreadSetPriority(httpTaskHandle, prev_prio);
     }
     if (st != CFGST_OK) {
@@ -1371,11 +1438,13 @@ int HttpApi_HandlePut(const char *path,
     if (auth_code != 200)
         return 401;
 
+    uint32_t client_ts = 0U;
+    (void)get_client_time_from_headers(headers, headers_len, &client_ts);
     if (strcmp(path, "/api/config") == 0) {
-        return put_config_merge(body, body_len, out_body, out_sz);
+        return put_config_merge(body, body_len, out_body, out_sz, current_user, client_ts);
     }
     if (strcmp(path, "/api/config/full") == 0) {
-        return put_config_full(body, body_len, out_body, out_sz);
+        return put_config_full(body, body_len, out_body, out_sz, current_user, client_ts);
     }
     if (strcmp(path, "/api/config/mapping") == 0) {
         return put_mapping(body, body_len, out_body, out_sz);
@@ -1449,7 +1518,8 @@ static void login_fail_add(const char *username)
 /* =========================================================
  * POST /api/auth/login - базовая аутентификация
  * ========================================================= */
-static int post_auth_login(const char *body, size_t body_len, char *out_body, size_t out_sz)
+static int post_auth_login(const char *body, size_t body_len, char *out_body, size_t out_sz,
+                           const char *headers, int headers_len)
 {
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
@@ -1514,6 +1584,12 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
 #if HTTP_DEBUG_ENABLED
         AppLog("AUTH: login success for %s (role=%s)", username, role_str);
 #endif
+        /* Журнал: вход пользователя с временем с ПК */
+        {
+            uint32_t client_ts = 0U;
+            if (get_client_time_from_headers(headers, headers_len, &client_ts))
+                EventJournal_LogUserAction(3 /*USER_LOGIN*/, username, client_ts, 1);
+        }
         return 200;
     }
     
@@ -1906,7 +1982,7 @@ int HttpApi_HandlePost(const char *path,
     
     /* Публичные POST без токена: только логин и сброс пароля по токену */
     if (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/auth/login") == 0) {
-        return post_auth_login(body, body_len, out_body, out_sz);
+        return post_auth_login(body, body_len, out_body, out_sz, headers, headers_len);
     }
     if (strcmp(path, "/api/auth/reset-password") == 0 || strcmp(path, "/auth/reset-password") == 0) {
         return post_auth_reset_password(body, body_len, out_body, out_sz);
@@ -1921,6 +1997,14 @@ int HttpApi_HandlePost(const char *path,
     if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
         return post_auth_change_password(body, body_len, current_user, out_body, out_sz);
     }
+    /* POST /api/auth/logout — выход с фиксацией в журнале (имя пользователя и время с ПК) */
+    if (strcmp(path, "/api/auth/logout") == 0 || strcmp(path, "/auth/logout") == 0) {
+        uint32_t client_ts = 0U;
+        (void)get_client_time_from_headers(headers, headers_len, &client_ts);
+        EventJournal_LogUserAction(4 /*USER_LOGOUT*/, current_user, client_ts, 1);
+        (void)snprintf(out_body, out_sz, "{\"ok\":1}");
+        return 200;
+    }
     
     if (strcmp(path, "/api/auth/forgot-password") == 0 || strcmp(path, "/auth/forgot-password") == 0) {
         return post_auth_forgot_password(body, body_len, current_user, out_body, out_sz);
@@ -1928,6 +2012,21 @@ int HttpApi_HandlePost(const char *path,
     
     if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
         return post_users_create(body, body_len, current_user, out_body, out_sz);
+    }
+    /* POST /api/time — установка времени RTC из UI (тело: {"unix": <секунды с 1970-01-01>}) */
+    if (strcmp(path, "/api/time") == 0) {
+        uint32_t unix_sec = 0U;
+        if (!Json_GetUint32(body, "unix", &unix_sec)) {
+            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Missing or invalid unix\"}");
+            return 400;
+        }
+        if (RTC_SetFromUnix(unix_sec))
+            (void)snprintf(out_body, out_sz, "{\"ok\":1}");
+        else {
+            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"RTC write failed\"}");
+            return 500;
+        }
+        return 200;
     }
     
     if (strncmp(path, "/api/users/", 11) == 0) {

@@ -27,14 +27,24 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
     return doors.filter(door => door.nodeId === nodeId);
   }, [doors, filterNodeId]);
   
+  const MAX_DOORS_V1 = 32;
+
   // Добавление новой двери
   const handleAddDoor = () => {
-    // Находим свободную позицию (nodeId=1, localDoor=1-8)
+    if (doors.length >= MAX_DOORS_V1) {
+      if (showConfirm) {
+        showConfirm('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.', 'Ошибка');
+      } else {
+        alert('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.');
+      }
+      return;
+    }
+    // Находим свободную позицию (nodeId, localDoor) в пределах 32 дверей (4 узла × 8)
     let newNodeId = 1;
     let newLocalDoor = 1;
     let found = false;
-    
-    for (let nodeId = 1; nodeId <= 10 && !found; nodeId++) {
+    const maxNodes = 4; // 4 × 8 = 32 двери
+    for (let nodeId = 1; nodeId <= maxNodes && !found; nodeId++) {
       for (let localDoor = 1; localDoor <= 8; localDoor++) {
         const exists = doors.some(d => d.nodeId === nodeId && d.localDoor === localDoor);
         if (!exists) {
@@ -49,9 +59,9 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
     if (!found) {
       // Используем showConfirm для показа сообщения (как alert)
       if (showConfirm) {
-        showConfirm('Достигнут максимум дверей (80). Удалите существующие двери перед добавлением новых.', 'Ошибка');
+        showConfirm('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.', 'Ошибка');
       } else {
-        alert('Достигнут максимум дверей (80). Удалите существующие двери перед добавлением новых.');
+        alert('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.');
       }
       return;
     }

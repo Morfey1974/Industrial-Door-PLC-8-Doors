@@ -37,6 +37,12 @@ journal_status_t EventJournal_EnqueueEvent(const app_event_t *evt);
  */
 void EventJournal_LogConfigAction(uint32_t action_id, uint32_t cfg_seq, uint32_t user_id, uint32_t result);
 
+/* Логирование действий пользователя из UI: имя пользователя и время с ПК (Unix сек).
+ * action_id: 2=CONFIG_SAVE, 3=USER_LOGIN, 4=USER_LOGOUT. result — код результата (1=успех и т.д.).
+ * Запись пишется с timestamp = client_unix_sec (время ПК), чтобы при сбое RTC было видно, когда пользователь действовал.
+ */
+void EventJournal_LogUserAction(uint32_t action_id, const char *username, uint32_t client_unix_sec, uint32_t result);
+
 /* Сервис: стереть область журнала (полный reset журнала). */
 journal_status_t EventJournal_EraseAll(void);
 
@@ -89,6 +95,8 @@ void EventJournal_PrintRecordInfo(void);
  * 
  * Примечание: функция блокирует доступ к QSPI через AppQspiLock.
  */
+#define JOURNAL_RECORD_USERNAME_MAX 17  /* 16 символов + '\0' для выдачи в API */
+
 typedef struct {
     uint32_t recSeq;
     uint32_t timestamp;
@@ -97,6 +105,7 @@ typedef struct {
     uint8_t  door_id;
     uint8_t  flags;
     uint32_t arg;
+    char     username[JOURNAL_RECORD_USERNAME_MAX];  /* для событий из UI (логин, логаут, сохранение конфига) */
 } journal_record_t;
 
 journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,

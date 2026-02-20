@@ -45,11 +45,12 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     recordsOnThisPage = Math.min(events.records.length, events.count !== undefined ? events.count : events.records.length);
   }
 
-  // Определяем колонки таблицы
+  // Определяем колонки таблицы (Пользователь — для событий из UI: вход, выход, сохранение конфига)
   const columns = [
     { key: 'number', label: '№', style: { width: '60px' } },
     { key: 'timestamp', label: 'Время', style: { width: '140px' } },
     { key: 'type', label: 'Тип события', style: { width: '150px' } },
+    { key: 'username', label: 'Пользователь', style: { width: '120px' } },
     { key: 'doorId', label: 'ID двери', style: { width: '100px' } },
     { key: 'source', label: 'Источник', style: { width: '120px' } },
     { key: 'drawingId', label: 'DrawingId', style: { width: '100px' } },
@@ -62,8 +63,8 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
   const recordsFromApi = events.records.slice(0, recordsOnThisPage);
   
   // Фильтруем валидные записи (исключаем undefined, null, пустые объекты)
-  const validEvents = recordsFromApi.filter(event => 
-    event && 
+  const validEvents = recordsFromApi.filter(event =>
+    event &&
     (event.recSeq !== undefined || event.timestamp !== undefined || event.type !== undefined)
   );
   
@@ -132,6 +133,7 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
         </div>
       ),
       type: typeDisplay,
+      username: event.username && event.username.trim() ? event.username : '—',
       doorId: doorIdFormatted,
       source: sourceDisplay,
       drawingId: '—', // Пока заглушка, в будущем будет из конфига двери

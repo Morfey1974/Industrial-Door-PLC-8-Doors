@@ -8,13 +8,16 @@
 #include "config/config_format.h" /* Config_CalcCrc32 */
 #include "qspi_bringup.h"
 #include "system/app_qspi_lock.h"
+#include "system/rtc_service.h"
 
 /* ---------------- Flash format ---------------- */
 
 #define ELOG_SECTOR_MAGIC   (0x454C4F47u) /* 'ELOG' */
 #define ELOG_REC_MAGIC      (0x45565430u) /* 'EVT0' */
+#define ELOG_REC_MAGIC_V2   (0x45565431u) /* 'EVT1' — запись с именем пользователя (48 байт) */
 
 #define ELOG_SECTOR_HDR_BYTES 256U /* keep first page for header */
+#define ELOG_RECORD_V2_USERNAME_LEN 16U
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -38,7 +41,24 @@ typedef struct __attribute__((packed)) {
     uint32_t pad;
 } elog_record_t;
 
+/* 48 bytes: расширенная запись с именем пользователя (действия из UI, время с ПК) */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint32_t recSeq;
+    uint32_t timestamp;
+    uint16_t type;
+    uint16_t source;
+    uint8_t  door_id;
+    uint8_t  flags;
+    uint16_t rsvd16;
+    uint32_t arg;
+    char     username[ELOG_RECORD_V2_USERNAME_LEN];
+    uint32_t crc32;
+    uint32_t pad;
+} elog_record_v2_t;
+
 enum { elog_record_t_must_be_32_bytes = 1 / ((sizeof(elog_record_t) == 32) ? 1 : 0) };
+enum { elog_record_v2_t_must_be_48_bytes = 1 / ((sizeof(elog_record_v2_t) == 48) ? 1 : 0) };
 
 /* ---------------- State ---------------- */
 
@@ -121,6 +141,16 @@ static int record_is_valid(const elog_record_t *r)
     return (c == r->crc32) ? 1 : 0;
 }
 
+static int record_v2_is_valid(const elog_record_v2_t *r)
+{
+    if (r->magic != ELOG_REC_MAGIC_V2) return 0;
+    elog_record_v2_t tmp = *r;
+    tmp.crc32 = 0;
+    tmp.pad = 0;
+    const uint32_t c = crc32_buf(&tmp, sizeof(tmp));
+    return (c == r->crc32) ? 1 : 0;
+}
+
 static HAL_StatusTypeDef write_record(uint32_t sector_index, uint32_t write_ofs, const elog_record_t *r)
 {
     const uint32_t base = sector_base(sector_index);
@@ -134,15 +164,59 @@ static HAL_StatusTypeDef write_record(uint32_t sector_index, uint32_t write_ofs,
     return flash_prog(abs, r, sizeof(*r));
 }
 
+static HAL_StatusTypeDef write_record_v2(uint32_t sector_index, uint32_t write_ofs, const elog_record_v2_t *r)
+{
+    const uint32_t base = sector_base(sector_index);
+    const uint32_t abs = base + write_ofs;
+    const uint32_t page_ofs = abs % QSPI_PAGE_SIZE;
+    if ((page_ofs + sizeof(*r)) > QSPI_PAGE_SIZE)
+        return HAL_ERROR;
+    return flash_prog(abs, r, sizeof(*r));
+}
+
+/* Размер записи по magic в начале записи: 32 (EVT0) или 48 (EVT1), иначе 0 */
+static uint32_t get_record_size_at(uint32_t base, uint32_t ofs)
+{
+    uint32_t magic = 0;
+    if (flash_read(base + ofs, &magic, sizeof(magic)) != HAL_OK)
+        return 0;
+    if (magic == ELOG_REC_MAGIC) return sizeof(elog_record_t);
+    if (magic == ELOG_REC_MAGIC_V2) return sizeof(elog_record_v2_t);
+    return 0;
+}
+
+/* Смещение и размер предыдущей записи перед ofs (для обхода назад). Возвращает 1 при успехе. */
+static int get_prev_record_at(uint32_t base, uint32_t ofs, uint32_t *out_prev_ofs, uint32_t *out_size)
+{
+    if (ofs < ELOG_SECTOR_HDR_BYTES + sizeof(elog_record_t))
+        return 0;
+    uint32_t magic = 0;
+    if (ofs >= ELOG_SECTOR_HDR_BYTES + 32u &&
+        flash_read(base + ofs - 32u, &magic, sizeof(magic)) == HAL_OK &&
+        magic == ELOG_REC_MAGIC)
+    {
+        *out_prev_ofs = ofs - 32u;
+        *out_size = 32u;
+        return 1;
+    }
+    if (ofs >= ELOG_SECTOR_HDR_BYTES + 48u &&
+        flash_read(base + ofs - 48u, &magic, sizeof(magic)) == HAL_OK &&
+        magic == ELOG_REC_MAGIC_V2)
+    {
+        *out_prev_ofs = ofs - 48u;
+        *out_size = 48u;
+        return 1;
+    }
+    return 0;
+}
+
 static void scan_find_tail(uint32_t sector_index)
 {
     const uint32_t base = sector_base(sector_index);
     uint32_t ofs = ELOG_SECTOR_HDR_BYTES;
-    elog_record_t r;
-
     uint32_t last_seq = 0;
 
-    while ((ofs + sizeof(elog_record_t)) <= QSPI_SECTOR_SIZE)
+    while (ofs < QSPI_SECTOR_SIZE)
     {
         uint32_t magic = 0;
         if (read_record_magic(base + ofs, &magic) != HAL_OK)
@@ -150,27 +224,29 @@ static void scan_find_tail(uint32_t sector_index)
             s_stats.io_errors++;
             break;
         }
-
         if (magic == 0xFFFFFFFFu)
-        {
-            /* erased -> end */
             break;
-        }
 
-        if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK)
-        {
-            s_stats.io_errors++;
+        uint32_t rec_sz = (magic == ELOG_REC_MAGIC) ? sizeof(elog_record_t) :
+                          (magic == ELOG_REC_MAGIC_V2) ? sizeof(elog_record_v2_t) : 0;
+        if (rec_sz == 0 || (ofs + rec_sz) > QSPI_SECTOR_SIZE)
             break;
-        }
 
-        if (!record_is_valid(&r))
+        if (rec_sz == sizeof(elog_record_t))
         {
-            /* power-loss in the middle -> stop here */
-            break;
+            elog_record_t r;
+            if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK) { s_stats.io_errors++; break; }
+            if (!record_is_valid(&r)) break;
+            last_seq = r.recSeq;
         }
-
-        last_seq = r.recSeq;
-        ofs += sizeof(elog_record_t);
+        else
+        {
+            elog_record_v2_t r2;
+            if (flash_read(base + ofs, &r2, sizeof(r2)) != HAL_OK) { s_stats.io_errors++; break; }
+            if (!record_v2_is_valid(&r2)) break;
+            last_seq = r2.recSeq;
+        }
+        ofs += rec_sz;
     }
 
     s_cur_write_ofs = ofs;
@@ -346,11 +422,17 @@ void EventJournal_WriteEventToFlash(const app_event_t *evt)
     r.magic = ELOG_REC_MAGIC;
     r.recSeq = s_next_rec_seq++;
 
-    /* Если producer не заполнил timestamp -> берём tick */
+    /* Приоритет: RTC (Unix сек) для отображения в UI; при недоступности — tick или значение от producer */
     uint32_t ts = evt->timestamp;
-    if (ts == 0)
-        ts = (uint32_t)xTaskGetTickCount();
-
+    if (RTC_GetUnixTime(&ts))
+    {
+        /* ts уже заполнен Unix timestamp в секундах — подходит для журнала и /api/journal/dump */
+    }
+    else
+    {
+        if (ts == 0)
+            ts = (uint32_t)xTaskGetTickCount();
+    }
     r.timestamp = ts;
     r.type = (uint16_t)evt->type;
     r.source = (uint16_t)evt->source;
@@ -385,40 +467,85 @@ void EventJournal_WriteEventToFlash(const app_event_t *evt)
     s_stats.records_written++;
 }
 
+/* Логирование действия пользователя из UI: имя и время с ПК. Запись 48 байт (EVT1). */
+void EventJournal_LogUserAction(uint32_t action_id, const char *username, uint32_t client_unix_sec, uint32_t result)
+{
+    if (!s_q) return;
+    if (username == NULL) username = "";
+
+    elog_record_v2_t r;
+    memset(&r, 0, sizeof(r));
+    r.magic = ELOG_REC_MAGIC_V2;
+    r.recSeq = s_next_rec_seq++;
+    r.timestamp = client_unix_sec;  /* время с ПК */
+    r.type = (uint16_t)EVT_SYSTEM_FAULT;
+    r.source = (uint16_t)APP_SRC_HTTP;
+    r.door_id = 0;
+    r.flags = (uint8_t)(result & 0xFFu);
+    r.arg = action_id;
+    (void)strncpy(r.username, username, ELOG_RECORD_V2_USERNAME_LEN - 1);
+    r.username[ELOG_RECORD_V2_USERNAME_LEN - 1] = '\0';
+    r.crc32 = 0;
+    r.pad = 0;
+    r.crc32 = crc32_buf(&r, sizeof(r));
+
+    AppQspiLock_Lock();
+    if ((s_cur_write_ofs + sizeof(elog_record_v2_t)) > QSPI_SECTOR_SIZE)
+        advance_sector();
+    if ((s_cur_write_ofs + sizeof(elog_record_v2_t)) <= QSPI_SECTOR_SIZE)
+    {
+        if (write_record_v2(s_cur_sector, s_cur_write_ofs, &r) == HAL_OK)
+        {
+            s_cur_write_ofs += sizeof(elog_record_v2_t);
+            s_stats.records_written++;
+        }
+        else
+            s_stats.io_errors++;
+    }
+    else
+        s_stats.io_errors++;
+    AppQspiLock_Unlock();
+}
+
 /* ---------------- Service / debug helpers ----------------
  * Эти функции сделаны специально для проверки этапа 7 (7.4/7.5).
  * Они НЕ участвуют в реальном-time критичной логике: вызывай их из CLI/сервисной задачи.
  */
 
+/* Возвращает смещение последней валидной записи в секторе (поддержка 32- и 48-байтных записей). */
 static int find_last_valid_ofs_in_sector(uint32_t sector_index, uint32_t *out_ofs)
 {
     const uint32_t base = sector_base(sector_index);
     uint32_t ofs = ELOG_SECTOR_HDR_BYTES;
     uint32_t last_good = 0;
 
-    while ((ofs + sizeof(elog_record_t)) <= QSPI_SECTOR_SIZE)
+    while (ofs < QSPI_SECTOR_SIZE)
     {
         uint32_t magic = 0;
         if (read_record_magic(base + ofs, &magic) != HAL_OK)
             return 0;
-
         if (magic == 0xFFFFFFFFu)
-            break; /* end of written records */
-
-        elog_record_t r;
-        if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK)
-            return 0;
-
-        if (!record_is_valid(&r))
-            break; /* interrupted record -> stop */
-
+            break;
+        uint32_t rec_sz = (magic == ELOG_REC_MAGIC) ? sizeof(elog_record_t) :
+                          (magic == ELOG_REC_MAGIC_V2) ? sizeof(elog_record_v2_t) : 0;
+        if (rec_sz == 0 || (ofs + rec_sz) > QSPI_SECTOR_SIZE)
+            break;
+        if (rec_sz == sizeof(elog_record_t))
+        {
+            elog_record_t r;
+            if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK) return 0;
+            if (!record_is_valid(&r)) break;
+        }
+        else
+        {
+            elog_record_v2_t r2;
+            if (flash_read(base + ofs, &r2, sizeof(r2)) != HAL_OK) return 0;
+            if (!record_v2_is_valid(&r2)) break;
+        }
         last_good = ofs;
-        ofs += sizeof(elog_record_t);
+        ofs += rec_sz;
     }
-
-    if (last_good == 0)
-        return 0;
-
+    if (last_good == 0) return 0;
     *out_ofs = last_good;
     return 1;
 }
@@ -674,99 +801,112 @@ journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
     uint32_t sector = s_cur_sector;
     uint32_t ofs;
 
-    /* Начинаем с последней записи в текущем секторе */
-    if (s_cur_write_ofs > ELOG_SECTOR_HDR_BYTES)
-        ofs = s_cur_write_ofs - sizeof(elog_record_t);
+    uint32_t rec_size = 0;
+    const uint32_t scnt = sector_count();
+    const uint32_t base_cur = sector_base(s_cur_sector);
+
+    /* Начальная позиция: последняя запись (поддержка 32 и 48 байт) */
+    if (s_cur_write_ofs > ELOG_SECTOR_HDR_BYTES &&
+        get_prev_record_at(base_cur, s_cur_write_ofs, &ofs, &rec_size))
+    {
+        /* ofs — начало последней записи в текущем секторе */
+    }
     else
+    {
         ofs = 0;
+        sector = (s_cur_sector == 0) ? (scnt - 1U) : (s_cur_sector - 1U);
+        if (!find_last_valid_ofs_in_sector(sector, &ofs))
+        {
+            AppQspiLock_Unlock();
+            return JOURNAL_OK;
+        }
+        rec_size = get_record_size_at(sector_base(sector), ofs);
+        if (rec_size == 0) rec_size = sizeof(elog_record_t);
+    }
 
     uint32_t skipped = 0;
     uint32_t collected = 0;
 
-    /* Сначала пропускаем offset записей */
+    /* Пропуск offset записей */
     while (skipped < offset)
     {
-        if (ofs == 0)
+        uint32_t prev_ofs, prev_sz;
+        uint32_t base = sector_base(sector);
+        if (get_prev_record_at(base, ofs, &prev_ofs, &prev_sz))
         {
-            /* Перейти на предыдущий сектор по кольцу */
-            const uint32_t scnt = sector_count();
-            sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
-            if (!find_last_valid_ofs_in_sector(sector, &ofs))
-            {
-                /* Достигли конца журнала при пропуске */
-                AppQspiLock_Unlock();
-                *out_count = 0;
-                return JOURNAL_OK; /* Не ошибка, просто нет записей после offset */
-            }
+            ofs = prev_ofs;
+            rec_size = prev_sz;
+            skipped++;
+            continue;
         }
-
-        elog_record_t r;
-        if (flash_read(sector_base(sector) + ofs, &r, sizeof(r)) != HAL_OK)
+        sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
+        if (!find_last_valid_ofs_in_sector(sector, &ofs))
         {
-            s_stats.io_errors++;
             AppQspiLock_Unlock();
-            return JOURNAL_IO_ERROR;
-        }
-        if (!record_is_valid(&r))
-        {
-            /* Невалидная запись -> достигли конца */
-            AppQspiLock_Unlock();
-            *out_count = 0;
             return JOURNAL_OK;
         }
-
+        rec_size = get_record_size_at(sector_base(sector), ofs);
+        if (rec_size == 0) rec_size = sizeof(elog_record_t);
         skipped++;
-
-        /* Сдвинуться на предыдущую запись */
-        if (ofs >= (ELOG_SECTOR_HDR_BYTES + sizeof(elog_record_t)))
-            ofs -= sizeof(elog_record_t);
-        else
-            ofs = 0;
     }
 
-    /* Теперь собираем limit записей */
+    /* Сбор limit записей (поддержка 32- и 48-байтных записей, username для EVT1) */
     while (collected < limit)
     {
-        if (ofs == 0)
-        {
-            /* Перейти на предыдущий сектор по кольцу */
-            const uint32_t scnt = sector_count();
-            sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
-            if (!find_last_valid_ofs_in_sector(sector, &ofs))
-            {
-                /* Достигли конца журнала */
-                break;
-            }
-        }
-
-        elog_record_t r;
-        if (flash_read(sector_base(sector) + ofs, &r, sizeof(r)) != HAL_OK)
+        uint32_t base = sector_base(sector);
+        uint32_t magic = 0;
+        if (flash_read(base + ofs, &magic, sizeof(magic)) != HAL_OK)
         {
             s_stats.io_errors++;
             break;
         }
-        if (!record_is_valid(&r))
+        if (magic == ELOG_REC_MAGIC)
         {
-            /* Невалидная запись -> останов */
-            break;
+            elog_record_t r;
+            if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK) { s_stats.io_errors++; break; }
+            if (!record_is_valid(&r)) break;
+            out_records[collected].recSeq = r.recSeq;
+            out_records[collected].timestamp = r.timestamp;
+            out_records[collected].type = r.type;
+            out_records[collected].source = r.source;
+            out_records[collected].door_id = r.door_id;
+            out_records[collected].flags = r.flags;
+            out_records[collected].arg = r.arg;
+            out_records[collected].username[0] = '\0';
+            rec_size = sizeof(elog_record_t);
         }
-
-        /* Копируем данные в выходную структуру */
-        out_records[collected].recSeq = r.recSeq;
-        out_records[collected].timestamp = r.timestamp;
-        out_records[collected].type = r.type;
-        out_records[collected].source = r.source;
-        out_records[collected].door_id = r.door_id;
-        out_records[collected].flags = r.flags;
-        out_records[collected].arg = r.arg;
-
+        else if (magic == ELOG_REC_MAGIC_V2)
+        {
+            elog_record_v2_t r2;
+            if (flash_read(base + ofs, &r2, sizeof(r2)) != HAL_OK) { s_stats.io_errors++; break; }
+            if (!record_v2_is_valid(&r2)) break;
+            out_records[collected].recSeq = r2.recSeq;
+            out_records[collected].timestamp = r2.timestamp;
+            out_records[collected].type = r2.type;
+            out_records[collected].source = r2.source;
+            out_records[collected].door_id = r2.door_id;
+            out_records[collected].flags = r2.flags;
+            out_records[collected].arg = r2.arg;
+            (void)strncpy(out_records[collected].username, r2.username, JOURNAL_RECORD_USERNAME_MAX - 1);
+            out_records[collected].username[JOURNAL_RECORD_USERNAME_MAX - 1] = '\0';
+            rec_size = sizeof(elog_record_v2_t);
+        }
+        else
+            break;
         collected++;
 
-        /* Сдвинуться на предыдущую запись */
-        if (ofs >= (ELOG_SECTOR_HDR_BYTES + sizeof(elog_record_t)))
-            ofs -= sizeof(elog_record_t);
-        else
-            ofs = 0;
+        uint32_t prev_ofs, prev_sz;
+        if (get_prev_record_at(base, ofs, &prev_ofs, &prev_sz))
+        {
+            ofs = prev_ofs;
+            rec_size = prev_sz;
+            continue;
+        }
+        sector = (sector == 0) ? (scnt - 1U) : (sector - 1U);
+        if (!find_last_valid_ofs_in_sector(sector, &ofs))
+            break;
+        rec_size = get_record_size_at(sector_base(sector), ofs);
+        if (rec_size == 0) rec_size = sizeof(elog_record_t);
     }
 
     AppQspiLock_Unlock();

@@ -12,7 +12,7 @@ const Dashboard = () => {
   const { t } = useLanguage();
   const { data: doors, loading: doorsLoading, error: doorsError, refetch: refetchDoors } = useDoorsData();
 
-  useAutoRefresh(() => refetchDoors(true), 5000);
+  useAutoRefresh(() => refetchDoors(true), 2500);
 
   return (
     <div className="dashboard dashboard-page">

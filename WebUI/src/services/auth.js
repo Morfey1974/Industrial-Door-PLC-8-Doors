@@ -14,8 +14,11 @@ export const login = async (username, password) => {
 };
 
 export const logout = async () => {
-  // TODO: POST /api/auth/logout (когда будет реализовано на backend)
-  // Пока просто очищаем localStorage
+  try {
+    await apiClient.post('/auth/logout');
+  } catch (_) {
+    /* Игнорируем ошибку (токен уже недействителен и т.д.), всё равно очищаем сессию */
+  }
   localStorage.removeItem('auth_token');
   localStorage.removeItem('auth_user');
   return { ok: 1 };

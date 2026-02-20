@@ -32,6 +32,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "usart.h"
 #include "app_events.h"
 #include "app_health.h"
 #include "app_log.h"
@@ -72,6 +73,14 @@ extern volatile uint32_t g_eth_tx_cb;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
+osThreadId_t rtcTestTaskHandle;
+const osThreadAttr_t rtcTestTask_attributes = {
+  .name = "rtcTest",
+  .stack_size = 384 * 4,  /* 1.5KB: минимум для snprintf + HAL_UART + I2C */
+  /* В FreeRTOS здесь больший номер = выше приоритет (idle=0). 4 было ниже 24 — задача не бежала.
+   * osPriorityAboveNormal=32 > osPriorityNormal=24 → задача RTC выше остальных. */
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
 /* USER CODE END Variables */
 /* Definitions for netTask */
 osThreadId_t netTaskHandle;
@@ -92,7 +101,7 @@ osThreadId_t doorsTaskHandle;
 const osThreadAttr_t doorsTask_attributes = {
   .name = "doorsTask",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for supervisorTask */
 osThreadId_t supervisorTaskHandle;
@@ -105,7 +114,7 @@ const osThreadAttr_t supervisorTask_attributes = {
 osThreadId_t httpTaskHandle;
 const osThreadAttr_t httpTask_attributes = {
   .name = "httpTask",
-  .stack_size = 4096 * 4,  /* 16KB: put_config_merge держит project_config_t на стеке (~4–5KB) + буферы */
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for canTask */
@@ -147,6 +156,7 @@ const osThreadAttr_t journalTask_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 static void TaskShouldNeverReturn(void);
+void StartRtcTestTask(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartNetTask(void *argument);
@@ -192,6 +202,13 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
+  /* USER CODE BEGIN RTOS_THREADS — RTC первой, приоритет 4 */
+  rtcTestTaskHandle = osThreadNew(StartRtcTestTask, NULL, &rtcTestTask_attributes);
+  if (rtcTestTaskHandle == NULL) {
+    static const char msg[] = "RTC task: create FAIL (heap?)\r\n";
+    (void)HAL_UART_Transmit(&huart3, (const uint8_t *)msg, (uint16_t)(sizeof(msg) - 1), 100);
+  }
+  /* USER CODE END RTOS_THREADS */
   /* creation of netTask */
   netTaskHandle = osThreadNew(StartNetTask, NULL, &netTask_attributes);
 
@@ -221,10 +238,6 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of journalTask */
   journalTaskHandle = osThreadNew(StartJournalTask, NULL, &journalTask_attributes);
-
-  /* USER CODE BEGIN RTOS_THREADS */
-
-  /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
 

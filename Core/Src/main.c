@@ -20,6 +20,7 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "fdcan.h"
+#include "i2c.h"
 #include "lwip.h"
 #include "octospi.h"
 #include "usart.h"
@@ -27,7 +28,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 #include <string.h>
 
 #include <stdio.h>
@@ -125,7 +125,7 @@ static void CfgTestSaveTask(void *argument)
   vTaskDelay(pdMS_TO_TICKS(5000));
 
   cfg_test_uart3_print("CFG_TEST: persist start\r\n");
-  const cfg_storage_status_t st = ConfigService_Persist(&g_project_cfg);
+  const cfg_storage_status_t st = ConfigService_Persist(&g_project_cfg, NULL, 0U);
 
   char buf[80];
   (void)snprintf(buf, sizeof(buf), "CFG_TEST: persist done st=%u\r\n", (unsigned)st);
@@ -181,26 +181,11 @@ int main(void)
   MX_USART3_UART_Init();
   MX_FDCAN1_Init();
   MX_OCTOSPI1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  /* Early boot markers on UART3 (kept inside USER CODE so CubeMX regen won't wipe) */
-  {
-    const char *s1 = "BOOT: uart3 ok\r\n";
-    HAL_UART_Transmit(&huart3, (uint8_t *)s1, (uint16_t)strlen(s1), 100);
-  }
-  {
-    const char *s2 = "BOOT: before cfg\r\n";
-    HAL_UART_Transmit(&huart3, (uint8_t *)s2, (uint16_t)strlen(s2), 100);
-  }
-
-  /* Stage 7: load config (MASTER only), or keep defaults on SLAVE. */
-  /* Load config (MASTER: from QSPI or defaults; SLAVE: defaults) */
+  /* Загрузка конфигурации (MASTER: из QSPI или по умолчанию; SLAVE: по умолчанию) */
   ConfigService_InitOnBoot(0);
-
-  {
-    const char *s3 = "BOOT: after cfg\r\n";
-    HAL_UART_Transmit(&huart3, (uint8_t *)s3, (uint16_t)strlen(s3), 100);
-  }
 
   /* Инициализация базы пользователей (MASTER only) */
   UsersService_Init();
@@ -376,6 +361,9 @@ void MPU_Config(void)
   * @param  htim : TIM handle
   * @retval None
   */
+extern void xPortSysTickHandler(void);
+#include "portmacro.h"  /* portYIELD_FROM_ISR — явный запрос переключения после тика из TIM6 */
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
@@ -384,6 +372,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM6)
   {
     HAL_IncTick();
+    /* Тик FreeRTOS из TIM6 (SysTick не срабатывает в этой конфигурации) */
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+    {
+      static uint8_t s_t6_logged;
+      if (!s_t6_logged)
+      {
+        s_t6_logged = 1;
+        extern UART_HandleTypeDef huart3;
+        static const char t6[] = "RTC: T6\r\n";
+        (void)HAL_UART_Transmit(&huart3, (const uint8_t *)t6, (uint16_t)(sizeof(t6)-1), 2);
+      }
+      xPortSysTickHandler();
+      /* Явный запрос переключения: после тика из TIM6 PendSV может не срабатывать. */
+      portYIELD_FROM_ISR(pdTRUE);
+    }
   }
   /* USER CODE BEGIN Callback 1 */
 

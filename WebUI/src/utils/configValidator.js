@@ -31,8 +31,8 @@ export const validateConfig = (config) => {
   if (!config.doors || !Array.isArray(config.doors)) {
     errors.push('Список дверей должен быть массивом');
   } else {
-    if (config.doors.length > 80) {
-      errors.push('Количество дверей не может превышать 80');
+    if (config.doors.length > 32) {
+      errors.push('Количество дверей не может превышать 32');
     }
     
     // Проверка каждой двери
@@ -74,8 +74,8 @@ export const validateConfig = (config) => {
       
       // Проверка globalDoorId (вычисляется автоматически, но проверим)
       if (door.globalDoorId) {
-        if (door.globalDoorId < 1 || door.globalDoorId > 80) {
-          errors.push(`${doorPrefix}GlobalDoorId должен быть от 1 до 80`);
+        if (door.globalDoorId < 1 || door.globalDoorId > 32) {
+          errors.push(`${doorPrefix}GlobalDoorId должен быть от 1 до 32`);
         }
         if (globalDoorIds.has(door.globalDoorId)) {
           errors.push(`${doorPrefix}GlobalDoorId ${door.globalDoorId} уже используется`);
@@ -105,12 +105,12 @@ export const validateConfig = (config) => {
     config.edges.forEach((edge, index) => {
       const edgePrefix = `Зависимость #${index + 1}: `;
       
-      if (!edge.srcGlobalDoorId || edge.srcGlobalDoorId < 1 || edge.srcGlobalDoorId > 80) {
-        errors.push(`${edgePrefix}srcGlobalDoorId должен быть от 1 до 80`);
+      if (!edge.srcGlobalDoorId || edge.srcGlobalDoorId < 1 || edge.srcGlobalDoorId > 32) {
+        errors.push(`${edgePrefix}srcGlobalDoorId должен быть от 1 до 32`);
       }
       
-      if (!edge.dstGlobalDoorId || edge.dstGlobalDoorId < 1 || edge.dstGlobalDoorId > 80) {
-        errors.push(`${edgePrefix}dstGlobalDoorId должен быть от 1 до 80`);
+      if (!edge.dstGlobalDoorId || edge.dstGlobalDoorId < 1 || edge.dstGlobalDoorId > 32) {
+        errors.push(`${edgePrefix}dstGlobalDoorId должен быть от 1 до 32`);
       }
       
       if (edge.srcGlobalDoorId === edge.dstGlobalDoorId) {
@@ -204,7 +204,7 @@ export const validateDoor = (door, existingDoors = []) => {
  * Вычислить globalDoorId из nodeId и localDoor
  * @param {number} nodeId - ID платы (1-10)
  * @param {number} localDoor - Локальный номер двери (1-8)
- * @returns {number} globalDoorId (1-80)
+ * @returns {number} globalDoorId (1-32 при лимите 32 двери, 4 узла × 8)
  */
 export const calculateGlobalDoorId = (nodeId, localDoor) => {
   if (nodeId < 1 || nodeId > 10 || localDoor < 1 || localDoor > 8) {

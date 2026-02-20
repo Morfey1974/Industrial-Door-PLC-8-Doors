@@ -14,13 +14,14 @@ const apiClient = axios.create({
   },
 });
 
-// Перед каждым запросом: актуальный URL и заголовок Authorization (Bearer-токен из сессии)
+// Перед каждым запросом: актуальный URL, Authorization и время с ПК (для журнала действий пользователя)
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getEffectiveApiUrl();
   const token = localStorage.getItem('auth_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  config.headers['X-Client-Time'] = Math.floor(Date.now() / 1000);
   return config;
 });
 
@@ -182,6 +183,20 @@ export const getConfigFull = async (signal = null) => {
     ...(signal ? { signal } : {}),
   };
   const response = await apiClient.get('/config/full', config);
+  return response.data;
+};
+
+// Получить текущее время контроллера (RTC). Ответ: { ok, unix, source }.
+export const getTime = async (signal = null) => {
+  const config = signal ? { signal } : {};
+  const response = await apiClient.get('/time', config);
+  return response.data;
+};
+
+// Установить время контроллера (RTC) из Unix timestamp в секундах (для синхронизации с ПК).
+export const setTime = async (unixSeconds, signal = null) => {
+  const config = { ...(signal ? { signal } : {}) };
+  const response = await apiClient.post('/time', { unix: unixSeconds }, config);
   return response.data;
 };
 

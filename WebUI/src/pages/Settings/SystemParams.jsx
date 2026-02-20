@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useContext } from 'react';
-import { getConfig, putConfig } from '../../services/api';
+import { getConfig, putConfig, getTime, setTime } from '../../services/api';
 import { useStateData } from '../../context/StateDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Button from '../../components/common/Button';
@@ -146,6 +146,58 @@ const SystemParams = () => {
   const ip = state?.ip ?? '—';
   const uptimeSeconds = state?.uptimeSeconds;
   const nodeId = state?.nodeId ?? '—';
+
+  /* Время контроллера (RTC): отображение и синхронизация с ПК */
+  const [controllerTime, setControllerTime] = useState(null); /* { unix, source } или null */
+  const [timeLoading, setTimeLoading] = useState(false);
+  const [timeSyncLoading, setTimeSyncLoading] = useState(false);
+  const [timeError, setTimeError] = useState(null);
+
+  const fetchControllerTime = async () => {
+    setTimeLoading(true);
+    setTimeError(null);
+    try {
+      const data = await getTime();
+      setControllerTime(data?.ok ? { unix: data.unix, source: data.source } : null);
+    } catch (err) {
+      setTimeError(err?.message || 'Не удалось получить время');
+      setControllerTime(null);
+    } finally {
+      setTimeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchControllerTime();
+    const interval = setInterval(fetchControllerTime, 60000); /* обновление раз в минуту */
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSyncTimeWithPc = async () => {
+    setTimeSyncLoading(true);
+    setTimeError(null);
+    try {
+      const unix = Math.floor(Date.now() / 1000);
+      await setTime(unix);
+      await fetchControllerTime();
+    } catch (err) {
+      setTimeError(err?.message || 'Не удалось установить время');
+    } finally {
+      setTimeSyncLoading(false);
+    }
+  };
+
+  const formatControllerTime = (unix) => {
+    if (unix == null || unix === 0) return '—';
+    try {
+      return new Date(unix * 1000).toLocaleString('ru-RU', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      });
+    } catch {
+      return '—';
+    }
+  };
 
   return (
     <div className="settings-system-params">
@@ -421,6 +473,33 @@ const SystemParams = () => {
               {stateData?.loading ? '…' : (state?.netReady ? 'Готово' : 'Не готово')}
             </span>
           </div>
+          <div className="system-params-info-item">
+            <span className="system-params-info-label">Время контроллера (RTC)</span>
+            <span className="system-params-info-value">
+              {timeLoading ? '…' : (controllerTime?.unix ? formatControllerTime(controllerTime.unix) : (timeError || 'Недоступно'))}
+            </span>
+          </div>
+        </div>
+        {timeError && (
+          <p className="system-params-note" style={{ color: 'var(--color-error, #c00)' }}>{timeError}</p>
+        )}
+        <div className="system-params-rtc-actions" style={{ marginTop: '0.5rem' }}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={fetchControllerTime}
+            disabled={timeLoading}
+          >
+            Обновить
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleSyncTimeWithPc}
+            disabled={timeSyncLoading || timeLoading}
+          >
+            {timeSyncLoading ? 'Синхронизация…' : 'Синхронизировать с ПК'}
+          </Button>
         </div>
       </section>
     </div>

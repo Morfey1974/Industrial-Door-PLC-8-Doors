@@ -32,7 +32,7 @@ const Statistics = () => {
     refetchEvents(silent);
   }, [refetchDoors, refetchStat, refetchEvents]);
 
-  useAutoRefresh(() => refetchAll(true), 10000);
+  useAutoRefresh(() => refetchAll(true), 5000);
 
   const totalDoors = doors?.doors?.length ?? 0;
   const alarmingCount = doors?.doors?.filter((d) => d.alarming)?.length ?? 0;

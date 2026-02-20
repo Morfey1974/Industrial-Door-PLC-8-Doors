@@ -15,7 +15,7 @@ const Alarms = () => {
   const { t } = useLanguage();
   const { data: doors, loading, error, refetch } = useDoorsData();
 
-  useAutoRefresh(() => refetch(true), 3000);
+  useAutoRefresh(() => refetch(true), 2000);
 
   const alarmingDoors = doors?.doors?.filter((d) => d.alarming) ?? [];
   const hasAlarms = alarmingDoors.length > 0;
