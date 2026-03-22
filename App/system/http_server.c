@@ -63,8 +63,8 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                            "Content-Type: %s\r\n"
                            "Content-Length: %d\r\n"
                            "Access-Control-Allow-Origin: %s\r\n"
-                           "Access-Control-Allow-Methods: GET,PUT,OPTIONS\r\n"
-                           "Access-Control-Allow-Headers: Content-Type,Authorization\r\n"
+                           "Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+                           "Access-Control-Allow-Headers: Content-Type,Authorization,X-Client-Time\r\n"
                            "\r\n",
                            code,
                            (code == 200) ? "OK" : (code == 404) ? "Not Found" : "Error",
@@ -259,8 +259,8 @@ static void http_send_no_body(int fd, int code)
                            "HTTP/1.1 %d %s\r\n"
                            "Connection: close\r\n"
                            "Access-Control-Allow-Origin: %s\r\n"
-                           "Access-Control-Allow-Methods: GET,PUT,OPTIONS\r\n"
-                           "Access-Control-Allow-Headers: Content-Type,Authorization\r\n"
+                           "Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+                           "Access-Control-Allow-Headers: Content-Type,Authorization,X-Client-Time\r\n"
                            "Access-Control-Max-Age: 600\r\n"
                            "Content-Length: 0\r\n"
                            "\r\n",

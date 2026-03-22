@@ -114,7 +114,8 @@ const osThreadAttr_t supervisorTask_attributes = {
 osThreadId_t httpTaskHandle;
 const osThreadAttr_t httpTask_attributes = {
   .name = "httpTask",
-  .stack_size = 512 * 4,
+  /* http_server.c: на стеке rx[768] + body/req_body до ~8 КБ + вызовы API/хеш пароля — 2 КБ было мало, POST login давал сброс соединения */
+  .stack_size = 16 * 1024,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for canTask */
