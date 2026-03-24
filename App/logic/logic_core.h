@@ -28,6 +28,13 @@ typedef struct logic_core_t
     /* --- snapshot: физическое состояние дверей (глобально) --- */
     uint8_t physOpen[APP_MAX_DOORS]; /* 1 если дверь физически OPEN */
 
+    /* --- Сигнализация на удалённых узлах (из CAN STATUS), индекс globalDoorId-1 ---
+     * На SLAVE в кадре: alarmActive ≈ кнопка Alarm, signalingActive ≈ флаг alarming (любая причина).
+     * Полная маска alarmReasons на шине не передаётся; восстанавливаем минимально достаточное подмножество
+     * для WebUI (мониторинг / страница «Алармы»), см. LogicCore_OnCanStatus.
+     */
+    uint32_t remoteAlarmReasons[APP_MAX_DOORS];
+
     /* --- 2.4.6: “post-close delay” для эффекта двери в зависимостях ---
      *
      * Интерпретация по ТЗ:
@@ -62,9 +69,8 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt);
  *
  * Master принимает состояние 8 дверей SLAVE в виде битовых масок.
  * LogicCore обновляет глобальный снимок:
- *   - physOpen[...] и depActive[...] для соответствующих globalDoorId.
- *
- * В Этапе 6 мы...
+ *   - physOpen[...] и depActive[...] для соответствующих globalDoorId;
+ *   - remoteAlarmReasons[...] по маскам alarmActive/signalingActive (для /api/doors на MASTER).
  * ============================================================ */
 void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
                            uint8_t presentMask,

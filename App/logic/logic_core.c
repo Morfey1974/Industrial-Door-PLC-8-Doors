@@ -153,6 +153,7 @@ void LogicCore_Init(logic_core_t *lc)
         lc->closePending[i]= 0U;
         lc->targetUnlockPending[i] = 0U;
         lc->targetUnlockStartMs[i] = 0U;
+        lc->remoteAlarmReasons[i]  = 0U;
     }
 
     DoorBitset_Clear(&lc->lockRequired);
@@ -281,8 +282,6 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
                            uint8_t signalingActiveMask,
                            uint8_t lockOutputActiveMask)
 {
-    (void)alarmActiveMask;
-    (void)signalingActiveMask;
     (void)lockOutputActiveMask;
 
     if (!lc) return;
@@ -303,6 +302,7 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
             lc->physOpen[gid - 1U] = 0U;
             lc->depActive[gid - 1U] = 0U;
             lc->closePending[gid - 1U] = 0U;
+            lc->remoteAlarmReasons[gid - 1U] = 0U;
             continue;
         }
 
@@ -310,6 +310,19 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
         uint8_t open = closed ? 0U : 1U;
 
         lc->physOpen[gid - 1U] = open;
+
+        /* Восстановление alarming/alarmReasons для WebUI (полная маска с SLAVE по CAN не едет).
+         * can_task: alarmActive = alarmPressed, signalingActive = d->alarming (любая активная причина).
+         * Эвристика: нажата кнопка Alarm → MANUAL; сигнализация без нажатой кнопки → типично OPEN_TIMEOUT.
+         */
+        {
+            uint32_t r = 0U;
+            if ((alarmActiveMask & bit) != 0U)
+                r |= (uint32_t)DOOR_ALARM_MANUAL;
+            if ((signalingActiveMask & bit) != 0U && (alarmActiveMask & bit) == 0U)
+                r |= (uint32_t)DOOR_ALARM_OPEN_TIMEOUT;
+            lc->remoteAlarmReasons[gid - 1U] = r;
+        }
 
         /* В Этапе 6 мы синхронизируем базовую физику.
          * Post-close delay для удалённых дверей можно добавить позже,
