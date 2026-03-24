@@ -20,6 +20,7 @@ extern osThreadId_t httpTaskHandle;
 #include "config/config_format.h"
 #include "config/mapping_storage_qspi.h"
 #include "logic/logic_deps.h"
+#include "logic/global_door_id.h"
 
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
@@ -509,6 +510,7 @@ static uint8_t build_journal_stat(jsonw_t *w)
           "\"currentSector\":%lu,"
           "\"currentSeq\":%lu,"
           "\"recordsWritten\":%lu,"
+          "\"totalRecords\":%lu,"
           "\"droppedQueue\":%lu,"
           "\"ioErrors\":%lu"
         "}",
@@ -519,6 +521,7 @@ static uint8_t build_journal_stat(jsonw_t *w)
         (unsigned long)st.current_sector,
         (unsigned long)st.current_seq,
         (unsigned long)st.records_written,
+        (unsigned long)st.total_records,
         (unsigned long)st.dropped_queue,
         (unsigned long)st.io_errors
     );
@@ -688,6 +691,18 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
             (unsigned)r->flags,
             (unsigned long)r->arg
         )) return 0U;
+        /* Добавляем привязку к двери в формате node/local/global, чтобы UI корректно
+         * показывал события удалённых плат (например ID-2-1), а не только локальные. */
+        if (r->door_id >= 1U && r->door_id <= APP_MAX_DOORS) {
+            uint8_t node_id = GlobalDoorId_Node(r->door_id);
+            uint8_t local_door = GlobalDoorId_Local(r->door_id);
+            if (node_id != 0U && local_door != 0U) {
+                if (!jw_appendf(w, ",\"globalDoorId\":%u,\"nodeId\":%u,\"localDoor\":%u",
+                                (unsigned)r->door_id,
+                                (unsigned)node_id,
+                                (unsigned)local_door)) return 0U;
+            }
+        }
         if (r->username[0] != '\0') {
             char uname_esc[JOURNAL_RECORD_USERNAME_MAX * 2];
             json_escape_error(r->username, uname_esc, sizeof(uname_esc));
@@ -2012,6 +2027,24 @@ int HttpApi_HandlePost(const char *path,
     
     if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
         return post_users_create(body, body_len, current_user, out_body, out_sz);
+    }
+    /* POST /api/journal/clear — очистка журнала событий на контроллере.
+     * Сделано как POST (а не DELETE), чтобы избежать ограничений некоторых HTTP-клиентов
+     * и оставить единый путь обработки в существующем обработчике POST.
+     * Доступ оставляем только для Super Admin из соображений безопасности:
+     * очистка журнала — потенциально критичное действие аудита. */
+    if (strcmp(path, "/api/journal/clear") == 0) {
+        if (!check_super_admin_access(current_user)) {
+            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+            return 403;
+        }
+        journal_status_t st = EventJournal_EraseAll();
+        if (st == JOURNAL_OK) {
+            (void)snprintf(out_body, out_sz, "{\"ok\":1}");
+            return 200;
+        }
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Journal clear failed\",\"status\":%u}", (unsigned)st);
+        return 500;
     }
     /* POST /api/time — установка времени RTC из UI (тело: {"unix": <секунды с 1970-01-01>}) */
     if (strcmp(path, "/api/time") == 0) {

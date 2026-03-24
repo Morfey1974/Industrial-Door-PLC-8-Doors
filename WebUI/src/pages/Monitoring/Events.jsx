@@ -6,11 +6,13 @@ import { useState, useCallback, useEffect } from 'react';
 import useApi from '../../hooks/useApi';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useLanguage } from '../../context/LanguageContext';
-import { getJournalDump, getJournalStat } from '../../services/api';
+import { getJournalDump, getJournalStat, clearJournal } from '../../services/api';
 import EventsTable from '../../components/ui/EventsTable';
 import EventsFilterBar from '../../components/ui/EventsFilterBar';
 import Pagination from '../../components/ui/Pagination';
 import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
+import { formatTimestamp } from '../../utils/formatters';
 import './Monitoring.css';
 
 const Events = () => {
@@ -24,6 +26,9 @@ const Events = () => {
   });
   const [totalRecords, setTotalRecords] = useState(0); // Реальное количество записей из журнала
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного обновления при изменении limit
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState(null);
 
   // Функция для получения статистики журнала (для получения общего количества записей)
   const fetchJournalStat = useCallback((signal) => {
@@ -35,38 +40,21 @@ const Events = () => {
 
   // Обновляем totalRecords при получении статистики
   useEffect(() => {
-    if (journalStat && journalStat.recordsWritten !== undefined) {
-      setTotalRecords(journalStat.recordsWritten);
+    /* Для пагинации нужен фактический объём кольцевого журнала.
+     * Предпочитаем totalRecords (новое поле API), а recordsWritten оставляем как fallback
+     * для обратной совместимости со старыми прошивками. */
+    if (journalStat && (journalStat.totalRecords !== undefined || journalStat.recordsWritten !== undefined)) {
+      const total = journalStat.totalRecords ?? journalStat.recordsWritten ?? 0;
+      setTotalRecords(total);
     }
   }, [journalStat]);
 
   // Функция для получения событий с учетом offset и limit
   // signal передается автоматически из useApi
-  // ВАЖНО: если limit >= totalRecords и offset=0, запрашиваем все записи (limit = totalRecords)
-  // Это гарантирует, что при выборе "50" или "100" записей мы получим все доступные записи
   const fetchEvents = useCallback((signal) => {
-    // Вычисляем реальный limit для запроса
-    // ВАЖНО: API ограничивает limit до 50 записей из-за размера буфера (8KB)
-    let actualLimit = limit;
-    
-    // Ограничиваем максимумом API (50 записей)
-    if (actualLimit > 50) {
-      actualLimit = 50;
-    }
-    
-    // Если мы на первой странице (offset=0) и totalRecords известен
-    if (offset === 0 && totalRecords > 0) {
-      // Если limit >= totalRecords, запрашиваем все записи (но не больше 50)
-      if (limit >= totalRecords && totalRecords <= 50) {
-        actualLimit = totalRecords;
-      }
-    }
-    
-    // Отладочная информация
-    console.log('[Events] fetchEvents: offset=', offset, 'limit=', limit, 'totalRecords=', totalRecords, 'actualLimit=', actualLimit);
-    
+    const actualLimit = Math.min(100, Math.max(1, limit));
     return getJournalDump(offset, actualLimit, signal);
-  }, [offset, limit, totalRecords]);
+  }, [offset, limit]);
 
   // Получаем события
   // ВАЖНО: dependencies включают totalRecords и refreshKey, чтобы при их изменении перезапросить данные
@@ -103,8 +91,13 @@ const Events = () => {
   };
 
   const handleNext = () => {
-    // Проверяем, есть ли еще записи после текущей страницы
-    if (offset + limit < totalRecords) {
+    /* Если totalRecords известно — используем его.
+     * Иначе ориентируемся на факт: текущая страница полная, значит
+     * вероятно есть более старые записи и можно идти дальше. */
+    const pageCount = events?.records?.length || 0;
+    if (totalRecords > 0) {
+      if (offset + limit < totalRecords) setOffset(offset + limit);
+    } else if (pageCount >= limit) {
       setOffset(offset + limit);
     }
   };
@@ -145,51 +138,249 @@ const Events = () => {
     }
   };
 
+  /* Получить все записи журнала для экспорта/печати.
+   * Почему не берём только текущую страницу:
+   * - пользователь ожидает действие над всем журналом, а не над видимым куском.
+   * Как работает:
+   * - читаем размер журнала из totalRecords;
+   * - запрашиваем пакетами по 100 (максимум API);
+   * - собираем единый массив в порядке "новые -> старые". */
+  const fetchAllRecordsForExport = async () => {
+    const total = totalRecords > 0 ? totalRecords : (events?.records?.length || 0);
+    if (total <= 0) return [];
+
+    const chunkSize = 100;
+    const all = [];
+    for (let off = 0; off < total; off += chunkSize) {
+      const chunk = await getJournalDump(off, chunkSize);
+      const recs = chunk?.records || [];
+      if (recs.length === 0) break;
+      all.push(...recs);
+      if (recs.length < chunkSize) break;
+    }
+    return all;
+  };
+
+  /* Кнопка "Очистить журнал": подтверждение + очистка на контроллере + обновление UI. */
+  const handleClearJournal = async () => {
+    setActionLoading(true);
+    setActionMessage(null);
+    try {
+      await clearJournal();
+      setOffset(0);
+      await refetchStat(false);
+      await refetch(false);
+      setActionMessage(t('pages.events.clearSuccess'));
+    } catch (err) {
+      console.warn('Ошибка очистки журнала:', err);
+      setActionMessage(t('pages.events.clearFailed'));
+    } finally {
+      setActionLoading(false);
+      setShowClearConfirm(false);
+    }
+  };
+
+  /* Кнопка "Сохранить журнал": формируем CSV и отдаём в браузер,
+   * чтобы пользователь выбрал место сохранения через стандартный диалог. */
+  const handleSaveJournal = async () => {
+    setActionLoading(true);
+    setActionMessage(null);
+    try {
+      const records = await fetchAllRecordsForExport();
+      if (!records.length) {
+        setActionMessage(t('pages.events.emptyForSave'));
+        return;
+      }
+
+      const header = ['recSeq', 'timestamp', 'time', 'type', 'source', 'doorId', 'username', 'arg', 'flags'];
+      const lines = [header.join(';')];
+
+      records.forEach((r) => {
+        const row = [
+          r.recSeq ?? '',
+          r.timestamp ?? '',
+          formatTimestamp(r.timestamp),
+          r.type ?? '',
+          r.source ?? '',
+          r.doorId ?? '',
+          (r.username || '').replace(/;/g, ','),
+          r.arg ?? '',
+          r.flags ?? '',
+        ];
+        lines.push(row.join(';'));
+      });
+
+      const csvText = `\uFEFF${lines.join('\n')}`;
+      const filename = `journal_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+
+      /* Основной путь: нативный системный диалог выбора места сохранения
+       * (поддерживается в Chromium-браузерах через File System Access API). */
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'CSV',
+            accept: { 'text/csv': ['.csv'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(csvText);
+        await writable.close();
+      } else {
+        /* Fallback: стандартное скачивание файла браузером. */
+        const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      setActionMessage(t('pages.events.saveSuccess'));
+    } catch (err) {
+      console.warn('Ошибка сохранения журнала:', err);
+      setActionMessage(t('pages.events.saveFailed'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /* Кнопка "Распечатать журнал": открываем отдельное окно с таблицей и запускаем print(). */
+  const handlePrintJournal = async () => {
+    setActionLoading(true);
+    setActionMessage(null);
+    /* Окно открываем синхронно по клику, иначе браузер может заблокировать popup. */
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setActionLoading(false);
+      setActionMessage(t('pages.events.popupBlocked'));
+      return;
+    }
+    try {
+      const records = await fetchAllRecordsForExport();
+      if (!records.length) {
+        printWindow.document.write(`<html><body><h3>${t('pages.events.printEmptyTitle')}</h3></body></html>`);
+        printWindow.document.close();
+        setActionMessage(t('pages.events.emptyForPrint'));
+        return;
+      }
+
+      const rowsHtml = records.map((r) => `
+        <tr>
+          <td>${r.recSeq ?? ''}</td>
+          <td>${formatTimestamp(r.timestamp)}</td>
+          <td>${r.type ?? ''}</td>
+          <td>${r.source ?? ''}</td>
+          <td>${r.doorId ?? ''}</td>
+          <td>${r.username ?? ''}</td>
+          <td>${r.arg ?? ''}</td>
+        </tr>
+      `).join('');
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${t('pages.events.printTitle')}</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 16px; }
+              h1 { margin: 0 0 12px; }
+              table { border-collapse: collapse; width: 100%; font-size: 12px; }
+              th, td { border: 1px solid #999; padding: 6px; text-align: left; }
+              th { background: #f3f3f3; }
+            </style>
+          </head>
+          <body>
+            <h1>${t('pages.events.printTitle')}</h1>
+            <table>
+              <thead>
+                <tr>
+                  <th>${t('pages.events.printColNum')}</th>
+                  <th>${t('pages.events.printColTime')}</th>
+                  <th>${t('pages.events.printColType')}</th>
+                  <th>${t('pages.events.printColSource')}</th>
+                  <th>${t('pages.events.printColDoor')}</th>
+                  <th>${t('pages.events.printColUser')}</th>
+                  <th>${t('pages.events.printColArg')}</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      setActionMessage(t('pages.events.printWindowOpened'));
+    } catch (err) {
+      console.warn('Ошибка печати журнала:', err);
+      setActionMessage(t('pages.events.printFailed'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Вычисляем, есть ли еще записи
-  const hasMoreRecords = totalRecords > 0 && (offset + limit) < totalRecords;
+  const hasMoreRecords = (totalRecords > 0 && (offset + limit) < totalRecords) ||
+    ((totalRecords === 0) && ((events?.records?.length || 0) >= limit));
   const hasPrevious = offset > 0;
   
   // Вычисляем реальное количество записей на текущей странице
   // Это важно для правильного отображения в пагинации
   // Используем totalRecords для определения реального количества, а не events.count от API
-  const actualCountOnPage = totalRecords > 0
-    ? Math.min(events?.records?.length || 0, Math.max(0, totalRecords - offset))
-    : (events?.count || events?.records?.length || 0);
+  const actualCountOnPage = events?.records?.length || 0;
+  const totalForPagination = totalRecords > 0
+    ? totalRecords
+    : Math.max(offset + actualCountOnPage + (hasMoreRecords ? 1 : 0), actualCountOnPage);
 
   return (
     <div className="monitoring-events">
       <div className="page-header">
         <h1>{t('pages.events.title')}</h1>
-        <p>История всех событий системы с возможностью фильтрации и пагинации</p>
+        <p>{t('pages.events.subtitle')}</p>
       </div>
 
       {/* Панель фильтров */}
       <div className="filters-section">
         <EventsFilterBar filters={filters} onFilterChange={setFilters} onRefresh={handleRefresh} />
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+          <Button variant="secondary" size="small" onClick={handleSaveJournal} disabled={actionLoading}>
+            {t('pages.events.saveJournal')}
+          </Button>
+          <Button variant="secondary" size="small" onClick={handlePrintJournal} disabled={actionLoading}>
+            {t('pages.events.printJournal')}
+          </Button>
+          <Button variant="danger" size="small" onClick={() => setShowClearConfirm(true)} disabled={actionLoading}>
+            {t('pages.events.clearJournal')}
+          </Button>
+        </div>
+        {actionMessage && (
+          <div className="events-info" style={{ marginTop: '0.5rem' }}>
+            <p>{actionMessage}</p>
+          </div>
+        )}
       </div>
 
       {/* Информация о количестве событий */}
-      {!loading && !error && events && (
+      {!loading && events && (
         <div className="events-info">
           <p>
-            Событий на странице: <strong>
-              {totalRecords > 0 
-                ? Math.min(events.count || 0, Math.max(0, totalRecords - offset))
-                : (events.count || 0)
-              }
+            {t('pages.events.recordsOnPage')}: <strong>
+              {actualCountOnPage}
             </strong>
             {totalRecords > 0 && (
               <span style={{ fontSize: '0.875rem', opacity: 0.7, marginLeft: '0.5rem' }}>
-                из {totalRecords} всего
+                {t('pages.events.recordsTotal').replace('{count}', String(totalRecords))}
               </span>
             )}
             {events.offset !== undefined && events.offset > 0 && (
-              <span> (показано с {events.offset + 1})</span>
+              <span> ({t('pages.events.shownFrom').replace('{index}', String(events.offset + 1))})</span>
             )}
-            {hasMoreRecords && <span> (есть еще данные)</span>}
+            {hasMoreRecords && <span> ({t('pages.events.hasMore')})</span>}
             {events.error !== undefined && events.error > 0 && (
               <span style={{ color: 'var(--color-error)', marginLeft: '1rem' }}>
-                ⚠️ Ошибка журнала: код {events.error}
+                ⚠️ {t('pages.events.journalErrorCode').replace('{code}', String(events.error))}
                 {events.errorMsg && ` (${events.errorMsg})`}
               </span>
             )}
@@ -200,9 +391,9 @@ const Events = () => {
       {/* Состояние загрузки — при первой загрузке журнал может открываться до 30 секунд */}
       {loading && !events && (
         <div className="loading-state">
-          <p>Идёт загрузка журнала событий…</p>
+          <p>{t('pages.events.loadingLong')}</p>
           <p style={{ fontSize: '0.875rem', opacity: 0.7, marginTop: '0.5rem' }}>
-            Подождите, при первой загрузке это может занять до 30 секунд.
+            {t('pages.events.loadingHint')}
           </p>
         </div>
       )}
@@ -211,12 +402,9 @@ const Events = () => {
       {error && !events && (
         <div className="error-state">
           <h3>{t('pages.events.notLoaded')}</h3>
-          <p>
-            Нажмите «Обновить» — при медленном ответе контроллера загрузка может занять до 30 секунд.
-            Если после повторной попытки данные не появятся, проверьте подключение к контроллеру.
-          </p>
+          <p>{t('pages.events.retryHint')}</p>
           <Button variant="primary" onClick={() => refetch(false)}>
-            Обновить
+            {t('common.refresh')}
           </Button>
         </div>
       )}
@@ -229,7 +417,7 @@ const Events = () => {
           {error && events && (
             <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
               <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                Данные не обновились автоматически. Нажмите «Обновить» в панели выше для повторной загрузки.
+                {t('pages.events.autoRefreshWarn')}
               </p>
             </div>
           )}
@@ -237,13 +425,13 @@ const Events = () => {
       )}
 
       {/* Пагинация */}
-      {!loading && !error && events && events.records && events.records.length > 0 && totalRecords > 0 && (
+      {!loading && !error && events && events.records && events.records.length > 0 && (
         <div className="pagination-section">
           <Pagination
             offset={offset}
             limit={limit}
             count={actualCountOnPage}
-            total={totalRecords}
+            total={totalForPagination}
             onPrevious={handlePrevious}
             onNext={handleNext}
             onFirstPage={handleFirstPage}
@@ -256,9 +444,22 @@ const Events = () => {
       {/* Нет данных */}
       {!loading && !error && (!events || !events.records || events.records.length === 0) && (
         <div className="no-data-state">
-          <p>Нет событий в журнале</p>
+          <p>{t('pages.events.noData')}</p>
         </div>
       )}
+
+      <Modal
+        isOpen={showClearConfirm}
+        type="confirm"
+        title={t('pages.events.clearDialogTitle')}
+        message={t('pages.events.clearDialogMessage')}
+        confirmText={actionLoading ? t('pages.events.clearing') : t('pages.events.clearDialogConfirm')}
+        cancelText={t('common.cancel')}
+        onConfirm={handleClearJournal}
+        onCancel={() => {
+          if (!actionLoading) setShowClearConfirm(false);
+        }}
+      />
     </div>
   );
 };

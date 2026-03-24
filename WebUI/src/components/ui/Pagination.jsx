@@ -11,7 +11,9 @@ const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPa
   const hasNext = total > 0 && (offset + limit) < total;
   const showFirstPage = totalPages > 1 && currentPage > 2;
 
-  const pageSizeOptions = [10, 20, 50];
+  /* Добавляем 100 записей на страницу для журнала событий.
+   * API поддерживает limit до 100, что уменьшает количество переключений страниц. */
+  const pageSizeOptions = [10, 20, 50, 100];
 
   // Генерируем номера страниц для отображения
   const getPageNumbers = () => {

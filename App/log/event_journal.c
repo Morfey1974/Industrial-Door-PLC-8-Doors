@@ -98,6 +98,38 @@ static HAL_StatusTypeDef flash_prog(uint32_t addr, const void *buf, uint32_t len
     return QSPI_Flash_ProgramPage(addr, (const uint8_t*)buf, len);
 }
 
+/* Запись произвольного блока с безопасным разбиением по границам страниц QSPI.
+ * Почему это важно:
+ * - После введения двух форматов записей (32 и 48 байт) смещения в секторе
+ *   перестали быть кратны 32 и иногда попадают на конец страницы.
+ * - Одна операция ProgramPage, пересекающая границу 256-байтной страницы,
+ *   может завершаться ошибкой и "замораживать" журнал на одном смещении.
+ * Решение:
+ * - Разбиваем запись на несколько ProgramPage-операций так, чтобы каждый кусок
+ *   полностью лежал в пределах одной страницы.
+ */
+static HAL_StatusTypeDef flash_prog_split_pages(uint32_t addr, const void *buf, uint32_t len)
+{
+    const uint8_t *p = (const uint8_t*)buf;
+    uint32_t left = len;
+    uint32_t cur = addr;
+
+    while (left > 0U)
+    {
+        uint32_t page_ofs = cur % QSPI_PAGE_SIZE;
+        uint32_t room = QSPI_PAGE_SIZE - page_ofs;
+        uint32_t chunk = (left < room) ? left : room;
+
+        if (QSPI_Flash_ProgramPage(cur, p, chunk) != HAL_OK)
+            return HAL_ERROR;
+
+        cur += chunk;
+        p += chunk;
+        left -= chunk;
+    }
+    return HAL_OK;
+}
+
 static uint32_t crc32_buf(const void *data, size_t len)
 {
     return Config_CalcCrc32(data, len);
@@ -155,23 +187,64 @@ static HAL_StatusTypeDef write_record(uint32_t sector_index, uint32_t write_ofs,
 {
     const uint32_t base = sector_base(sector_index);
     const uint32_t abs = base + write_ofs;
-
-    /* Ensure we do not cross a 256B page boundary */
-    const uint32_t page_ofs = abs % QSPI_PAGE_SIZE;
-    if ((page_ofs + sizeof(*r)) > QSPI_PAGE_SIZE)
-        return HAL_ERROR;
-
-    return flash_prog(abs, r, sizeof(*r));
+    return flash_prog_split_pages(abs, r, sizeof(*r));
 }
 
 static HAL_StatusTypeDef write_record_v2(uint32_t sector_index, uint32_t write_ofs, const elog_record_v2_t *r)
 {
     const uint32_t base = sector_base(sector_index);
     const uint32_t abs = base + write_ofs;
-    const uint32_t page_ofs = abs % QSPI_PAGE_SIZE;
-    if ((page_ofs + sizeof(*r)) > QSPI_PAGE_SIZE)
-        return HAL_ERROR;
-    return flash_prog(abs, r, sizeof(*r));
+    return flash_prog_split_pages(abs, r, sizeof(*r));
+}
+
+/* Подсчёт валидных записей в одном секторе (EVT0/EVT1). */
+static uint32_t count_valid_records_in_sector(uint32_t sector_index)
+{
+    const uint32_t base = sector_base(sector_index);
+    uint32_t ofs = ELOG_SECTOR_HDR_BYTES;
+    uint32_t cnt = 0U;
+
+    while (ofs < QSPI_SECTOR_SIZE)
+    {
+        uint32_t magic = 0U;
+        if (read_record_magic(base + ofs, &magic) != HAL_OK)
+            break;
+        if (magic == 0xFFFFFFFFu)
+            break;
+
+        uint32_t rec_sz = (magic == ELOG_REC_MAGIC) ? sizeof(elog_record_t) :
+                          (magic == ELOG_REC_MAGIC_V2) ? sizeof(elog_record_v2_t) : 0U;
+        if (rec_sz == 0U || (ofs + rec_sz) > QSPI_SECTOR_SIZE)
+            break;
+
+        if (rec_sz == sizeof(elog_record_t))
+        {
+            elog_record_t r;
+            if (flash_read(base + ofs, &r, sizeof(r)) != HAL_OK) break;
+            if (!record_is_valid(&r)) break;
+        }
+        else
+        {
+            elog_record_v2_t r2;
+            if (flash_read(base + ofs, &r2, sizeof(r2)) != HAL_OK) break;
+            if (!record_v2_is_valid(&r2)) break;
+        }
+
+        cnt++;
+        ofs += rec_sz;
+    }
+
+    return cnt;
+}
+
+/* Текущее количество записей в кольцевом журнале (для UI-пагинации). */
+static uint32_t count_total_valid_records(void)
+{
+    uint32_t total = 0U;
+    const uint32_t scnt = sector_count();
+    for (uint32_t i = 0; i < scnt; i++)
+        total += count_valid_records_in_sector(i);
+    return total;
 }
 
 /* Размер записи по magic в начале записи: 32 (EVT0) или 48 (EVT1), иначе 0 */
@@ -392,6 +465,7 @@ journal_status_t EventJournal_EraseAll(void)
     s_cur_sector_seq = 1;
     s_cur_write_ofs = ELOG_SECTOR_HDR_BYTES;
     s_next_rec_seq = 1;
+    s_stats.total_records = 0U;
     AppQspiLock_Unlock();
     return JOURNAL_OK;
 }
@@ -399,6 +473,9 @@ journal_status_t EventJournal_EraseAll(void)
 void EventJournal_GetStats(journal_stats_t *out)
 {
     if (!out) return;
+    AppQspiLock_Lock();
+    s_stats.total_records = count_total_valid_records();
+    AppQspiLock_Unlock();
     s_stats.current_sector = s_cur_sector;
     s_stats.current_seq = s_cur_sector_seq;
     *out = s_stats;
@@ -465,6 +542,7 @@ void EventJournal_WriteEventToFlash(const app_event_t *evt)
 
     s_cur_write_ofs += sizeof(elog_record_t);
     s_stats.records_written++;
+    s_stats.total_records++;
 }
 
 /* Логирование действия пользователя из UI: имя и время с ПК. Запись 48 байт (EVT1). */
@@ -498,6 +576,7 @@ void EventJournal_LogUserAction(uint32_t action_id, const char *username, uint32
         {
             s_cur_write_ofs += sizeof(elog_record_v2_t);
             s_stats.records_written++;
+            s_stats.total_records++;
         }
         else
             s_stats.io_errors++;

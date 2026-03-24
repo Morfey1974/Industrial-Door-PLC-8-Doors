@@ -68,6 +68,15 @@ static uint32_t s_last_cmd_sent_ms[APP_MAX_NODES + 1];
 static can_cmd_payload_t s_last_cmd_sent[APP_MAX_NODES + 1];
 static uint8_t s_force_cmd_send[APP_MAX_NODES + 1];
 
+/* MASTER: снимок последнего состояния удалённых дверей для генерации edge-событий в журнал.
+ * Почему нужно отдельно:
+ * - STATUS от SLAVE приходит как текущая маска состояния, без "событий".
+ * - Журналу нужны именно переходы (OPEN->CLOSE, SIGNAL ON/OFF), иначе новых записей не будет.
+ */
+static uint8_t s_remote_seen[APP_MAX_DOORS];
+static uint8_t s_last_remote_open[APP_MAX_DOORS];
+static uint8_t s_last_remote_signal[APP_MAX_DOORS];
+
 static uint8_t master_is_node_online(uint8_t nodeId);
 
 static void master_mark_seen(uint8_t nodeId)
@@ -163,6 +172,58 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
             logic_core_t *lc = CommsTask_GetLogicCore();
             if (lc)
             {
+                /* Генерация событий для журнала на MASTER по переходам состояний SLAVE.
+                 * Дверной номер пишем как globalDoorId (1..80), чтобы UI мог показать node/local. */
+                for (uint8_t localDoor = 1; localDoor <= APP_DOORS_PER_NODE; localDoor++)
+                {
+                    const uint8_t bit = (uint8_t)(1U << (localDoor - 1U));
+                    const uint8_t gid = GlobalDoorId_Make(srcNode, localDoor);
+                    if (!gid) continue;
+                    const uint8_t idx = (uint8_t)(gid - 1U);
+
+                    const uint8_t present = (st->present & bit) ? 1U : 0U;
+                    const uint8_t open = (st->physClosed & bit) ? 0U : 1U;
+                    const uint8_t signal_on = (st->signalingActive & bit) ? 1U : 0U;
+
+                    if (!present)
+                    {
+                        s_remote_seen[idx] = 0U;
+                        continue;
+                    }
+
+                    if (!s_remote_seen[idx])
+                    {
+                        /* Первый кадр принимаем как базовый уровень без генерации событий,
+                         * чтобы не засорять журнал при старте/переподключении узла. */
+                        s_remote_seen[idx] = 1U;
+                        s_last_remote_open[idx] = open;
+                        s_last_remote_signal[idx] = signal_on;
+                    }
+                    else
+                    {
+                        app_event_t evt;
+                        memset(&evt, 0, sizeof(evt));
+                        evt.source = APP_SRC_CAN;
+                        evt.door_id = gid; /* globalDoorId */
+                        evt.timestamp = (uint32_t)xTaskGetTickCount();
+
+                        if (open != s_last_remote_open[idx])
+                        {
+                            evt.type = open ? EVT_DOOR_OPEN : EVT_DOOR_CLOSE;
+                            (void)AppEvents_Publish(&evt, 0);
+                            s_last_remote_open[idx] = open;
+                        }
+
+                        if (signal_on != s_last_remote_signal[idx])
+                        {
+                            evt.type = signal_on ? EVT_DOOR_SIGNAL_ON : EVT_DOOR_SIGNAL_OFF;
+                            evt.arg = signal_on ? 1U : 0U;
+                            (void)AppEvents_Publish(&evt, 0);
+                            s_last_remote_signal[idx] = signal_on;
+                        }
+                    }
+                }
+
                 LogicCore_OnCanStatus(lc, srcNode,
                                       st->present,
                                       st->physClosed,
@@ -431,6 +492,9 @@ void CanTask_Run(void const *argument)
         s_force_cmd_send[i] = 0U;
         memset(&s_last_cmd_sent[i], 0, sizeof(s_last_cmd_sent[i]));
     }
+    memset(s_remote_seen, 0, sizeof(s_remote_seen));
+    memset(s_last_remote_open, 0, sizeof(s_last_remote_open));
+    memset(s_last_remote_signal, 0, sizeof(s_last_remote_signal));
 
     /* MASTER считается online сам по себе */
     if (role == APP_ROLE_MASTER)

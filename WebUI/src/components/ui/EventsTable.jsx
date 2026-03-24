@@ -68,8 +68,19 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     (event.recSeq !== undefined || event.timestamp !== undefined || event.type !== undefined)
   );
   
+  // Защитная сортировка: даже если API/кэш отдаст смешанный порядок,
+  // в таблице всегда показываем новые записи первыми.
+  const sortedEvents = [...validEvents].sort((a, b) => {
+    const aSeq = a?.recSeq ?? 0;
+    const bSeq = b?.recSeq ?? 0;
+    if (aSeq !== bSeq) return bSeq - aSeq;
+    const aTs = a?.timestamp ?? 0;
+    const bTs = b?.timestamp ?? 0;
+    return bTs - aTs;
+  });
+  
   // Применяем фильтры к валидным записям
-  let filteredEvents = validEvents;
+  let filteredEvents = sortedEvents;
   
   // Фильтр по типу события (если не "all")
   if (filters.eventType && filters.eventType !== 'all') {

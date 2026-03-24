@@ -175,6 +175,13 @@ export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
   return response.data;
 };
 
+// Очистить журнал событий на контроллере (требует права Super Admin)
+export const clearJournal = async (signal = null) => {
+  const config = { timeout: JOURNAL_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
+  const response = await apiClient.post('/journal/clear', {}, config);
+  return response.data;
+};
+
 // Получить полную конфигурацию (все двери, зависимости, таймауты)
 // GET запрос быстрее, чем PUT, поэтому используем меньший таймаут
 export const getConfigFull = async (signal = null) => {

@@ -2,6 +2,16 @@
  * Утилиты для форматирования данных
  */
 
+const UI_TIMEZONE_STORAGE_KEY = 'ui_timezone';
+const DEFAULT_TIMEZONE = 'Asia/Jerusalem';
+
+const getUiTimeZone = () => {
+  /* Часовой пояс берём из локальных настроек UI.
+   * Если настройка ещё не задана, используем Иерусалим по умолчанию. */
+  if (typeof window === 'undefined') return DEFAULT_TIMEZONE;
+  return localStorage.getItem(UI_TIMEZONE_STORAGE_KEY) || DEFAULT_TIMEZONE;
+};
+
 /**
  * Форматирование времени из timestamp (Unix timestamp в секундах)
  * @param {number} timestamp - Unix timestamp в секундах
@@ -19,6 +29,7 @@ export const formatTimestamp = (timestamp) => {
   
   const date = new Date(timestamp * 1000); // Преобразуем секунды в миллисекунды
   return date.toLocaleString('ru-RU', {
+    timeZone: getUiTimeZone(),
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

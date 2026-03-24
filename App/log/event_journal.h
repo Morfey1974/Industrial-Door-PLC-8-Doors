@@ -55,6 +55,9 @@ typedef struct {
     uint32_t current_sector;
     uint32_t current_seq;
     uint32_t records_written;
+    /* Количество валидных записей, реально доступных в кольцевом буфере сейчас.
+     * Используется WebUI для корректной пагинации (/api/journal/stat). */
+    uint32_t total_records;
     uint32_t dropped_queue;
     uint32_t io_errors;
 } journal_stats_t;

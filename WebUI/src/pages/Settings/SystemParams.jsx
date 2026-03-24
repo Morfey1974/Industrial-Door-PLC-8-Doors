@@ -14,6 +14,9 @@ import { useLanguage } from '../../context/LanguageContext';
 import Button from '../../components/common/Button';
 import './SystemParams.css';
 
+const UI_TIMEZONE_STORAGE_KEY = 'ui_timezone';
+const DEFAULT_TIMEZONE = 'Asia/Jerusalem';
+
 const formatUptime = (seconds) => {
   if (seconds == null) return '—';
   const d = Math.floor(seconds / 86400);
@@ -59,7 +62,7 @@ const SystemParams = () => {
     dnsSecondary: '',
     ntpServer: 'pool.ntp.org',
     hostname: 'doors-controller',
-    timezone: 'Europe/Moscow',
+    timezone: DEFAULT_TIMEZONE,
   });
 
   const loadConfig = async () => {
@@ -84,7 +87,7 @@ const SystemParams = () => {
         dnsSecondary: net.dnsSecondary ?? '',
         ntpServer: net.ntpServer ?? 'pool.ntp.org',
         hostname: net.hostname ?? 'doors-controller',
-        timezone: net.timezone ?? 'Europe/Moscow',
+        timezone: net.timezone ?? localStorage.getItem(UI_TIMEZONE_STORAGE_KEY) ?? DEFAULT_TIMEZONE,
       });
     } catch (err) {
       setError(err?.message || 'Не удалось загрузить настройки');
@@ -96,6 +99,14 @@ const SystemParams = () => {
   useEffect(() => {
     loadConfig();
   }, []);
+
+  useEffect(() => {
+    /* Сохраняем выбранный часовой пояс локально, чтобы форматирование времени
+     * на страницах мониторинга использовало единое значение для всего UI. */
+    if (form.timezone) {
+      localStorage.setItem(UI_TIMEZONE_STORAGE_KEY, form.timezone);
+    }
+  }, [form.timezone]);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -191,6 +202,7 @@ const SystemParams = () => {
     if (unix == null || unix === 0) return '—';
     try {
       return new Date(unix * 1000).toLocaleString('ru-RU', {
+        timeZone: form.timezone || DEFAULT_TIMEZONE,
         dateStyle: 'short',
         timeStyle: 'medium',
       });
@@ -436,6 +448,7 @@ const SystemParams = () => {
               disabled={loading}
               className="form-input form-input-narrow"
             >
+              <option value="Asia/Jerusalem">Иерусалим (Asia/Jerusalem)</option>
               <option value="Europe/Moscow">Москва (Europe/Moscow)</option>
               <option value="Europe/Samara">Самара (Europe/Samara)</option>
               <option value="Asia/Yekaterinburg">Екатеринбург (Asia/Yekaterinburg)</option>
