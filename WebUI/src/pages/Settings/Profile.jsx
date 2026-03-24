@@ -53,14 +53,16 @@ const Profile = () => {
     setStoredEmail(user?.username, value);
   };
 
+  /** Локализованные подписи ролей (совпадают с Users и журналом). */
   const getRoleName = (role) => {
-    const roleNames = {
-      'super_admin': 'Супер-администратор',
-      'admin': 'Администратор',
-      'operator': 'Оператор',
-      'monitor': 'Мониторинг'
+    const map = {
+      super_admin: 'pages.profile.roleSuperAdmin',
+      admin: 'pages.profile.roleAdmin',
+      operator: 'pages.profile.roleOperator',
+      monitor: 'pages.profile.roleMonitor',
     };
-    return roleNames[role] || role;
+    const key = map[role];
+    return key ? t(key) : role;
   };
 
   return (
@@ -71,29 +73,29 @@ const Profile = () => {
         <h2>{t('pages.profile.userInfo')}</h2>
         <div className="profile-info">
           <div className="profile-info-item">
-            <label>Имя пользователя:</label>
-            <span>{user?.username || '—'}</span>
+            <label>{t('pages.profile.labelUsername')}</label>
+            <span>{user?.username || t('pages.profile.dash')}</span>
           </div>
           <div className="profile-info-item">
-            <label>Роль:</label>
-            <span>{user?.role ? getRoleName(user.role) : '—'}</span>
+            <label>{t('pages.profile.labelRole')}</label>
+            <span>{user?.role ? getRoleName(user.role) : t('pages.profile.dash')}</span>
           </div>
           <div className="profile-info-item">
-            <label htmlFor="profile-email">Email:</label>
+            <label htmlFor="profile-email">{t('pages.profile.emailLabel')}</label>
             <input
               id="profile-email"
               type="email"
               className="form-control"
               value={email}
               onChange={handleEmailChange}
-              placeholder="example@company.com"
+              placeholder={t('pages.profile.emailPlaceholder')}
               autoComplete="email"
               style={{ maxWidth: '320px' }}
             />
           </div>
         </div>
         <p className="profile-help" style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
-          Изменение пароля пользователей — в разделе <strong>Настройки → Пользователи</strong>.
+          {t('pages.profile.passwordHelp')}
         </p>
       </section>
     </div>

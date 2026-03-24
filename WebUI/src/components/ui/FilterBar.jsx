@@ -5,8 +5,10 @@
 import Input from '../common/Input';
 import Dropdown from '../common/Dropdown';
 import Button from '../common/Button';
+import { useLanguage } from '../../context/LanguageContext';
 
 const FilterBar = ({ filters, onFilterChange }) => {
+  const { t } = useLanguage();
   const handleStatusChange = (e) => {
     onFilterChange({ ...filters, status: e.target.value });
   };
@@ -16,17 +18,17 @@ const FilterBar = ({ filters, onFilterChange }) => {
   };
 
   const statusOptions = [
-    { value: 'all', label: 'Все' },
-    { value: 'open', label: 'Открытые' },
-    { value: 'closed', label: 'Закрытые' },
-    { value: 'alarm', label: 'С Alarmми' },
-    { value: 'locked', label: 'Заблокированные' },
+    { value: 'all', label: t('pages.doors.filterAll') },
+    { value: 'open', label: t('pages.doors.filterOpen') },
+    { value: 'closed', label: t('pages.doors.filterClosed') },
+    { value: 'alarm', label: t('pages.doors.filterAlarm') },
+    { value: 'locked', label: t('pages.doors.filterLocked') },
   ];
 
   return (
     <div className="filter-bar">
       <div className="filter-group">
-        <label htmlFor="status-filter">Статус:</label>
+        <label htmlFor="status-filter">{t('pages.doors.statusLabel')}</label>
         <Dropdown
           id="status-filter"
           value={filters.status || 'all'}
@@ -35,13 +37,13 @@ const FilterBar = ({ filters, onFilterChange }) => {
         />
       </div>
       <div className="filter-group">
-        <label htmlFor="door-id-filter">ID двери:</label>
+        <label htmlFor="door-id-filter">{t('pages.doors.doorIdLabel')}</label>
         <Input
           id="door-id-filter"
           type="text"
           value={filters.doorId || ''}
           onChange={handleDoorIdChange}
-          placeholder="ID-1-1 или 1-1"
+          placeholder={t('pages.doors.doorIdPlaceholder')}
         />
       </div>
       {(filters.status && filters.status !== 'all') || filters.doorId ? (
@@ -49,7 +51,7 @@ const FilterBar = ({ filters, onFilterChange }) => {
           variant="secondary"
           onClick={() => onFilterChange({ status: 'all', doorId: '' })}
         >
-          Сбросить фильтры
+          {t('pages.doors.resetFilters')}
         </Button>
       ) : null}
     </div>

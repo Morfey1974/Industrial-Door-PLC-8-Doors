@@ -5,10 +5,12 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useLanguage } from '../../../context/LanguageContext';
 
 const NO_ALARM_MS = 0; // 0 = отключена автосигнализация, только кнопка Alarm
 
 const GeneralTab = ({ config, updateConfig, loading }) => {
+  const { t } = useLanguage();
   const [localConfig, setLocalConfig] = useState({
     projectName: '',
     openTimeoutSec: 30,
@@ -53,28 +55,28 @@ const GeneralTab = ({ config, updateConfig, loading }) => {
 
   return (
     <div className="general-tab">
-      <h2>Название проекта</h2>
+      <h2>{t('pages.generalTab.projectName')}</h2>
 
       <div className="form-group">
         <label htmlFor="projectName">
-          Короткий заголовок-описание проекта
+          {t('pages.generalTab.projectLabel')}
         </label>
         <input
           id="projectName"
           type="text"
           value={localConfig.projectName}
           onChange={(e) => handleChange('projectName', e.target.value)}
-          placeholder="Введите название проекта"
+          placeholder={t('pages.generalTab.projectPlaceholder')}
           maxLength={100}
           disabled={loading}
           className="form-input project-name-input"
         />
-        <small>Максимум 100 символов</small>
+        <small>{t('pages.generalTab.maxChars')}</small>
       </div>
 
       <div className="form-group">
         <label htmlFor="openTimeoutSec">
-          Таймаут для сигнализации (с)
+          {t('pages.generalTab.alarmTimeoutSec')}
         </label>
         <div className="timeout-with-checkbox">
           <input
@@ -96,34 +98,34 @@ const GeneralTab = ({ config, updateConfig, loading }) => {
               disabled={loading}
             />
             {localConfig.noAlarm
-              ? 'Контроллер работает без активации сигнализации'
-              : 'Нет сигнализации'}
+              ? t('pages.generalTab.noAlarmOn')
+              : t('pages.generalTab.noAlarmOff')}
           </label>
         </div>
         <small>
           {localConfig.noAlarm
-            ? 'Автосигнализация отключена. Сигнализация только по кнопке «Alarm» на светофоре двери.'
-            : 'От 1 до 3600 с (1 час). По умолчанию 30 с. Применяется ко всем дверям.'}
+            ? t('pages.generalTab.noAlarmHintOn')
+            : t('pages.generalTab.noAlarmHintOff')}
         </small>
       </div>
-      
+
       <div className="config-info">
-        <h3>Информация о конфигурации</h3>
+        <h3>{t('pages.generalTab.configInfo')}</h3>
         <div className="info-grid">
           <div className="info-item">
-            <span className="info-label">Версия формата:</span>
+            <span className="info-label">{t('pages.generalTab.formatVersion')}</span>
             <span className="info-value">0x{config.formatVersion?.toString(16).toUpperCase() || '00010001'}</span>
           </div>
           <div className="info-item">
-            <span className="info-label">Версия конфигурации:</span>
+            <span className="info-label">{t('pages.generalTab.configVersion')}</span>
             <span className="info-value">{config.seq || 0}</span>
           </div>
           <div className="info-item">
-            <span className="info-label">Количество дверей:</span>
+            <span className="info-label">{t('pages.generalTab.doorsCount')}</span>
             <span className="info-value">{config.doors?.length || 0}</span>
           </div>
           <div className="info-item">
-            <span className="info-label">Количество зависимостей:</span>
+            <span className="info-label">{t('pages.generalTab.edgesCount')}</span>
             <span className="info-value">{config.edges?.length || 0}</span>
           </div>
         </div>

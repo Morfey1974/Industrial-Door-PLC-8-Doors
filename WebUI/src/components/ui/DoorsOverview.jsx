@@ -4,15 +4,24 @@
 
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
-import { getDoorStatusColor, getDoorStatusText, formatDoorId } from '../../utils/formatters';
+import { formatDoorId } from '../../utils/formatters';
+import { useLanguage } from '../../context/LanguageContext';
+
+const getDoorStatusTextLocalized = (door, t) => {
+  if (door.alarming) return t('pages.doors.statusAlarm');
+  if (!door.physClosed) return t('pages.doors.statusOpen');
+  if (door.locked) return t('pages.doors.statusLocked');
+  return t('pages.doors.statusClosed');
+};
 
 const DoorsOverview = ({ doors }) => {
+  const { t } = useLanguage();
   if (!doors) {
-    return <p>Нет данных о дверях</p>;
+    return <p>{t('pages.doors.noData')}</p>;
   }
   
   if (!doors.doors || doors.doors.length === 0) {
-    return <p>Нет данных о дверях</p>;
+    return <p>{t('pages.doors.noData')}</p>;
   }
 
   // Группируем двери по платам (nodeId)
@@ -30,9 +39,9 @@ const DoorsOverview = ({ doors }) => {
 
   const columns = [
     { key: 'id', label: 'ID' },
-    { key: 'status', label: 'Статус' },
-    { key: 'locked', label: 'Замок' },
-    { key: 'openSeconds', label: 'Открыта (сек)' },
+    { key: 'status', label: t('pages.doors.colStatus') },
+    { key: 'locked', label: t('pages.doors.colLock') },
+    { key: 'openSeconds', label: t('pages.doors.colOpenSeconds') },
   ];
 
   return (
@@ -44,17 +53,17 @@ const DoorsOverview = ({ doors }) => {
           status: (
             <StatusBadge
               status={door.alarming ? 'alarm' : !door.physClosed ? 'open' : door.locked ? 'locked' : 'normal'}
-              label={getDoorStatusText(door)}
+              label={getDoorStatusTextLocalized(door, t)}
             />
           ),
-          locked: door.locked ? 'Заблокирована' : 'Разблокирована',
+          locked: door.locked ? t('pages.doors.lockedValue') : t('pages.doors.unlockedValue'),
           openSeconds: door.openSeconds > 0 ? door.openSeconds : '—',
         }));
 
         return (
           <div key={nodeId} style={{ marginBottom: '30px' }}>
             <h3 style={{ marginBottom: '10px', fontSize: '16px', fontWeight: '600' }}>
-              Плата {nodeId} ({nodeDoors.length} {nodeDoors.length === 1 ? 'дверь' : 'дверей'})
+              {t('pages.doors.boardTitle').replace('{id}', String(nodeId))} ({nodeDoors.length} {nodeDoors.length === 1 ? t('pages.doors.oneDoor') : t('pages.doors.manyDoors')})
             </h3>
             <Table columns={columns} data={tableData} />
           </div>

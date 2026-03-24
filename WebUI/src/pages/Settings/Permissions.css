@@ -74,9 +74,20 @@
   white-space: nowrap;
 }
 
-.permissions-table th:first-child {
-  min-width: 180px;
-  width: 28%;
+/* Колонка «Раздел»: шире, чтобы длинные пути (напр. параметры системы) не ломались на много строк */
+.permissions-table th:first-child,
+.permissions-table td.permission-section {
+  min-width: 360px;
+  width: 40%;
+  box-sizing: border-box;
+}
+
+/* Колонка Super Admin: шире, чтобы эмодзи-галочка и подпись уровня не переносились */
+.permissions-table th.permission-col-super-admin,
+.permissions-table td.permission-col-super-admin {
+  min-width: 240px;
+  width: 1%;
+  white-space: nowrap;
 }
 
 .permissions-table td {
@@ -273,6 +284,13 @@
   .permissions-table td {
     padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
     font-size: var(--font-size-xs, 0.75rem);
+  }
+
+  /* На узком экране не держим 360px — иначе таблица вылезает за край */
+  .permissions-table th:first-child,
+  .permissions-table td.permission-section {
+    min-width: 200px;
+    width: 32%;
   }
 
   .permission-levels-list {

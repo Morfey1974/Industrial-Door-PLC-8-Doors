@@ -6,10 +6,38 @@
 import { memo } from 'react';
 import Table from '../common/Table';
 import { formatTimestamp, formatRelativeTime, formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
+import { useLanguage } from '../../context/LanguageContext';
 
-const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }) => {
+/* Человекочитаемое отображение поля arg в журнале.
+ * Важно: arg — это универсальное поле, его смысл зависит от типа/источника события.
+ * Для UI показываем только осмысленные бизнес-значения, чтобы оператор не видел
+ * "сырые" числа без контекста. Если расшифровки нет — выводим "—". */
+const formatEventArg = (event, t) => {
+  if (!event) return '—';
+  const type = event.type || '';
+  const source = event.source || '';
+  const arg = Number(event.arg);
+
+  /* Действия пользователя из HTTP (журнал аудита UI). */
+  if ((type === 'CONFIG_SAVE' || type === 'USER_LOGIN' || type === 'USER_LOGOUT') && source === 'HTTP') {
+    if (type === 'CONFIG_SAVE') return t('pages.events.argConfigSave');
+    if (type === 'USER_LOGIN') return t('pages.events.argUserLogin');
+    if (type === 'USER_LOGOUT') return t('pages.events.argUserLogout');
+  }
+  if (type === 'SYSTEM_FAULT' && source === 'HTTP') {
+    if (arg === 2) return t('pages.events.argConfigSave');
+    if (arg === 3) return t('pages.events.argUserLogin');
+    if (arg === 4) return t('pages.events.argUserLogout');
+  }
+
+  /* Для остальных событий arg в текущей версии не несёт полезного операторского смысла. */
+  return '—';
+};
+
+const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0, doorMetaByGlobalId = {} }) => {
+  const { t } = useLanguage();
   if (!events || !events.records || events.records.length === 0) {
-    return <p>Нет событий</p>;
+    return <p>{t('pages.events.noData')}</p>;
   }
 
   // КРИТИЧЕСКИ ВАЖНО: используем totalRecords для определения реального количества записей
@@ -47,14 +75,14 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
 
   // Определяем колонки таблицы (Пользователь — для событий из UI: вход, выход, сохранение конфига)
   const columns = [
-    { key: 'number', label: '№', style: { width: '60px' } },
-    { key: 'timestamp', label: 'Время', style: { width: '140px' } },
-    { key: 'type', label: 'Тип события', style: { width: '150px' } },
-    { key: 'username', label: 'Пользователь', style: { width: '120px' } },
-    { key: 'doorId', label: 'ID двери', style: { width: '100px' } },
-    { key: 'source', label: 'Источник', style: { width: '120px' } },
-    { key: 'drawingId', label: 'DrawingId', style: { width: '100px' } },
-    { key: 'arg', label: 'Аргумент', style: { width: '80px' } },
+    { key: 'number', label: t('pages.events.colNumber'), style: { width: '60px' } },
+    { key: 'timestamp', label: t('pages.events.colTime'), style: { width: '140px' } },
+    { key: 'type', label: t('pages.events.colType'), style: { width: '150px' } },
+    { key: 'username', label: t('pages.events.colUser'), style: { width: '120px' } },
+    { key: 'doorId', label: t('pages.events.colDoorId'), style: { width: '100px' } },
+    { key: 'source', label: t('pages.events.colSource'), style: { width: '120px' } },
+    { key: 'drawingId', label: t('pages.events.colDrawingId'), style: { width: '100px' } },
+    { key: 'arg', label: t('pages.events.colArg'), style: { width: '80px' } },
   ];
 
   // Формируем данные для таблицы
@@ -126,6 +154,29 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     const doorIdFormatted = (event.nodeId != null && event.localDoor != null)
       ? formatDoorId({ nodeId: event.nodeId, localDoor: event.localDoor })
       : (event.doorId !== undefined ? `ID-1-${event.doorId}` : '—');
+
+    /* Привязка события к drawingId из активной конфигурации.
+     * Приоритет источников globalDoorId:
+     * 1) поле globalDoorId из API журнала (если сервер его прислал);
+     * 2) вычисление из nodeId/localDoor (формула globalDoorId);
+     * 3) fallback: локальная дверь node=1 по doorId старого формата.
+     *
+     * Это гарантирует обратную совместимость со старыми записями журнала и
+     * одновременно корректно работает для событий удалённых узлов (Slave). */
+    let globalDoorId = null;
+    if (event.globalDoorId != null) {
+      globalDoorId = Number(event.globalDoorId);
+    } else if (event.nodeId != null && event.localDoor != null) {
+      globalDoorId = ((Number(event.nodeId) - 1) * 8) + Number(event.localDoor);
+    } else if (event.doorId != null) {
+      globalDoorId = Number(event.doorId);
+    }
+    const doorMeta = (Number.isFinite(globalDoorId) && globalDoorId > 0)
+      ? doorMetaByGlobalId[globalDoorId]
+      : null;
+    const drawingIdValue = (doorMeta?.drawingId != null && doorMeta?.drawingId !== '')
+      ? doorMeta.drawingId
+      : '—';
     
     // Упрощаем отображение типа события (скрываем код или делаем менее заметным)
     const typeDisplay = event.type || '—';
@@ -147,8 +198,8 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
       username: event.username && event.username.trim() ? event.username : '—',
       doorId: doorIdFormatted,
       source: sourceDisplay,
-      drawingId: '—', // Пока заглушка, в будущем будет из конфига двери
-      arg: event.arg !== undefined ? event.arg : '—',
+      drawingId: drawingIdValue,
+      arg: formatEventArg(event, t),
     };
   });
 
@@ -156,7 +207,7 @@ const EventsTable = memo(({ events, filters = {}, offset = 0, totalRecords = 0 }
     <div className="events-table">
       <Table columns={columns} data={tableData} className="events-table-content" />
       {eventsToShow.length === 0 && (
-        <p className="no-results">Нет событий, соответствующих выбранным фильтрам</p>
+        <p className="no-results">{t('pages.events.noMatching')}</p>
       )}
     </div>
   );

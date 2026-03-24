@@ -1,132 +1,63 @@
 /**
- * Контент разделов помощи — для отображения на отдельных страницах
- * Экспорт: HelpImagePlaceholder, getSectionContent(sectionId)
+ * Контент разделов помощи — тексты из локалей (pages.help.content.*).
+ * Экспорт: HelpImagePlaceholder, getSectionContent(sectionId, t)
  */
 
 import React from 'react';
 
-export function HelpImagePlaceholder({ caption }) {
+/**
+ * Плейсхолдер для будущего скриншота; подписи из локали.
+ */
+export function HelpImagePlaceholder({ caption, t }) {
   return (
     <figure className="help-figure">
       <div className="help-image-placeholder" aria-hidden="true">
         <span className="help-placeholder-icon">🖼</span>
-        <span className="help-placeholder-text">Место для скриншота или рисунка</span>
-        <span className="help-placeholder-hint">Добавьте изображение для пояснения</span>
+        <span className="help-placeholder-text">{t('pages.help.placeholderLine1')}</span>
+        <span className="help-placeholder-hint">{t('pages.help.placeholderLine2')}</span>
       </div>
       {caption && <figcaption className="help-figcaption">{caption}</figcaption>}
     </figure>
   );
 }
 
+/** Соответствие id раздела в URL → ключ строки заголовка в pages.help */
+const SECTION_TITLE_KEY_BY_ID = {
+  overview: 'sectionTitleOverview',
+  'monitoring-doors': 'sectionTitleMonitoringDoors',
+  'monitoring-events': 'sectionTitleMonitoringEvents',
+  'monitoring-alarms': 'sectionTitleMonitoringAlarms',
+  'monitoring-statistics': 'sectionTitleMonitoringStatistics',
+  'config-doors': 'sectionTitleConfigDoors',
+  'config-mapping': 'sectionTitleConfigMapping',
+  'settings-system': 'sectionTitleSettingsSystem',
+  'settings-profile': 'sectionTitleSettingsProfile',
+  'settings-permissions': 'sectionTitleSettingsPermissions',
+  'settings-users': 'sectionTitleSettingsUsers',
+};
+
+export function getHelpSectionTitle(sectionId, t) {
+  const suffix = SECTION_TITLE_KEY_BY_ID[sectionId];
+  return suffix ? t(`pages.help.${suffix}`) : sectionId;
+}
+
 /**
- * Возвращает JSX-контент раздела по id (без заголовка — заголовок на странице).
+ * Тело раздела: многоабзацный текст из локали, абзацы разделены \n\n.
  */
-export function getSectionContent(sectionId) {
-  switch (sectionId) {
-    case 'overview':
-      return (
-        <>
-          <p>После входа в систему вы видите главный экран. Вверху страницы находится <strong>шапка</strong>: в ней отображаются логотип, статус связи с контроллером (зелёные индикаторы — связь есть, сообщение «Нет связи» — нет связи; ошибка показывается после трёх подряд неудачных опросов) и имя текущего пользователя с ролью (например, «admin (Super Admin)»). По клику на логотип вы возвращаетесь на главную страницу мониторинга (Дашборд).</p>
-          <p>Под шапкой расположены <strong>вкладки</strong>: «Мониторинг», «Конфигурация» (видна только администраторам и супер-администраторам) и «Настройки». Выберите вкладку — под ней появится боковое меню (сайдбар) с пунктами. Нажмите на нужный пункт, чтобы открыть соответствующую страницу. Активный пункт подсвечивается. Если в карте маппинга есть несохранённые изменения и вы переходите по сайдбару или вкладкам, появится диалог: «В карте маппинга есть несохранённые изменения. Выйти без сохранения?» — можно остаться или выйти.</p>
-          <HelpImagePlaceholder caption="Общий вид интерфейса: шапка, вкладки и боковое меню" />
-          <p><strong>Мониторинг</strong>: пункты «Двери», «События», «Алармы», «Статистика». <strong>Конфигурация</strong>: «Настройка дверей»; редактор маппинга открывается кнопкой «Маппинг» на странице настройки дверей. <strong>Настройки</strong>: «Профиль», «Параметры системы», «Права доступа», «Пользователи», «Помощь».</p>
-        </>
-      );
-    case 'monitoring-doors':
-      return (
-        <>
-          <p>Раздел <strong>«Двери»</strong> показывает полную таблицу состояния всех дверей системы. Данные автоматически обновляются каждые 5 секунд.</p>
-          <h3 className="help-h3">Панель фильтров</h3>
-          <ul>
-            <li><strong>Статус</strong> — выпадающий список: «Все», «Открытые», «Закрытые», «С Alarmми», «Заблокированные».</li>
-            <li><strong>ID двери</strong> — текстовое поле (формат <code>ID-1-1</code> или <code>1-1</code>).</li>
-            <li>Кнопка <strong>«Сбросить фильтры»</strong> — сбрасывает оба фильтра.</li>
-          </ul>
-          <h3 className="help-h3">Таблица дверей</h3>
-          <p>Колонки: <strong>ID</strong>, <strong>Статус</strong>, <strong>Физически закрыта</strong>, <strong>Замок</strong>, <strong>Alarm</strong>, <strong>Причины аварии</strong>, <strong>Открыта (сек)</strong>, <strong>Задержка закрытия (сек)</strong>. При ошибке загрузки — кнопка <strong>«Повторить попытку»</strong>. Только <strong>просмотр</strong>.</p>
-          <HelpImagePlaceholder caption="Страница «Двери»: фильтры и таблица состояния" />
-        </>
-      );
-    case 'monitoring-events':
-      return (
-        <>
-          <p>Раздел <strong>«События»</strong> — журнал событий системы. Автообновление каждые 10 секунд при отсутствии фильтров.</p>
-          <h3 className="help-h3">Панель фильтров</h3>
-          <ul>
-            <li><strong>Тип события</strong>, <strong>ID двери</strong>, <strong>Источник</strong>. Кнопка <strong>«Сбросить фильтры»</strong>.</li>
-          </ul>
-          <h3 className="help-h3">Таблица и пагинация</h3>
-          <p>Колонки: №, Время, Тип события, ID двери, Источник, DrawingId, Аргумент. Кнопки «Назад»/«Вперёд», размер страницы (10, 20, 50). Только <strong>просмотр</strong>.</p>
-          <HelpImagePlaceholder caption="Журнал событий: фильтры, таблица и пагинация" />
-        </>
-      );
-    case 'monitoring-alarms':
-      return (
-        <>
-          <p>Раздел <strong>«Алармы»</strong> — таблица аварий. В текущей версии может быть заглушка «Таблица аварий — будет реализована позже». Режим — только <strong>просмотр</strong>.</p>
-          <HelpImagePlaceholder caption="Страница аларм (при реализации)" />
-        </>
-      );
-    case 'monitoring-statistics':
-      return (
-        <>
-          <p>Раздел <strong>«Статистика»</strong> — сводные данные. В текущей версии может быть заглушка «Статистика — будет реализована позже». Режим — только <strong>просмотр</strong>.</p>
-          <HelpImagePlaceholder caption="Страница статистики (при реализации)" />
-        </>
-      );
-    case 'config-doors':
-      return (
-        <>
-          <p>Раздел <strong>«Настройка дверей»</strong> доступен администраторам. Два режима: <strong>список конфигураций</strong> и <strong>редактирование</strong> (вкладки: Общие параметры, Двери, Зависимости, Таймауты). Автосохранение в черновик.</p>
-          <h3 className="help-h3">Режим списка</h3>
-          <p>Заголовок «Список конфигураций». Кнопки: «Открыть конфигурацию», «Создать конфигурацию», «Загрузить с контроллера». Блок «Сохраненные конфигурации» — черновик (Загрузить/Сохранить/Удалить), сохранённые (Загрузить/Удалить).</p>
-          <h3 className="help-h3">Режим редактирования</h3>
-          <p>Заголовок «Редактирование конфигурации», под ним путь к файлу в светло-зелёном окне. Вверху: «Загрузить с контроллера», «Сохранить конфигурацию» (для новой — диалог сохранения в файл), «Сохранить как…» (только для сохранённых — отключена для новой), «Сохранить и Выйти», «Отмена», «Маппинг», «Применить на контроллер». Вкладки: <strong>Общие параметры</strong> (название проекта, таймаут открытия), <strong>Двери</strong> (таблица, Добавить/Редактировать/Удалить, модальное окно: порядковый номер двери, Drawing ID, выбор платы, выбор двери, ID двери, состояние двери, комментарий), <strong>Зависимости</strong> (дверь-источник, двери-цели), <strong>Таймауты</strong> (post-close по каждой двери).</p>
-          <HelpImagePlaceholder caption="Настройка дверей: список конфигураций и вкладки редактора" />
-        </>
-      );
-    case 'config-mapping':
-      return (
-        <>
-          <p><strong>Маппинг</strong> — графический редактор карты дверей. Открывается кнопкой «Маппинг» на странице «Настройка дверей». Карта — файл ИМЯ_map.json.</p>
-          <h3 className="help-h3">Шапка</h3>
-          <p>Режимы «Редактирование»/«Просмотр». Кнопки: Отменить, Повторить, Показать карту; Сохранить карту, Загрузить карту, Выгрузить/Загрузить карту в контроллер, Очистить карту, Сохранить и выйти в конфигуратор.</p>
-          <h3 className="help-h3">Панель инструментов</h3>
-          <p>Инструменты: Выбор, Стена (толщина 1–20 мм), Дверь (тип, привязка к двери, номер на чертеже, отразить/поворот), Комментарий, Вид. Сетка и привязка.</p>
-          <h3 className="help-h3">Холст</h3>
-          <p>Панорамирование и масштаб. В режиме «Выбор» — перемещение объектов. «Стена» — два клика для отрезка. «Дверь» — один клик для размещения. При уходе с несохранёнными изменениями — диалог подтверждения.</p>
-          <HelpImagePlaceholder caption="Редактор маппинга: шапка, панель инструментов и холст" />
-        </>
-      );
-    case 'settings-system':
-      return (
-        <>
-          <p>Раздел <strong>«Параметры системы»</strong> — полный удалённый доступ к контроллеру имеет только Супер-администратор. Структура: (1) <strong>Подключение к сети</strong> — IP, маска, шлюз, DHCP, порт веб-интерфейса; (2) <strong>Безопасность и удалённый доступ</strong> — рекомендации по защите (VPN, сильные пароли, роли, HTTPS); (3) <strong>Настройка VPN</strong> — инструкции для доступа из другого города (VPN на роутере, на ПК, Tailscale/ZeroTier); (4) <strong>Время и идентификация</strong> — NTP, hostname, часовой пояс; (5) <strong>Информация о контроллере</strong> — IP, Node ID, uptime. Таймауты — в конфигурации (Настройка дверей). Доступен только Супер-администратору.</p>
-          <HelpImagePlaceholder caption="Параметры системы" />
-        </>
-      );
-    case 'settings-profile':
-      return (
-        <>
-          <p>Раздел <strong>«Профиль»</strong> доступен всем. Блок «Информация о пользователе» (имя, роль). Форма смены пароля: текущий пароль, новый пароль, подтверждение; кнопка «Изменить пароль». Ссылка «Восстановить пароль» — для Super Admin генерация токена для пользователя.</p>
-          <HelpImagePlaceholder caption="Профиль: информация о пользователе и форма смены пароля" />
-        </>
-      );
-    case 'settings-permissions':
-      return (
-        <>
-          <p>Раздел <strong>«Права доступа»</strong> — таблица уровней доступа по ролям (Super Admin, Admin, Operator) к разделам системы. Выпадающие списки в ячейках: Нет доступа, Просмотр, Изменение пароля, Изменение, Управление. Кнопка «Применить права» сохраняет в браузер. Блоки «Значения пунктов выпадающего списка» и «Описание ролей».</p>
-          <HelpImagePlaceholder caption="Таблица прав доступа и описание уровней" />
-        </>
-      );
-    case 'settings-users':
-      return (
-        <>
-          <p>Раздел <strong>«Пользователи»</strong> доступен только супер-администратору. Таблица: имя, роль, Редактировать/Удалить. Кнопка «+ Создать пользователя». Формы создания (имя, пароль, роль, включён) и редактирования (имя только для чтения, пароль опционально, роль, включён). Удаление с подтверждением.</p>
-          <HelpImagePlaceholder caption="Список пользователей, форма создания и редактирования" />
-        </>
-      );
-    default:
-      return null;
-  }
+export function getSectionContent(sectionId, t) {
+  const contentKey = sectionId.replace(/-/g, '_');
+  const i18nPath = `pages.help.content.${contentKey}`;
+  const raw = t(i18nPath);
+  if (!raw || raw === i18nPath) return null;
+  const paragraphs = raw
+    .split(/\n\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return (
+    <>
+      {paragraphs.map((text, i) => (
+        <p key={i}>{text}</p>
+      ))}
+    </>
+  );
 }

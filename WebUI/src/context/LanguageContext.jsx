@@ -31,13 +31,23 @@ export function LanguageProvider({ children }) {
     if (lang === 'ru' || lang === 'en') setLanguageState(lang);
   }, []);
 
-  const t = useCallback((key) => {
+  /**
+   * Перевод по ключу вида «pages.config.saveConfig».
+   * Второй аргумент — объект подстановок: {name}, {count} и т.д. в строке перевода.
+   */
+  const t = useCallback((key, params) => {
     const keys = key.split('.');
     let value = translations[language];
     for (const k of keys) {
       value = value?.[k];
     }
-    return typeof value === 'string' ? value : key;
+    let out = typeof value === 'string' ? value : key;
+    if (typeof out === 'string' && params && typeof params === 'object') {
+      for (const [pk, pv] of Object.entries(params)) {
+        out = out.split(`{${pk}}`).join(pv != null ? String(pv) : `{${pk}}`);
+      }
+    }
+    return out;
   }, [language]);
 
   return (

@@ -3,8 +3,10 @@
  */
 
 import Button from '../common/Button';
+import { useLanguage } from '../../context/LanguageContext';
 
 const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPage, onPageClick, onPageSizeChange }) => {
+  const { t } = useLanguage();
   const currentPage = Math.floor(offset / limit) + 1;
   const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
   const hasPrevious = offset > 0;
@@ -62,11 +64,16 @@ const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPa
     <div className="pagination">
       <div className="pagination-info">
         <span>
-          Показано {count > 0 ? offset + 1 : 0}—{count > 0 ? offset + count : 0} из {total} записей
+          {t('pagination.shown')
+            .replace('{from}', String(count > 0 ? offset + 1 : 0))
+            .replace('{to}', String(count > 0 ? offset + count : 0))
+            .replace('{total}', String(total))}
         </span>
         {totalPages > 1 && (
           <span className="pagination-page-info">
-            Страница {currentPage} из {totalPages}
+            {t('pagination.page')
+              .replace('{current}', String(currentPage))
+              .replace('{total}', String(totalPages))}
           </span>
         )}
       </div>
@@ -77,7 +84,7 @@ const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPa
               variant="secondary"
               onClick={onFirstPage}
             >
-              ⏮ Первая
+              {t('pagination.first')}
             </Button>
           )}
           <Button
@@ -85,7 +92,7 @@ const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPa
             onClick={onPrevious}
             disabled={!hasPrevious}
           >
-            ← Предыдущая
+            {t('pagination.previous')}
           </Button>
           
           {/* Номера страниц */}
@@ -119,12 +126,12 @@ const Pagination = ({ offset, limit, count, total, onPrevious, onNext, onFirstPa
             onClick={onNext}
             disabled={!hasNext}
           >
-            Следующая →
+            {t('pagination.next')}
           </Button>
         </div>
         {onPageSizeChange && (
           <div className="pagination-page-size">
-            <label htmlFor="page-size">Записей на странице:</label>
+            <label htmlFor="page-size">{t('pagination.pageSize')}</label>
             <select
               id="page-size"
               className="dropdown"

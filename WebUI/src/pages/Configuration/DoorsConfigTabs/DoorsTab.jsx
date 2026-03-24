@@ -1,6 +1,6 @@
 /**
  * DoorsTab - вкладка настройки дверей
- * 
+ *
  * Реализует:
  * - Таблицу всех дверей
  * - Добавление новой двери
@@ -11,42 +11,46 @@
 
 import { useState, useMemo } from 'react';
 import Button from '../../../components/common/Button';
+import { useLanguage } from '../../../context/LanguageContext';
 import { calculateGlobalDoorId, validateDoor } from '../../../utils/configValidator';
 import DoorEditModal from './DoorEditModal';
 
 const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
+  const { t } = useLanguage();
   const [editingDoor, setEditingDoor] = useState(null);
   const [filterNodeId, setFilterNodeId] = useState('all');
-  
+
   const doors = config.doors || [];
-  
-  // Фильтрация дверей по плате
+
   const filteredDoors = useMemo(() => {
     if (filterNodeId === 'all') return doors;
     const nodeId = parseInt(filterNodeId, 10);
-    return doors.filter(door => door.nodeId === nodeId);
+    return doors.filter((door) => door.nodeId === nodeId);
   }, [doors, filterNodeId]);
-  
+
   const MAX_DOORS_V1 = 32;
 
-  // Добавление новой двери
+  const notifyMaxDoors = () => {
+    const msg = t('pages.config.doorsMaxReached');
+    if (showConfirm) {
+      showConfirm(msg, t('pages.config.errorTitle'));
+    } else {
+      alert(msg);
+    }
+  };
+
   const handleAddDoor = () => {
     if (doors.length >= MAX_DOORS_V1) {
-      if (showConfirm) {
-        showConfirm('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.', 'Ошибка');
-      } else {
-        alert('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.');
-      }
+      notifyMaxDoors();
       return;
     }
-    // Находим свободную позицию (nodeId, localDoor) в пределах 32 дверей (4 узла × 8)
     let newNodeId = 1;
     let newLocalDoor = 1;
     let found = false;
-    const maxNodes = 4; // 4 × 8 = 32 двери
+    const maxNodes = 4;
     for (let nodeId = 1; nodeId <= maxNodes && !found; nodeId++) {
       for (let localDoor = 1; localDoor <= 8; localDoor++) {
-        const exists = doors.some(d => d.nodeId === nodeId && d.localDoor === localDoor);
+        const exists = doors.some((d) => d.nodeId === nodeId && d.localDoor === localDoor);
         if (!exists) {
           newNodeId = nodeId;
           newLocalDoor = localDoor;
@@ -55,19 +59,14 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
         }
       }
     }
-    
+
     if (!found) {
-      // Используем showConfirm для показа сообщения (как alert)
-      if (showConfirm) {
-        showConfirm('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.', 'Ошибка');
-      } else {
-        alert('Достигнут максимум дверей (32). Удалите существующие двери перед добавлением новых.');
-      }
+      notifyMaxDoors();
       return;
     }
-    
+
     const newDoor = {
-      techId: doors.length > 0 ? Math.max(...doors.map(d => d.techId || 0)) + 1 : 1,
+      techId: doors.length > 0 ? Math.max(...doors.map((d) => d.techId || 0)) + 1 : 1,
       drawingId: 0,
       nodeId: newNodeId,
       localDoor: newLocalDoor,
@@ -76,135 +75,124 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
       typeCode: 1,
       comment: '',
     };
-    
+
     setEditingDoor(newDoor);
   };
-  
-  // Редактирование двери
+
   const handleEditDoor = (door) => {
     setEditingDoor({ ...door });
   };
-  
-  // Сохранение двери (добавление или обновление)
+
   const handleSaveDoor = (doorData) => {
-    // Валидация - исключаем текущую редактируемую дверь по techId
     const editingDoorTechId = editingDoor ? editingDoor.techId : null;
-    const validation = validateDoor(doorData, doors.filter(d => d.techId !== editingDoorTechId));
+    const validation = validateDoor(doorData, doors.filter((d) => d.techId !== editingDoorTechId), { t });
     if (!validation.valid) {
-      alert(`Ошибки валидации:\n${validation.errors.join('\n')}`);
+      alert(`${t('pages.doorsTab.validationFailedTitle')}:\n${validation.errors.join('\n')}`);
       return false;
     }
-    
-    // Вычисляем globalDoorId если не указан
+
     if (!doorData.globalDoorId) {
       doorData.globalDoorId = calculateGlobalDoorId(doorData.nodeId, doorData.localDoor);
     }
-    
-    // Определяем typeCode из type
+
     if (!doorData.typeCode) {
       if (doorData.type === 'NC') doorData.typeCode = 0;
       else if (doorData.type === 'NO') doorData.typeCode = 1;
       else doorData.typeCode = 0;
     }
-    
+
     const updatedDoors = [...doors];
-    
-    // Ищем индекс редактируемой двери по techId (techId не должен меняться при редактировании)
-    const editingDoorIndex = editingDoor ? updatedDoors.findIndex(
-      d => d.techId === editingDoor.techId
-    ) : -1;
-    
-    // Проверяем, не занят ли новый nodeId+localDoor другой дверью
-    // (исключаем текущую редактируемую дверь из проверки)
+
+    const editingDoorIndex = editingDoor
+      ? updatedDoors.findIndex((d) => d.techId === editingDoor.techId)
+      : -1;
+
     const conflictingDoor = updatedDoors.find(
-      d => d.nodeId === doorData.nodeId && 
-           d.localDoor === doorData.localDoor &&
-           d.techId !== editingDoor?.techId // Исключаем текущую редактируемую дверь
+      (d) =>
+        d.nodeId === doorData.nodeId &&
+        d.localDoor === doorData.localDoor &&
+        d.techId !== editingDoor?.techId
     );
-    
+
     if (conflictingDoor) {
-      alert('Дверь с такой платой и позицией уже существует');
+      alert(t('pages.doorsTab.doorConflict'));
       return false;
     }
-    
-    // Обновляем или добавляем
+
     if (editingDoorIndex >= 0) {
-      // Обновляем существующую дверь
       updatedDoors[editingDoorIndex] = doorData;
     } else {
-      // Добавляем новую дверь
       updatedDoors.push(doorData);
     }
-    
+
     updateConfig({ doors: updatedDoors });
     setEditingDoor(null);
     return true;
   };
-  
-  // Удаление двери
+
   const handleDeleteDoor = async (door) => {
+    const ask = t('pages.config.deleteDoorAsk', { node: door.nodeId, local: door.localDoor });
     if (!showConfirm) {
-      if (!window.confirm(`Удалить дверь ID-${door.nodeId}-${door.localDoor}?`)) {
+      if (!window.confirm(ask)) {
         return;
       }
     } else {
-      const confirmed = await showConfirm(`Удалить дверь ID-${door.nodeId}-${door.localDoor}?`, 'Удаление двери');
+      const confirmed = await showConfirm(ask, t('pages.config.deleteDoorTitle'));
       if (!confirmed) {
         return;
       }
     }
-    
-    // Проверяем, нет ли зависимостей
+
     const hasDependencies = (config.edges || []).some(
-      edge => edge.srcGlobalDoorId === door.globalDoorId || 
-              edge.dstGlobalDoorId === door.globalDoorId
+      (edge) => edge.srcGlobalDoorId === door.globalDoorId || edge.dstGlobalDoorId === door.globalDoorId
     );
-    
+
     if (hasDependencies) {
+      const depsAsk = t('pages.config.deleteDepsAlsoAsk');
       if (!showConfirm) {
-        if (!window.confirm('У этой двери есть зависимости. Удалить их тоже?')) {
+        if (!window.confirm(depsAsk)) {
           return;
         }
       } else {
-        const confirmedDeps = await showConfirm('У этой двери есть зависимости. Удалить их тоже?', 'Удаление зависимостей');
+        const confirmedDeps = await showConfirm(depsAsk, t('pages.config.deleteDepsTitle'));
         if (!confirmedDeps) {
           return;
         }
       }
-      // Удаляем зависимости
       const updatedEdges = (config.edges || []).filter(
-        edge => edge.srcGlobalDoorId !== door.globalDoorId && 
-                edge.dstGlobalDoorId !== door.globalDoorId
+        (edge) => edge.srcGlobalDoorId !== door.globalDoorId && edge.dstGlobalDoorId !== door.globalDoorId
       );
       updateConfig({ edges: updatedEdges });
     }
-    
-    // Удаляем таймауты
+
     const updatedTimeouts = (config.postCloseTimeouts || []).filter(
-      t => t.globalDoorId !== door.globalDoorId
+      (item) => item.globalDoorId !== door.globalDoorId
     );
-    
-    // Удаляем дверь
+
     const updatedDoors = doors.filter(
-      d => !(d.nodeId === door.nodeId && d.localDoor === door.localDoor)
+      (d) => !(d.nodeId === door.nodeId && d.localDoor === door.localDoor)
     );
-    
-    updateConfig({ 
+
+    updateConfig({
       doors: updatedDoors,
       postCloseTimeouts: updatedTimeouts,
     });
   };
-  
-  // Получение уникальных nodeId для фильтра
+
   const availableNodeIds = useMemo(() => {
-    const nodeIds = new Set(doors.map(d => d.nodeId));
+    const nodeIds = new Set(doors.map((d) => d.nodeId));
     return Array.from(nodeIds).sort((a, b) => a - b);
   }, [doors]);
-  
+
   return (
     <div className="doors-tab">
       <div className="doors-tab-header">
-        <h2>Двери ({filteredDoors.length} из {doors.length})</h2>
+        <h2>
+          {t('pages.doorsTab.doorsCount', {
+            filtered: String(filteredDoors.length),
+            total: String(doors.length),
+          })}
+        </h2>
         <div className="doors-tab-controls">
           <select
             value={filterNodeId}
@@ -212,40 +200,40 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
             className="filter-select"
             disabled={loading}
           >
-            <option value="all">Все платы</option>
-            {availableNodeIds.map(nodeId => (
+            <option value="all">{t('pages.doorsTab.allBoards')}</option>
+            {availableNodeIds.map((nodeId) => (
               <option key={nodeId} value={nodeId}>
-                Плата {nodeId}
+                {t('pages.doorsTab.board', { id: nodeId })}
               </option>
             ))}
           </select>
           <Button onClick={handleAddDoor} variant="primary" disabled={loading}>
-            + Добавить дверь
+            + {t('pages.doorsTab.addDoor')}
           </Button>
         </div>
       </div>
-      
+
       {filteredDoors.length === 0 ? (
         <div className="empty-state">
-          <p>Нет дверей. Нажмите "Добавить дверь" для создания.</p>
+          <p>{t('pages.doorsTab.empty')}</p>
         </div>
       ) : (
         <div className="doors-table-container">
           <table className="doors-config-table">
             <thead>
               <tr>
-                <th>Плата</th>
-                <th>Дверь</th>
-                <th>Global ID</th>
-                <th>Порядк. №</th>
-                <th>Drawing ID</th>
-                <th>Состояние</th>
-                <th>Комментарий</th>
-                <th>Действия</th>
+                <th>{t('pages.doorsTab.colBoard')}</th>
+                <th>{t('pages.doorsTab.colDoor')}</th>
+                <th>{t('pages.doorsTab.colGlobalId')}</th>
+                <th>{t('pages.doorsTab.colSeq')}</th>
+                <th>{t('pages.doorsTab.colDrawingId')}</th>
+                <th>{t('pages.doorsTab.colState')}</th>
+                <th>{t('pages.doorsTab.colComment')}</th>
+                <th>{t('pages.doorsTab.colActions')}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredDoors.map((door, index) => (
+              {filteredDoors.map((door) => (
                 <tr key={`${door.nodeId}-${door.localDoor}-${door.techId}`}>
                   <td>{door.nodeId}</td>
                   <td>{door.localDoor}</td>
@@ -276,12 +264,11 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
           </table>
         </div>
       )}
-      
-      {/* Модальное окно редактирования двери */}
+
       {editingDoor && (
         <DoorEditModal
           door={editingDoor}
-          existingDoors={doors.filter(d => d.techId !== editingDoor.techId)}
+          existingDoors={doors.filter((d) => d.techId !== editingDoor.techId)}
           onSave={handleSaveDoor}
           onCancel={() => setEditingDoor(null)}
         />

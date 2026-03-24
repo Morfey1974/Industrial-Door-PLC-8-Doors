@@ -40,7 +40,24 @@ import DependenciesTab from './DoorsConfigTabs/DependenciesTab';
 import TimeoutsTab from './DoorsConfigTabs/TimeoutsTab';
 
 const DoorsConfig = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  /**
+   * Число + локализованное существительное (RU с падежом для 2–4/5+, EN: 1 vs мн. ч.).
+   */
+  const countLabel = useCallback((n, keyOne, keyFew, keyMany) => {
+    if (language === 'en') {
+      const word = n === 1 ? t(keyOne) : t(keyMany);
+      return `${n} ${word}`;
+    }
+    const nn = n % 100;
+    let wordKey = keyMany;
+    if (nn < 11 || nn > 14) {
+      const u = n % 10;
+      if (u === 1) wordKey = keyOne;
+      else if (u >= 2 && u <= 4) wordKey = keyFew;
+    }
+    return `${n} ${t(wordKey)}`;
+  }, [language, t]);
   const navigate = useNavigate();
   const location = useLocation();
   // Режим отображения: 'list' - список конфигураций, 'edit' - редактирование
@@ -128,7 +145,8 @@ const DoorsConfig = () => {
   }, [modal.isOpen]);
 
   // Функции для показа модальных окон
-  const showConfirm = useCallback((message, title = 'Подтвердите действие') => {
+  const showConfirm = useCallback((message, title) => {
+    const titleResolved = title ?? t('pages.config.modalConfirmAction');
     return new Promise((resolve) => {
       // Сохраняем resolve функцию в ref
       modalResolveRef.current = resolve;
@@ -139,10 +157,10 @@ const DoorsConfig = () => {
         setModal({
           isOpen: true,
           type: 'confirm',
-          title,
+          title: titleResolved,
           message,
-          confirmText: 'Да',
-          cancelText: 'Нет',
+          confirmText: t('pages.config.yes'),
+          cancelText: t('pages.config.no'),
           onConfirm: () => {
             setModal(prev => ({ ...prev, isOpen: false }));
             if (modalResolveRef.current) {
@@ -160,9 +178,10 @@ const DoorsConfig = () => {
         });
       });
     });
-  }, []);
+  }, [t]);
 
-  const showPrompt = useCallback((message, defaultValue = '', title = 'Введите значение', placeholder = '') => {
+  const showPrompt = useCallback((message, defaultValue = '', title, placeholder = '') => {
+    const titleResolved = title ?? t('pages.config.modalEnterValue');
     return new Promise((resolve) => {
       // Сохраняем resolve функцию в ref
       modalResolveRef.current = resolve;
@@ -173,12 +192,12 @@ const DoorsConfig = () => {
         setModal({
           isOpen: true,
           type: 'prompt',
-          title,
+          title: titleResolved,
           message,
           defaultValue,
           placeholder,
-          confirmText: 'OK',
-          cancelText: 'Отмена',
+          confirmText: t('common.ok'),
+          cancelText: t('common.cancel'),
           onConfirm: (value) => {
             setModal(prev => ({ ...prev, isOpen: false }));
             if (modalResolveRef.current) {
@@ -196,7 +215,7 @@ const DoorsConfig = () => {
         });
       });
     });
-  }, []);
+  }, [t]);
   
   // Загрузка конфигурации с сервера
   const loadConfigFromServer = useCallback(async () => {
@@ -207,7 +226,7 @@ const DoorsConfig = () => {
       
       // Проверка структуры ответа
       if (!serverConfig || typeof serverConfig !== 'object') {
-        throw new Error('Некорректный формат ответа от сервера');
+        throw new Error(t('pages.config.serverInvalidFormat'));
       }
       
       // Преобразуем формат с сервера в наш внутренний формат
@@ -240,21 +259,13 @@ const DoorsConfig = () => {
       
       // Валидация загруженных данных (мягкая - только критические ошибки)
       // При загрузке с сервера пустое projectName - это нормально, пользователь может заполнить его позже
-      const validation = validateConfig(transformedConfig);
+      // При загрузке с контроллера пустое имя проекта допустимо — не включаем в список ошибок
+      const validation = validateConfig(transformedConfig, { t, ignoreEmptyProjectName: true });
       if (!validation.valid) {
-        // Фильтруем некритические ошибки при загрузке (пустое projectName - не критично)
-        const criticalErrors = validation.errors.filter(err => 
-          !err.includes('Название проекта не может быть пустым')
-        );
-        
-        if (criticalErrors.length > 0) {
-          console.warn('Загруженная конфигурация имеет критические ошибки валидации:', criticalErrors);
-          // Показываем только критические ошибки
-          setError(`Внимание: загруженная конфигурация содержит ошибки: ${criticalErrors.join(', ')}. Проверьте данные перед применением.`);
-        } else {
-          // Если только некритические ошибки (пустое projectName) - просто логируем
-          console.info('Загруженная конфигурация: projectName пустое (это нормально, можно заполнить позже)');
-        }
+        console.warn('Загруженная конфигурация имеет ошибки валидации:', validation.errors);
+        setError(t('pages.config.loadWarnCritical', { errors: validation.errors.join(', ') }));
+      } else if (!transformedConfig.projectName?.trim()) {
+        console.info('Загруженная конфигурация: projectName пустое (можно заполнить позже)');
       }
       
       setConfig(transformedConfig);
@@ -267,33 +278,30 @@ const DoorsConfig = () => {
       console.error('Ошибка загрузки конфигурации:', err);
       
       // Улучшенная обработка ошибок
-      let errorMessage = 'Ошибка загрузки конфигурации';
-      
+      let errorMessage = t('pages.config.loadErrorGeneric');
+
       if (err.response) {
-        // Ошибка от сервера
         const status = err.response.status;
         if (status === 404) {
-          errorMessage = 'Endpoint /api/config/full не найден. Убедитесь, что прошивка поддерживает этот endpoint.';
+          errorMessage = t('pages.config.loadError404');
         } else if (status === 500) {
-          errorMessage = 'Внутренняя ошибка сервера при загрузке конфигурации. Проверьте логи контроллера.';
+          errorMessage = t('pages.config.loadError500');
         } else if (status >= 400 && status < 500) {
-          errorMessage = `Ошибка клиента (${status}). Проверьте запрос.`;
+          errorMessage = t('pages.config.loadErrorClient', { status: String(status) });
         } else {
-          errorMessage = `Ошибка сервера (${status})`;
+          errorMessage = t('pages.config.loadErrorServerStatus', { status: String(status) });
         }
       } else if (err.request) {
-        // Запрос отправлен, но ответа нет
         if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-          errorMessage = 'Превышено время ожидания ответа от контроллера. Проверьте подключение к сети.';
+          errorMessage = t('pages.config.loadErrorTimeout');
         } else if (err.code === 'ERR_CONNECTION_RESET') {
-          errorMessage = 'Соединение с контроллером разорвано. Проверьте подключение и перезагрузите страницу.';
+          errorMessage = t('pages.config.loadErrorReset');
         } else if (err.code === 'ERR_NETWORK') {
-          errorMessage = 'Ошибка сети. Проверьте подключение к контроллеру.';
+          errorMessage = t('pages.config.loadErrorNetwork');
         } else {
-          errorMessage = 'Нет ответа от контроллера. Проверьте подключение к сети и доступность контроллера.';
+          errorMessage = t('pages.config.loadErrorNoResponse');
         }
       } else if (err.message) {
-        // Ошибка при настройке запроса или другая ошибка
         errorMessage = err.message;
       }
       
@@ -302,7 +310,7 @@ const DoorsConfig = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
   
   // Загрузка при монтировании компонента
   useEffect(() => {
@@ -363,8 +371,8 @@ const DoorsConfig = () => {
   
   // Валидация конфигурации
   const validateCurrentConfig = useCallback(() => {
-    return validateConfig(config);
-  }, [config]);
+    return validateConfig(config, { t });
+  }, [config, t]);
   
   // Создание новой конфигурации
   const handleCreateConfig = useCallback(() => {
@@ -409,9 +417,13 @@ const DoorsConfig = () => {
   
   // Сохранение черновика как именованной конфигурации
   const handleSaveDraft = useCallback(async () => {
-    const name = await showPrompt('Введите имя конфигурации:', '', 'Сохранение конфигурации');
+    const name = await showPrompt(
+      t('pages.config.promptConfigName'),
+      '',
+      t('pages.config.promptSaveTitle')
+    );
     if (!name || name.trim().length === 0) return;
-    
+
     const trimmedName = name.trim();
     if (saveNamedConfig(trimmedName, config)) {
       setSavedConfigsList(getSavedConfigsList());
@@ -420,12 +432,12 @@ const DoorsConfig = () => {
       setHasUnsavedChanges(false);
       setHasDraft(false);
       clearDraft();
-      setSuccess(`Конфигурация "${trimmedName}" сохранена`);
+      setSuccess(t('pages.config.msgSavedNamed', { name: trimmedName }));
       setTimeout(() => setSuccess(null), 3000);
     } else {
-      setError('Ошибка сохранения конфигурации');
+      setError(t('pages.config.msgSaveError'));
     }
-  }, [config]);
+  }, [config, t, showPrompt]);
   
   // Открыть модальное окно удаления черновика
   const handleDeleteDraftClick = useCallback(() => {
@@ -451,9 +463,9 @@ const DoorsConfig = () => {
     setCurrentConfigNameState(null);
     setCurrentConfigName(null);
     setOpenedConfigFilePath(null);
-    setSuccess('Черновик удалён');
+    setSuccess(t('pages.config.msgDraftDeleted'));
     setTimeout(() => setSuccess(null), 3000);
-  }, []);
+  }, [t]);
   
   // Загрузка именованной конфигурации
   const handleLoadConfig = useCallback((name) => {
@@ -468,12 +480,12 @@ const DoorsConfig = () => {
       clearDraft();
       setViewMode('edit');
       setActiveTab('general');
-      setSuccess(`Конфигурация "${name}" загружена`);
+      setSuccess(t('pages.config.msgLoadedNamed', { name }));
       setTimeout(() => setSuccess(null), 3000);
     } else {
-      setError(`Ошибка загрузки конфигурации "${name}"`);
+      setError(t('pages.config.msgLoadErrorNamed', { name }));
     }
-  }, []);
+  }, [t]);
   
   // Удаление именованной конфигурации
   const handleDeleteConfig = useCallback((name) => {
@@ -486,10 +498,10 @@ const DoorsConfig = () => {
       setModal({
         isOpen: true,
         type: 'confirm',
-        title: 'Удаление конфигурации',
-        message: `Удалить конфигурацию "${name}"?`,
-        confirmText: 'Да',
-        cancelText: 'Нет',
+        title: t('pages.config.deleteConfigTitle'),
+        message: t('pages.config.deleteConfigMessage', { name }),
+        confirmText: t('pages.config.yes'),
+        cancelText: t('pages.config.no'),
         onConfirm: () => {
           const configName = deleteConfigNameRef.current;
           setModal(prev => ({ ...prev, isOpen: false }));
@@ -499,10 +511,10 @@ const DoorsConfig = () => {
               setCurrentConfigNameState(null);
               setCurrentConfigName(null);
             }
-            setSuccess(`Конфигурация "${configName}" удалена`);
+            setSuccess(t('pages.config.deleteSuccessNamed', { name: configName }));
             setTimeout(() => setSuccess(null), 3000);
           } else if (configName) {
-            setError('Ошибка удаления конфигурации');
+            setError(t('pages.config.deleteError'));
           }
         },
         onCancel: () => {
@@ -510,7 +522,7 @@ const DoorsConfig = () => {
         },
       });
     }, 0);
-  }, [currentConfigName]);
+  }, [currentConfigName, t]);
   
   // Сохранение конфигурации (без выхода)
   const handleSaveConfig = useCallback(async () => {
@@ -518,14 +530,14 @@ const DoorsConfig = () => {
       // Новая конфигурация — открываем диалог выбора места и сохраняем в файл
       const validation = validateCurrentConfig();
       if (!validation.valid) {
-        setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+        setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
         return;
       }
       const base = config.projectName || 'config';
       const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
       const result = await exportConfigToFile(config, filename);
       if (!result.ok) {
-        if (!result.cancelled) setError('Ошибка сохранения конфигурации');
+        if (!result.cancelled) setError(t('pages.config.msgSaveError'));
         return;
       }
       const savedFilename = result.filename || filename;
@@ -538,7 +550,7 @@ const DoorsConfig = () => {
       setHasUnsavedChanges(false);
       setHasDraft(false);
       clearDraft();
-      setSuccess(`Конфигурация сохранена в файл`);
+      setSuccess(t('pages.config.msgSavedToFile'));
       setTimeout(() => setSuccess(null), 3000);
       return;
     }
@@ -553,32 +565,32 @@ const DoorsConfig = () => {
         setHasUnsavedChanges(false);
         setHasDraft(false);
         clearDraft();
-        setSuccess(`Конфигурация "${name}" сохранена`);
+        setSuccess(t('pages.config.msgSavedNamed', { name }));
         setTimeout(() => setSuccess(null), 3000);
       } else {
-        setError('Ошибка сохранения конфигурации');
+        setError(t('pages.config.msgSaveError'));
       }
       return;
     }
-    
+
     // Существующая конфигурация — сохраняем в список
     const validation = validateCurrentConfig();
     if (!validation.valid) {
-      setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+      setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
       return;
     }
-    
+
     if (saveNamedConfig(currentConfigName, config)) {
       setSavedConfigsList(getSavedConfigsList());
       setHasUnsavedChanges(false);
       setHasDraft(false);
       clearDraft();
-      setSuccess(`Конфигурация "${currentConfigName}" сохранена`);
+      setSuccess(t('pages.config.msgSavedNamed', { name: currentConfigName }));
       setTimeout(() => setSuccess(null), 3000);
     } else {
-      setError('Ошибка сохранения конфигурации');
+      setError(t('pages.config.msgSaveError'));
     }
-  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig]);
+  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig, t]);
   
   // Сохранение конфигурации и выход в список
   const handleSaveAndExit = useCallback(async () => {
@@ -587,14 +599,14 @@ const DoorsConfig = () => {
       // Новая конфигурация — открываем диалог и сохраняем в файл, затем выходим
       const validation = validateCurrentConfig();
       if (!validation.valid) {
-        setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+        setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
         return;
       }
       const base = config.projectName || 'config';
       const filename = base.replace(/[^a-zA-Z0-9\u0400-\u04FF]/g, '_') + '_conf.json';
       const result = await exportConfigToFile(config, filename);
       if (!result.ok) {
-        if (!result.cancelled) setError('Ошибка сохранения конфигурации');
+        if (!result.cancelled) setError(t('pages.config.msgSaveError'));
         return;
       }
       const savedFilename = result.filename || filename;
@@ -607,7 +619,7 @@ const DoorsConfig = () => {
       // Есть openedConfigFilePath — сохраняем в список под именем из файла
       savedName = (openedConfigFilePath || '').replace(/_conf\.json$/i, '') || 'config';
       if (!saveNamedConfig(savedName, config)) {
-        setError('Ошибка сохранения конфигурации');
+        setError(t('pages.config.msgSaveError'));
         return;
       }
       setCurrentConfigNameState(savedName);
@@ -616,29 +628,33 @@ const DoorsConfig = () => {
       // Существующая конфигурация
       const validation = validateCurrentConfig();
       if (!validation.valid) {
-        setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+        setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
         return;
       }
       if (!saveNamedConfig(currentConfigName, config)) {
-        setError('Ошибка сохранения конфигурации');
+        setError(t('pages.config.msgSaveError'));
         return;
       }
     }
-    
+
     setSavedConfigsList(getSavedConfigsList());
     setHasUnsavedChanges(false);
     setHasDraft(false);
     clearDraft();
     setViewMode('list');
-    setSuccess(`Конфигурация "${savedName || 'новая'}" сохранена`);
+    setSuccess(
+      savedName
+        ? t('pages.config.msgSaveExit', { name: savedName })
+        : t('pages.config.msgSaveExitNew')
+    );
     setTimeout(() => setSuccess(null), 3000);
-  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig]);
+  }, [config, currentConfigName, openedConfigFilePath, validateCurrentConfig, t]);
   
   // Сохранение как — окно выбора места сохранения (экспорт в файл)
   const handleSaveAs = useCallback(async () => {
     const validation = validateCurrentConfig();
     if (!validation.valid) {
-      setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+      setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
       return;
     }
 
@@ -650,50 +666,49 @@ const DoorsConfig = () => {
       if (result.filename) {
         setOpenedConfigFilePath(result.filename);
       }
-      setSuccess('Конфигурация сохранена в файл');
+      setSuccess(t('pages.config.msgSavedToFile'));
       setTimeout(() => setSuccess(null), 3000);
     } else if (!result.cancelled) {
-      setError('Ошибка сохранения конфигурации');
+      setError(t('pages.config.msgSaveError'));
     }
-  }, [config, currentConfigName, validateCurrentConfig]);
+  }, [config, currentConfigName, validateCurrentConfig, t]);
   
   // Импорт конфигурации (Открыть конфигурацию в списке)
   const handleImport = useCallback(async () => {
     const loadFromFile = async (file) => {
       try {
         const importedConfig = await importConfigFromFile(file);
-        const validation = validateConfig(importedConfig);
+        const validation = validateConfig(importedConfig, { t });
         if (!validation.valid) {
-          setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+          setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
           return;
         }
         setConfig(importedConfig);
         setCurrentConfigNameState(null);
         setCurrentConfigName(null);
-        // file.path — полный путь в Electron; в браузере — только file.name
         setOpenedConfigFilePath(file.path || file.name || '');
         setHasUnsavedChanges(true);
         setHasDraft(true);
         setViewMode('edit');
         setActiveTab('general');
-        setSuccess('Конфигурация открыта');
+        setSuccess(t('pages.config.msgOpened'));
         setTimeout(() => setSuccess(null), 3000);
       } catch (err) {
-        setError(`Ошибка импорта: ${err.message}`);
+        setError(t('pages.config.msgImportError', { error: err.message }));
       }
     };
 
     if (typeof window.showOpenFilePicker === 'function') {
       try {
         const [handle] = await window.showOpenFilePicker({
-          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+          types: [{ description: t('pages.config.filePickerJsonDesc'), accept: { 'application/json': ['.json'] } }],
           id: 'industrial-door-configs',
           startIn: 'documents',
         });
         const file = await handle.getFile();
         await loadFromFile(file);
       } catch (err) {
-        if (err?.name !== 'AbortError') setError(`Ошибка: ${err.message}`);
+        if (err?.name !== 'AbortError') setError(t('pages.config.msgPickFileError', { error: err.message }));
       }
       return;
     }
@@ -706,23 +721,20 @@ const DoorsConfig = () => {
       await loadFromFile(file);
     };
     input.click();
-  }, []);
+  }, [t]);
   
   // Загрузка конфигурации с контроллера
   const handleLoadFromController = useCallback(async () => {
-    // Проверка наличия несохраненных изменений
     if (hasUnsavedChanges || hasDraft) {
-      const confirmMessage = 
-        'У вас есть несохраненные изменения в текущей конфигурации.\n\n' +
-        'Загрузка конфигурации с контроллера заменит текущие данные.\n\n' +
-        'Продолжить? Несохраненные изменения будут потеряны.';
-      
-      const confirmed = await showConfirm(confirmMessage, 'Подтвердите действие');
+      const confirmed = await showConfirm(
+        t('pages.config.loadControllerUnsavedWarn'),
+        t('pages.config.modalConfirmAction')
+      );
       if (!confirmed) {
-        return; // Пользователь отменил операцию
+        return;
       }
     }
-    
+
     const loadedConfig = await loadConfigFromServer();
     if (loadedConfig) {
       setCurrentConfigNameState(null);
@@ -733,40 +745,42 @@ const DoorsConfig = () => {
       clearDraft();
       setViewMode('edit');
       setActiveTab('general');
-      
-      // Формируем информативное сообщение об успехе
+
       const doorCount = loadedConfig.doors?.length || 0;
       const edgeCount = loadedConfig.edges?.length || 0;
       const timeoutCount = loadedConfig.postCloseTimeouts?.length || 0;
-      let successMessage = `Конфигурация загружена с контроллера`;
+      let successMessage = t('pages.config.msgLoadedFromController');
       if (doorCount > 0 || edgeCount > 0 || timeoutCount > 0) {
         const parts = [];
-        if (doorCount > 0) parts.push(`${doorCount} ${doorCount === 1 ? 'дверь' : doorCount < 5 ? 'двери' : 'дверей'}`);
-        if (edgeCount > 0) parts.push(`${edgeCount} ${edgeCount === 1 ? 'зависимость' : edgeCount < 5 ? 'зависимости' : 'зависимостей'}`);
-        if (timeoutCount > 0) parts.push(`${timeoutCount} ${timeoutCount === 1 ? 'таймаут' : timeoutCount < 5 ? 'таймаута' : 'таймаутов'}`);
+        if (doorCount > 0) {
+          parts.push(countLabel(doorCount, 'pages.config.wordDoorOne', 'pages.config.wordDoorFew', 'pages.config.wordDoorMany'));
+        }
+        if (edgeCount > 0) {
+          parts.push(countLabel(edgeCount, 'pages.config.wordEdgeOne', 'pages.config.wordEdgeFew', 'pages.config.wordEdgeMany'));
+        }
+        if (timeoutCount > 0) {
+          parts.push(countLabel(timeoutCount, 'pages.config.wordTimeoutOne', 'pages.config.wordTimeoutFew', 'pages.config.wordTimeoutMany'));
+        }
         successMessage += ` (${parts.join(', ')})`;
       }
       if (loadedConfig.seq) {
-        successMessage += `. Версия: ${loadedConfig.seq}`;
+        successMessage += `. ${t('pages.config.msgLoadedFromControllerVersion', { seq: String(loadedConfig.seq) })}`;
       }
-      
+
       setSuccess(successMessage);
       setTimeout(() => setSuccess(null), 5000);
     }
-  }, [loadConfigFromServer, hasUnsavedChanges, hasDraft, showConfirm]);
+  }, [loadConfigFromServer, hasUnsavedChanges, hasDraft, showConfirm, t, countLabel]);
 
   // Отмена редактирования - выход без сохранения
   const handleCancel = useCallback(async () => {
-    // Проверка наличия несохраненных изменений
     if (hasUnsavedChanges || hasDraft) {
-      const confirmMessage = 
-        'У вас есть несохраненные изменения в текущей конфигурации.\n\n' +
-        'Вы действительно хотите выйти без сохранения?\n\n' +
-        'Все несохраненные изменения будут потеряны.';
-      
-      const confirmed = await showConfirm(confirmMessage, 'Подтвердите действие');
+      const confirmed = await showConfirm(
+        t('pages.config.cancelEditUnsavedWarn'),
+        t('pages.config.modalConfirmAction')
+      );
       if (!confirmed) {
-        return; // Пользователь отменил операцию
+        return;
       }
     }
     
@@ -782,65 +796,66 @@ const DoorsConfig = () => {
     
     // Возвращаемся в режим списка
     setViewMode('list');
-  }, [hasUnsavedChanges, hasDraft, showConfirm]);
+  }, [hasUnsavedChanges, hasDraft, showConfirm, t]);
   
   // Применение конфигурации на контроллер (PUT /api/config/full)
   const handleApplyToController = useCallback(async () => {
     const validation = validateCurrentConfig();
     if (!validation.valid) {
-      setError(`Ошибки валидации: ${validation.errors.join(', ')}`);
+      setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
       return;
     }
 
     const doorCount = config.doors?.length ?? 0;
     const edgeCount = config.edges?.length ?? 0;
-    const LIMIT_DOORS_V1 = 32; // Поддержка до 32 дверей (например 4 узла × 8)
+    const LIMIT_DOORS_V1 = 32;
     const LIMIT_EDGES_V1 = 64;
     const LIMIT_POST_CLOSE_V1 = 32;
 
     if (doorCount > LIMIT_DOORS_V1) {
-      setError(`В первой версии поддерживается не более ${LIMIT_DOORS_V1} дверей. Сейчас: ${doorCount}. Удалите лишние двери или сохраните конфигурацию и примените другую.`);
+      setError(t('pages.config.errDoorsLimit', { limit: String(LIMIT_DOORS_V1), count: String(doorCount) }));
       return;
     }
     if (edgeCount > LIMIT_EDGES_V1) {
-      setError(`В первой версии поддерживается не более ${LIMIT_EDGES_V1} зависимостей. Сейчас: ${edgeCount}.`);
+      setError(t('pages.config.errEdgesLimit', { limit: String(LIMIT_EDGES_V1), count: String(edgeCount) }));
       return;
     }
     const pctCount = config.postCloseTimeouts?.length ?? 0;
     if (pctCount > LIMIT_POST_CLOSE_V1) {
-      setError(`В первой версии поддерживается не более ${LIMIT_POST_CLOSE_V1} записей postCloseTimeouts. Сейчас: ${pctCount}.`);
+      setError(t('pages.config.errPostCloseLimit', { limit: String(LIMIT_POST_CLOSE_V1), count: String(pctCount) }));
       return;
     }
 
-    let confirmMessage = 'Применить полную конфигурацию на контроллер?\n\n';
-    confirmMessage += `Будут применены: название проекта, таймаут открытия, двери (${doorCount}), зависимости (${edgeCount}), таймауты post-close.\n`;
-    confirmMessage += `Лимит v1: не более ${LIMIT_DOORS_V1} дверей.\n\n`;
-    confirmMessage += 'Это заменит текущую конфигурацию на контроллере. Запись в Flash может занять до 90 секунд.';
+    const confirmMessage = t('pages.config.applyConfirmBody', {
+      doors: String(doorCount),
+      edges: String(edgeCount),
+      limitDoors: String(LIMIT_DOORS_V1),
+    });
 
-    const confirmed = await showConfirm(confirmMessage, 'Подтвердите применение конфигурации');
+    const confirmed = await showConfirm(confirmMessage, t('pages.config.modalConfirmApply'));
     if (!confirmed) {
       return;
     }
 
     setSaving(true);
     setError(null);
-    setSuccess('Применение конфигурации... Это может занять до 90 секунд (стирание и запись в Flash).');
+    setSuccess(t('pages.config.applyProgress'));
 
     try {
       if (!config.projectName || config.projectName.trim().length === 0) {
-        setError('Название проекта не может быть пустым');
+        setError(t('pages.config.errProjectNameEmpty'));
         setSaving(false);
         return;
       }
       if (config.openTimeoutMs !== 0 && (config.openTimeoutMs < 1000 || config.openTimeoutMs > 3600000)) {
-        setError('Таймаут открытия должен быть 0 (нет сигнализации) или от 1000 до 3600000 мс');
+        setError(t('pages.config.errOpenTimeoutRange'));
         setSaving(false);
         return;
       }
 
       const trimmedProjectName = config.projectName.trim();
       if (trimmedProjectName.length > 100) {
-        setError('Название проекта не может быть длиннее 100 символов');
+        setError(t('pages.config.errProjectNameLength'));
         setSaving(false);
         return;
       }
@@ -869,7 +884,7 @@ const DoorsConfig = () => {
       const jsonString = JSON.stringify(fullConfig);
       const jsonSize = new Blob([jsonString]).size;
       if (jsonSize > 4096) {
-        setError(`Размер данных слишком большой: ${jsonSize} байт (максимум 4096). Уменьшите число дверей или длины комментариев.`);
+        setError(t('pages.config.errJsonTooLarge', { size: String(jsonSize) }));
         setSaving(false);
         return;
       }
@@ -879,8 +894,8 @@ const DoorsConfig = () => {
       console.log('Ответ от контроллера:', response);
 
       if (response && response.ok === 0) {
-        const errorMsg = response.error || response.errorMsg || 'Неизвестная ошибка сервера';
-        setError(`Ошибка сервера: ${errorMsg}`);
+        const errorMsg = response.error || response.errorMsg || t('pages.config.errServerUnknown');
+        setError(t('pages.config.errServerPrefix', { msg: errorMsg }));
         setSaving(false);
         return;
       }
@@ -892,7 +907,7 @@ const DoorsConfig = () => {
       // Контроллер перезагружается после записи в Flash — сессии в RAM теряются.
       sessionStorage.setItem('config_just_applied', Date.now().toString());
 
-      setSuccess('✅ Конфигурация применена. Контроллер перезагружается — через пару секунд откроется страница входа.');
+      setSuccess(t('pages.config.applySuccess'));
       setSaving(false);
       // Перенаправляем на страницу входа с пояснением, чтобы пользователь не оставался
       // на странице с «мёртвой» сессией и не получал 401 при следующем действии.
@@ -924,79 +939,72 @@ const DoorsConfig = () => {
         }
       }
       
-      // Улучшенная обработка ошибок
-      let errorMessage = 'Ошибка применения конфигурации';
-      
+      let errorMessage = t('pages.config.errApplyGeneric');
+
       if (err.response) {
-        // Сервер вернул ошибку
         const status = err.response.status;
         const data = err.response.data;
-        
+
         if (status === 400) {
-          // Ошибка валидации - показываем детали из ответа сервера
           const statusText = err.response?.statusText || '';
-          
-          // Проверяем специальные случаи ошибок сервера
+
           if (statusText.includes('Bad Headers') || (typeof data === 'string' && data.includes('Bad Headers'))) {
-            errorMessage = 'Ошибка обработки заголовков запроса на сервере. Возможно, запрос слишком большой или поврежден. Попробуйте еще раз.';
+            errorMessage = t('pages.config.errBadHeaders');
           } else if (statusText.includes('Bad Body') || (typeof data === 'string' && data.includes('Bad Body'))) {
-            errorMessage = 'Ошибка обработки тела запроса на сервере. Возможно, данные повреждены. Попробуйте еще раз.';
+            errorMessage = t('pages.config.errBadBody');
           } else if (data && typeof data === 'object') {
             console.log('[DoorsConfig] Error data object:', data);
             if (data.error) {
-              errorMessage = `Ошибка валидации: ${data.error}`;
+              errorMessage = t('pages.config.errValidationServer', { msg: data.error });
             } else if (data.errorMsg) {
-              errorMessage = `Ошибка валидации: ${data.errorMsg}`;
+              errorMessage = t('pages.config.errValidationServer', { msg: data.errorMsg });
             } else {
-              // Показываем весь объект ошибки для диагностики
               const errorDetails = JSON.stringify(data);
-              errorMessage = `Ошибка валидации данных на сервере: ${errorDetails}`;
+              errorMessage = t('pages.config.errValidationServerObj', { details: errorDetails });
             }
           } else if (typeof data === 'string') {
             if (data.includes('error')) {
-              // Попытка извлечь сообщение об ошибке из строки
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.error || parsed.errorMsg) {
-                  errorMessage = `Ошибка валидации: ${parsed.error || parsed.errorMsg}`;
+                  errorMessage = t('pages.config.errValidationServer', {
+                    msg: parsed.error || parsed.errorMsg,
+                  });
                 } else {
-                  errorMessage = `Ошибка сервера: ${data}`;
+                  errorMessage = t('pages.config.errServerPrefix', { msg: data });
                 }
               } catch (e) {
-                errorMessage = `Ошибка сервера: ${data}`;
+                errorMessage = t('pages.config.errServerPrefix', { msg: data });
               }
             } else {
-              errorMessage = `Ошибка сервера: ${data}`;
+              errorMessage = t('pages.config.errServerPrefix', { msg: data });
             }
           } else {
-            errorMessage = 'Ошибка валидации данных на сервере. Проверьте корректность конфигурации.';
+            errorMessage = t('pages.config.errValidationGeneric');
           }
         } else if (status === 500) {
-          errorMessage = 'Внутренняя ошибка сервера. Проверьте логи контроллера.';
+          errorMessage = t('pages.config.errServer500');
         } else {
-          errorMessage = `Ошибка сервера (код ${status})`;
+          errorMessage = t('pages.config.errServerCode', { status: String(status) });
           if (data && data.error) {
             errorMessage += `: ${data.error}`;
           }
         }
       } else if (err.request) {
-        // Запрос отправлен, но ответа нет
         if (err.code === 'ERR_CONNECTION_RESET') {
-          errorMessage = 'Соединение с контроллером разорвано. Возможно, контроллер перегружен или перезагружается.';
+          errorMessage = t('pages.config.errConnectionReset');
         } else if (err.code === 'ERR_NETWORK') {
-          errorMessage = 'Ошибка сети. Проверьте подключение к контроллеру.';
+          errorMessage = t('pages.config.loadErrorNetwork');
         } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout') || err.message?.includes('таймаут')) {
-          errorMessage = 'Превышено время ожидания ответа от сервера (90 секунд). Операция стирания и записи в Flash память может занимать 15-20 секунд. Если ошибка повторяется, проверьте состояние контроллера через UART и убедитесь, что Flash память не повреждена.';
+          errorMessage = t('pages.config.errApplyTimeout');
         } else {
-          errorMessage = 'Нет ответа от контроллера. Проверьте подключение к сети и доступность контроллера.';
+          errorMessage = t('pages.config.errNoResponseApply');
         }
       } else {
-        // Ошибка при настройке запроса
-        // Проверяем, не является ли это ошибкой таймаута
         if (err.code === 'ECONNABORTED' || err.message?.includes('timeout') || err.message?.includes('таймаут') || err.message?.includes('Превышено время ожидания')) {
-          errorMessage = 'Превышено время ожидания ответа от сервера (90 секунд). Операция стирания и записи в Flash память может занимать 15-20 секунд. Если ошибка повторяется, проверьте состояние контроллера через UART и убедитесь, что Flash память не повреждена.';
+          errorMessage = t('pages.config.errApplyTimeout');
         } else {
-          errorMessage = err.message || 'Ошибка при отправке запроса';
+          errorMessage = err.message || t('pages.config.errRequestFailed');
         }
       }
       
@@ -1004,17 +1012,23 @@ const DoorsConfig = () => {
     } finally {
       setSaving(false);
     }
-  }, [config, validateCurrentConfig]);
-  
+  }, [config, validateCurrentConfig, t, showConfirm]);
+
   const tabs = [
-    { id: 'general', label: 'Общие параметры' },
-    { id: 'doors', label: 'Двери' },
-    { id: 'dependencies', label: 'Зависимости' },
-    { id: 'timeouts', label: 'Таймауты' },
+    { id: 'general', label: t('pages.config.tabGeneral') },
+    { id: 'doors', label: t('pages.config.tabDoors') },
+    { id: 'dependencies', label: t('pages.config.tabDependencies') },
+    { id: 'timeouts', label: t('pages.config.tabTimeouts') },
   ];
   
   // Режим списка конфигураций
   if (viewMode === 'list') {
+    const formatDoorsCount = (count) => {
+      const n = Number(count) || 0;
+      if (language === 'en') return `${n} doors`;
+      return `${n} дверей`;
+    };
+
     return (
       <div className="doors-config">
         <div className="doors-config-header">
@@ -1025,13 +1039,13 @@ const DoorsConfig = () => {
         <div className="doors-config-toolbar doors-config-toolbar--list">
           <div className="toolbar-left">
             <Button onClick={handleImport}>
-              Открыть конфигурацию
+              {t('pages.config.openConfig')}
             </Button>
             <Button onClick={handleCreateConfig}>
-              Создать конфигурацию
+              {t('pages.config.createConfig')}
             </Button>
             <Button onClick={handleLoadFromController} disabled={loading}>
-              {loading ? 'Загрузка...' : 'Загрузить с контроллера'}
+              {loading ? t('common.loading') : t('pages.config.loadFromController')}
             </Button>
           </div>
         </div>
@@ -1052,16 +1066,18 @@ const DoorsConfig = () => {
         
         {/* Список сохраненных конфигураций */}
         <div className="saved-configs-list">
-          <h3>Сохраненные конфигурации ({savedConfigsList.length})</h3>
+          <h3>{t('pages.config.savedConfigs')} ({savedConfigsList.length})</h3>
           
           {/* Несохраненная конфигурация (черновик) */}
           {hasDraft && (
             <div className="saved-configs-grid">
               <div className="saved-config-item unsaved-config">
                 <div className="saved-config-info">
-                  <strong>Несохраненная конфигурация</strong>
+                  <strong>{t('pages.config.unsavedConfig')}</strong>
                   <span className="saved-config-date">
-                    {lastSaved ? `Изменено: ${lastSaved.toLocaleString()}` : 'Черновик'}
+                    {lastSaved
+                      ? `${t('pages.config.modified')}: ${lastSaved.toLocaleString(language === 'en' ? 'en-US' : 'ru-RU')}`
+                      : t('pages.config.draft')}
                   </span>
                 </div>
                 <div className="saved-config-actions">
@@ -1070,21 +1086,21 @@ const DoorsConfig = () => {
                     variant="secondary"
                     size="small"
                   >
-                    Загрузить
+                    {t('pages.config.loadConfig')}
                   </Button>
                   <Button 
                     onClick={handleSaveDraft}
                     variant="primary"
                     size="small"
                   >
-                    Сохранить
+                    {t('pages.config.saveConfig')}
                   </Button>
                   <Button 
                     onClick={handleDeleteDraftClick}
                     variant="secondary"
                     size="small"
                   >
-                    Удалить
+                    {t('pages.config.deleteConfig')}
                   </Button>
                 </div>
               </div>
@@ -1098,9 +1114,9 @@ const DoorsConfig = () => {
                 <div key={item.name} className="saved-config-item">
                   <div className="saved-config-info">
                     <strong>{item.name}</strong>
-                    <span>{item.doorCount} дверей</span>
+                    <span>{formatDoorsCount(item.doorCount)}</span>
                     <span className="saved-config-date">
-                      {new Date(item.timestamp).toLocaleDateString()}
+                      {new Date(item.timestamp).toLocaleDateString(language === 'en' ? 'en-US' : 'ru-RU')}
                     </span>
                   </div>
                   <div className="saved-config-actions">
@@ -1109,7 +1125,7 @@ const DoorsConfig = () => {
                       variant="secondary"
                       size="small"
                     >
-                      Загрузить
+                      {t('pages.config.loadConfig')}
                     </Button>
                     <Button 
                       onClick={(e) => {
@@ -1122,7 +1138,7 @@ const DoorsConfig = () => {
                       variant="secondary"
                       size="small"
                     >
-                      Удалить
+                      {t('pages.config.deleteConfig')}
                     </Button>
                   </div>
                 </div>
@@ -1133,7 +1149,7 @@ const DoorsConfig = () => {
           {/* Сообщение, если нет конфигураций */}
           {savedConfigsList.length === 0 && !hasDraft && (
             <div className="empty-state">
-              <p>Нет сохраненных конфигураций. Используйте кнопку "Создать конфигурацию" в панели управления выше.</p>
+              <p>{t('pages.config.noSavedConfigs')}</p>
             </div>
           )}
         </div>
@@ -1142,13 +1158,13 @@ const DoorsConfig = () => {
         <Modal
           isOpen={deleteModalVisible}
           type="confirm"
-          title={deleteModalForDraft ? 'Удаление черновика' : 'Удаление конфигурации'}
+          title={deleteModalForDraft ? t('pages.config.deleteDraftTitle') : t('pages.config.deleteConfigTitle')}
           message={deleteModalForDraft
-            ? 'Удалить несохранённую конфигурацию? Все изменения будут потеряны.'
-            : (deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : '')
+            ? t('pages.config.deleteDraftMessage')
+            : (deleteModalName ? t('pages.config.deleteConfigMessage', { name: deleteModalName }) : '')
           }
-          confirmText="Да"
-          cancelText="Нет"
+          confirmText={t('pages.config.yes')}
+          cancelText={t('pages.config.no')}
           onConfirm={() => {
             const isDraft = deleteModalForDraft;
             const name = deleteModalName;
@@ -1164,10 +1180,10 @@ const DoorsConfig = () => {
                 setCurrentConfigNameState(null);
                 setCurrentConfigName(null);
               }
-              setSuccess(`Конфигурация "${name}" удалена`);
+              setSuccess(t('pages.config.deleteSuccessNamed', { name }));
               setTimeout(() => setSuccess(null), 3000);
             } else if (name) {
-              setError('Ошибка удаления конфигурации');
+              setError(t('pages.config.deleteError'));
             }
           }}
           onCancel={() => {
@@ -1175,6 +1191,20 @@ const DoorsConfig = () => {
             setDeleteModalName(null);
             setDeleteModalForDraft(false);
           }}
+        />
+
+        {/* Подтверждения и запросы ввода (загрузка с контроллера и т.д. в режиме списка) */}
+        <Modal
+          isOpen={modal.isOpen}
+          type={modal.type}
+          title={modal.title}
+          message={modal.message}
+          defaultValue={modal.defaultValue}
+          placeholder={modal.placeholder}
+          confirmText={modal.confirmText}
+          cancelText={modal.cancelText}
+          onConfirm={modal.onConfirm}
+          onCancel={modal.onCancel}
         />
       </div>
     );
@@ -1187,8 +1217,8 @@ const DoorsConfig = () => {
   const configSourceDisplay = openedConfigFilePath
     ? openedConfigFilePath
     : currentConfigName
-      ? `Сохранённая: ${configFileName}`
-      : 'Новая конфигурация';
+      ? t('pages.config.sourceSaved', { file: configFileName })
+      : t('pages.config.sourceNew');
   const isPathEditable = !!openedConfigFilePath || !!currentConfigName;
 
   // Режим редактирования
@@ -1199,12 +1229,14 @@ const DoorsConfig = () => {
         <div className="doors-config-status">
           {hasUnsavedChanges && lastSaved && (
             <span className="auto-save-indicator">
-              💾 Автосохранено: {lastSaved.toLocaleTimeString()} (черновик)
+              💾 {t('pages.config.statusDraftSaved', {
+                time: lastSaved.toLocaleTimeString(language === 'en' ? 'en-US' : 'ru-RU'),
+              })}
             </span>
           )}
           {!hasUnsavedChanges && currentConfigName && (
             <span className="auto-save-indicator" style={{ color: '#3c3' }}>
-              ✓ Конфигурация "{currentConfigName}" сохранена
+              ✓ {t('pages.config.statusNamedSaved', { name: currentConfigName })}
             </span>
           )}
         </div>
@@ -1223,8 +1255,8 @@ const DoorsConfig = () => {
             }
           }}
           readOnly={!isPathEditable}
-          placeholder="Путь к файлу конфигурации"
-          title="Браузер даёт только имя файла. Вставьте полный путь из проводника при необходимости."
+          placeholder={t('pages.config.pathPlaceholder')}
+          title={t('pages.config.pathInputTitle')}
         />
       </div>
       
@@ -1232,29 +1264,31 @@ const DoorsConfig = () => {
       <div className="doors-config-toolbar doors-config-toolbar--edit">
         <div className="toolbar-left">
           <Button onClick={handleLoadFromController} disabled={loading}>
-            {loading ? 'Загрузка...' : 'Загрузить с контроллера'}
+            {loading ? t('common.loading') : t('pages.config.toolbarLoadController')}
           </Button>
           <Button onClick={handleSaveConfig}>
-            Сохранить конфигурацию
+            {t('pages.config.toolbarSave')}
           </Button>
           <Button
             onClick={handleSaveAs}
             disabled={!currentConfigName && !openedConfigFilePath}
-            title={(!currentConfigName && !openedConfigFilePath) ? 'Доступно только для сохранённых конфигураций' : 'Сохранить в другой файл или под другим именем'}
+            title={(!currentConfigName && !openedConfigFilePath)
+              ? t('pages.config.saveAsTitleDisabled')
+              : t('pages.config.saveAsTitle')}
           >
-            Сохранить как...
+            {t('pages.config.toolbarSaveAs')}
           </Button>
           <Button onClick={handleSaveAndExit}>
-            Сохранить и Выйти
+            {t('pages.config.toolbarSaveExit')}
           </Button>
           <Button onClick={handleCancel}>
-            Отмена
+            {t('pages.config.toolbarCancel')}
           </Button>
           <Button
             onClick={() => navigate('/configuration/mapping', { state: { configBaseName: currentConfigName || config.projectName || '' } })}
-            title="Редактор карты маппинга для этой конфигурации (ИМЯ_map.json)"
+            title={t('pages.config.toolbarMappingTitle')}
           >
-            Маппинг
+            {t('pages.config.toolbarMapping')}
           </Button>
         </div>
         <div className="toolbar-right toolbar-right--apply">
@@ -1262,7 +1296,7 @@ const DoorsConfig = () => {
             onClick={handleApplyToController}
             disabled={saving || loading}
           >
-            {saving ? 'Применение...' : 'Применить на контроллер'}
+            {saving ? t('pages.config.toolbarApplying') : t('pages.config.toolbarApply')}
           </Button>
         </div>
       </div>
@@ -1292,11 +1326,17 @@ const DoorsConfig = () => {
         }}>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>
             {currentConfigName ? (
-              <>Конфигурация: <span style={{ color: '#0066cc' }}>{currentConfigName}</span></>
+              <>
+                {t('pages.config.subtitleConfigLead')}{' '}
+                <span style={{ color: '#0066cc' }}>{currentConfigName}</span>
+              </>
             ) : config.projectName ? (
-              <>Проект: <span style={{ color: '#0066cc' }}>{config.projectName}</span></>
+              <>
+                {t('pages.config.subtitleProjectLead')}{' '}
+                <span style={{ color: '#0066cc' }}>{config.projectName}</span>
+              </>
             ) : (
-              <>Новая конфигурация</>
+              <>{t('pages.config.subtitleNew')}</>
             )}
           </h2>
         </div>
@@ -1365,41 +1405,6 @@ const DoorsConfig = () => {
         cancelText={modal.cancelText}
         onConfirm={modal.onConfirm}
         onCancel={modal.onCancel}
-      />
-      
-      {/* Модальное окно для удаления конфигурации */}
-      <Modal
-        isOpen={deleteModalVisible}
-        type="confirm"
-        title="Удаление конфигурации"
-        message={deleteModalName ? `Удалить конфигурацию "${deleteModalName}"?` : ''}
-        confirmText="Да"
-        cancelText="Нет"
-        onConfirm={() => {
-          const name = deleteModalName;
-          const currentName = currentConfigName;
-          setDeleteModalVisible(false);
-          setDeleteModalName(null);
-          if (name && deleteNamedConfig(name)) {
-
-            // Обновляем список в следующем тике, чтобы React гарантированно применил обновление (модалка уже закрыта)
-            setTimeout(() => {
-              setSavedConfigsList(getSavedConfigsList());
-            }, 0);
-            if (currentName === name) {
-              setCurrentConfigNameState(null);
-              setCurrentConfigName(null);
-            }
-            setSuccess(`Конфигурация "${name}" удалена`);
-            setTimeout(() => setSuccess(null), 3000);
-          } else if (name) {
-            setError('Ошибка удаления конфигурации');
-          }
-        }}
-        onCancel={() => {
-          setDeleteModalVisible(false);
-          setDeleteModalName(null);
-        }}
       />
     </div>
   );

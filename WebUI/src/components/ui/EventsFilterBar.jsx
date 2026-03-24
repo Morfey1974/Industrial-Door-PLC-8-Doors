@@ -5,8 +5,10 @@
 import Input from '../common/Input';
 import Dropdown from '../common/Dropdown';
 import Button from '../common/Button';
+import { useLanguage } from '../../context/LanguageContext';
 
 const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
+  const { t } = useLanguage();
   const handleEventTypeChange = (e) => {
     onFilterChange({ ...filters, eventType: e.target.value });
   };
@@ -20,27 +22,27 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
   };
 
   const eventTypeOptions = [
-    { value: 'all', label: 'Все типы' },
-    { value: 'DOOR_OPEN', label: 'Открытие двери' },
-    { value: 'DOOR_CLOSE', label: 'Закрытие двери' },
-    { value: 'DOOR_ALARM', label: 'Alarm двери' },
-    { value: 'DOOR_OPEN_TIMEOUT', label: 'Таймаут открытия' },
-    { value: 'DOOR_POST_CLOSE_READY', label: 'Готовность после закрытия' },
-    { value: 'DOOR_SIGNAL_ON', label: 'Сигнал включен' },
-    { value: 'DOOR_SIGNAL_OFF', label: 'Сигнал выключен' },
-    { value: 'CMD_LOCK', label: 'Команда блокировки' },
-    { value: 'CMD_UNLOCK', label: 'Команда разблокировки' },
-    { value: 'NET_LINK_UP', label: 'Сеть подключена' },
-    { value: 'NET_LINK_DOWN', label: 'Сеть отключена' },
-    { value: 'SYSTEM_FAULT', label: 'Системная ошибка' },
+    { value: 'all', label: t('pages.events.filterAllTypes') },
+    { value: 'DOOR_OPEN', label: t('pages.events.filterDoorOpen') },
+    { value: 'DOOR_CLOSE', label: t('pages.events.filterDoorClose') },
+    { value: 'DOOR_ALARM', label: t('pages.events.filterDoorAlarm') },
+    { value: 'DOOR_OPEN_TIMEOUT', label: t('pages.events.filterDoorOpenTimeout') },
+    { value: 'DOOR_POST_CLOSE_READY', label: t('pages.events.filterDoorPostCloseReady') },
+    { value: 'DOOR_SIGNAL_ON', label: t('pages.events.filterDoorSignalOn') },
+    { value: 'DOOR_SIGNAL_OFF', label: t('pages.events.filterDoorSignalOff') },
+    { value: 'CMD_LOCK', label: t('pages.events.filterCmdLock') },
+    { value: 'CMD_UNLOCK', label: t('pages.events.filterCmdUnlock') },
+    { value: 'NET_LINK_UP', label: t('pages.events.filterNetLinkUp') },
+    { value: 'NET_LINK_DOWN', label: t('pages.events.filterNetLinkDown') },
+    { value: 'SYSTEM_FAULT', label: t('pages.events.filterSystemFault') },
   ];
 
   const sourceOptions = [
-    { value: 'all', label: 'Все источники' },
-    { value: 'NONE', label: 'Нет' },
-    { value: 'DOOR_LOCAL', label: 'Локальная дверь' },
-    { value: 'SUPERVISOR', label: 'Супервизор' },
-    { value: 'WATCHDOG', label: 'Сторожевой таймер' },
+    { value: 'all', label: t('pages.events.filterAllSources') },
+    { value: 'NONE', label: t('pages.events.sourceNone') },
+    { value: 'DOOR_LOCAL', label: t('pages.events.sourceDoorLocal') },
+    { value: 'SUPERVISOR', label: t('pages.events.sourceSupervisor') },
+    { value: 'WATCHDOG', label: t('pages.events.sourceWatchdog') },
     { value: 'CAN', label: 'CAN' },
     { value: 'RS485', label: 'RS485' },
     { value: 'HTTP', label: 'HTTP' },
@@ -54,7 +56,7 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
   return (
     <div className="filter-bar filter-bar--events">
       <div className="filter-group">
-        <label htmlFor="event-type-filter">Тип события:</label>
+        <label htmlFor="event-type-filter">{t('pages.events.filterTypeLabel')}</label>
         <Dropdown
           id="event-type-filter"
           value={filters.eventType || 'all'}
@@ -63,17 +65,17 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
         />
       </div>
       <div className="filter-group">
-        <label htmlFor="door-id-filter">ID двери:</label>
+        <label htmlFor="door-id-filter">{t('pages.events.filterDoorIdLabel')}</label>
         <Input
           id="door-id-filter"
           type="text"
           value={filters.doorId || ''}
           onChange={handleDoorIdChange}
-          placeholder="ID-1-1 или 1-1"
+          placeholder={t('pages.events.filterDoorIdPlaceholder')}
         />
       </div>
       <div className="filter-group">
-        <label htmlFor="source-filter">Источник:</label>
+        <label htmlFor="source-filter">{t('pages.events.filterSourceLabel')}</label>
         <Dropdown
           id="source-filter"
           value={filters.source || 'all'}
@@ -83,7 +85,7 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
       </div>
       {onRefresh && (
         <Button variant="secondary" size="small" onClick={onRefresh}>
-          Обновить
+          {t('common.refresh')}
         </Button>
       )}
       {hasActiveFilters && (
@@ -92,7 +94,7 @@ const EventsFilterBar = ({ filters, onFilterChange, onRefresh }) => {
           size="small"
           onClick={() => onFilterChange({ eventType: 'all', doorId: '', source: 'all' })}
         >
-          Сбросить фильтры
+          {t('pages.events.resetFilters')}
         </Button>
       )}
     </div>

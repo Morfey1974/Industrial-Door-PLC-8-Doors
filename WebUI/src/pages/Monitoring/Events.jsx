@@ -2,11 +2,11 @@
  * Events страница - журнал событий
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import useApi from '../../hooks/useApi';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useLanguage } from '../../context/LanguageContext';
-import { getJournalDump, getJournalStat, clearJournal } from '../../services/api';
+import { getJournalDump, getJournalStat, getConfigFull, clearJournal } from '../../services/api';
 import EventsTable from '../../components/ui/EventsTable';
 import EventsFilterBar from '../../components/ui/EventsFilterBar';
 import Pagination from '../../components/ui/Pagination';
@@ -37,6 +37,25 @@ const Events = () => {
 
   // Получаем статистику журнала для определения общего количества записей
   const { data: journalStat, loading: statLoading, refetch: refetchStat } = useApi(fetchJournalStat, []);
+
+  // Загружаем активную конфигурацию, чтобы привязать события к drawingId двери.
+  // Важно: drawingId находится в cfg.doors[], поэтому для таблицы журнала
+  // формируем быстрый lookup по globalDoorId.
+  const fetchConfigFull = useCallback((signal) => getConfigFull(signal), []);
+  const { data: configFull, refetch: refetchConfig } = useApi(fetchConfigFull, []);
+
+  const doorMetaByGlobalId = useMemo(() => {
+    const map = {};
+    const doors = configFull?.doors || [];
+    for (const door of doors) {
+      const gid = Number(door?.globalDoorId);
+      if (!Number.isFinite(gid) || gid <= 0) continue;
+      map[gid] = {
+        drawingId: door?.drawingId ?? null,
+      };
+    }
+    return map;
+  }, [configFull]);
 
   // Обновляем totalRecords при получении статистики
   useEffect(() => {
@@ -129,6 +148,7 @@ const Events = () => {
 
   const handleRefresh = async () => {
     try {
+      await refetchConfig(true);
       await refetchStat(true);
       await new Promise(resolve => setTimeout(resolve, 100));
       // refetch(false) — показываем загрузку и принудительно обновляем список событий
@@ -412,7 +432,13 @@ const Events = () => {
       {/* Таблица событий - показываем если есть данные, даже при ошибке автообновления */}
       {events && (
         <div className="events-table-section">
-          <EventsTable events={events} filters={filters} offset={offset} totalRecords={totalRecords} />
+          <EventsTable
+            events={events}
+            filters={filters}
+            offset={offset}
+            totalRecords={totalRecords}
+            doorMetaByGlobalId={doorMetaByGlobalId}
+          />
           {/* Показываем предупреждение об ошибке автообновления, но не скрываем таблицу */}
           {error && events && (
             <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>

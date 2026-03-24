@@ -6,28 +6,28 @@
 /** Уровни доступа (порядок для сравнения: больше = выше право) */
 export const PERMISSION_LEVELS = ['none', 'view', 'change_password', 'edit', 'manage'];
 
-/** Секции системы с человекочитаемыми названиями */
+/** Секции: titleKey — ключ локализации (pages.permissions.sections.*) */
 export const PERMISSION_SECTIONS = [
-  { id: 'monitoring_doors', section: 'Мониторинг → Двери' },
-  { id: 'monitoring_events', section: 'Мониторинг → События' },
-  { id: 'monitoring_alarms', section: 'Мониторинг → Алармы' },
-  { id: 'monitoring_statistics', section: 'Мониторинг → Статистика' },
-  { id: 'config_doors', section: 'Конфигурация → Двери' },
-  { id: 'settings_system', section: 'Настройки → Параметры системы (только Super Admin)' },
-  { id: 'settings_users', section: 'Настройки → Пользователи' },
-  { id: 'settings_profile', section: 'Настройки → Профиль' },
-  { id: 'settings_permissions', section: 'Настройки → Права доступа' },
-  { id: 'settings_about', section: 'Настройки → О нас' },
-  { id: 'settings_help', section: 'Настройки → Помощь' },
+  { id: 'monitoring_doors', titleKey: 'pages.permissions.sections.monitoring_doors' },
+  { id: 'monitoring_events', titleKey: 'pages.permissions.sections.monitoring_events' },
+  { id: 'monitoring_alarms', titleKey: 'pages.permissions.sections.monitoring_alarms' },
+  { id: 'monitoring_statistics', titleKey: 'pages.permissions.sections.monitoring_statistics' },
+  { id: 'config_doors', titleKey: 'pages.permissions.sections.config_doors' },
+  { id: 'settings_system', titleKey: 'pages.permissions.sections.settings_system' },
+  { id: 'settings_users', titleKey: 'pages.permissions.sections.settings_users' },
+  { id: 'settings_profile', titleKey: 'pages.permissions.sections.settings_profile' },
+  { id: 'settings_permissions', titleKey: 'pages.permissions.sections.settings_permissions' },
+  { id: 'settings_about', titleKey: 'pages.permissions.sections.settings_about' },
+  { id: 'settings_help', titleKey: 'pages.permissions.sections.settings_help' },
 ];
 
-/** Варианты для выпадающего списка (не все применимы к каждой секции) */
+/** Варианты выпадающего списка: labelKey — pages.permissions.level* */
 export const PERMISSION_OPTIONS = [
-  { value: 'none', label: 'Нет доступа' },
-  { value: 'view', label: 'Просмотр' },
-  { value: 'change_password', label: 'Изменение пароля' },
-  { value: 'edit', label: 'Изменение' },
-  { value: 'manage', label: 'Управление' },
+  { value: 'none', labelKey: 'pages.permissions.levelNone' },
+  { value: 'view', labelKey: 'pages.permissions.levelView' },
+  { value: 'change_password', labelKey: 'pages.permissions.levelChangePassword' },
+  { value: 'edit', labelKey: 'pages.permissions.levelEdit' },
+  { value: 'manage', labelKey: 'pages.permissions.levelManage' },
 ];
 
 /** Роли (ключи в матрице) */

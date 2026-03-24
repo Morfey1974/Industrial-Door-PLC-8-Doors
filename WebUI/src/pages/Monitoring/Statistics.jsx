@@ -56,7 +56,7 @@ const Statistics = () => {
 
       {(loading || (statLoading && !journalStat)) && (
         <div className="loading-state">
-          <p>Загрузка статистики…</p>
+          <p>{t('pages.statistics.loading')}</p>
         </div>
       )}
 
@@ -76,16 +76,16 @@ const Statistics = () => {
           <div className="stats-card">
             <h2>{t('pages.statistics.journal')}</h2>
             <p className="stats-value">{journalStat.recordsWritten ?? 0}</p>
-            <p className="stats-label">записей записано</p>
+            <p className="stats-label">{t('pages.statistics.recordsWritten')}</p>
             <ul className="stats-list">
-              <li>Размер буфера: {(journalStat.size ?? 0).toLocaleString('ru-RU')} байт</li>
-              <li>Сектор: {journalStat.currentSector ?? 0} из {journalStat.sectors ?? 0}</li>
-              <li>Текущая последовательность: {journalStat.currentSeq ?? 0}</li>
+              <li>{t('pages.statistics.bufferSize')}: {(journalStat.size ?? 0).toLocaleString('ru-RU')} {t('pages.statistics.bytes')}</li>
+              <li>{t('pages.statistics.sector')}: {journalStat.currentSector ?? 0} {t('pages.statistics.of')} {journalStat.sectors ?? 0}</li>
+              <li>{t('pages.statistics.currentSequence')}: {journalStat.currentSeq ?? 0}</li>
               {journalStat.droppedQueue !== undefined && journalStat.droppedQueue > 0 && (
-                <li className="stats-warning">Потеряно из очереди: {journalStat.droppedQueue}</li>
+                <li className="stats-warning">{t('pages.statistics.droppedQueue')}: {journalStat.droppedQueue}</li>
               )}
               {journalStat.ioErrors !== undefined && journalStat.ioErrors > 0 && (
-                <li className="stats-warning">Ошибок ввода-вывода: {journalStat.ioErrors}</li>
+                <li className="stats-warning">{t('pages.statistics.ioErrors')}: {journalStat.ioErrors}</li>
               )}
             </ul>
           </div>
@@ -96,14 +96,14 @@ const Statistics = () => {
             {!doorsLoading && doors ? (
               <>
                 <p className="stats-value">{totalDoors}</p>
-                <p className="stats-label">всего дверей</p>
+                <p className="stats-label">{t('pages.statistics.totalDoors')}</p>
                 <ul className="stats-list">
-                  <li>С аварией: <strong>{alarmingCount}</strong></li>
-                  <li>В норме: <strong>{totalDoors - alarmingCount}</strong></li>
+                  <li>{t('pages.statistics.withAlarm')}: <strong>{alarmingCount}</strong></li>
+                  <li>{t('pages.statistics.normal')}: <strong>{totalDoors - alarmingCount}</strong></li>
                 </ul>
               </>
             ) : (
-              <p className="stats-muted">Загрузка…</p>
+              <p className="stats-muted">{t('common.loading')}</p>
             )}
           </div>
         </div>
@@ -113,7 +113,7 @@ const Statistics = () => {
       <div className="stats-card stats-card-full">
         <h2>{t('pages.statistics.recentEvents')}</h2>
         {eventsLoading && !lastEvents?.records?.length && (
-          <p className="stats-muted">Загрузка событий…</p>
+          <p className="stats-muted">{t('pages.statistics.loadingEvents')}</p>
         )}
         {lastEvents?.records?.length > 0 ? (
           <ul className="stats-events-list">
@@ -121,13 +121,13 @@ const Statistics = () => {
               <li key={rec.recSeq ?? idx}>
                 <span className="stats-event-time">{formatTimestamp(rec.timestamp)}</span>
                 <span className="stats-event-type">{rec.type ?? '—'}</span>
-                <span className="stats-event-door">Дверь {rec.doorId ?? '—'}</span>
+                <span className="stats-event-door">{t('pages.statistics.door')} {rec.doorId ?? '—'}</span>
                 <span className="stats-event-source">{rec.source ?? '—'}</span>
               </li>
             ))}
           </ul>
         ) : lastEvents && !eventsLoading && (
-          <p className="stats-muted">Нет записей в журнале</p>
+          <p className="stats-muted">{t('pages.statistics.noJournalRecords')}</p>
         )}
       </div>
     </div>

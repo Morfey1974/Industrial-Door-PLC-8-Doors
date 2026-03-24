@@ -6,11 +6,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Button from '../../../components/common/Button';
+import { useLanguage } from '../../../context/LanguageContext';
 
 const msToSec = (ms) => (ms == null || ms === 0 ? 0 : Math.round(Number(ms) / 1000));
 const secToMs = (s) => Math.max(0, Math.min(3600000, (parseInt(String(s), 10) || 0) * 1000));
 
 const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
+  const { t } = useLanguage();
   const [timeoutsSec, setTimeoutsSec] = useState({});
 
   const doors = config.doors || [];
@@ -18,8 +20,8 @@ const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
 
   useEffect(() => {
     const map = {};
-    postCloseTimeouts.forEach((t) => {
-      map[t.globalDoorId] = msToSec(t.timeoutMs);
+    postCloseTimeouts.forEach((item) => {
+      map[item.globalDoorId] = msToSec(item.timeoutMs);
     });
     setTimeoutsSec(map);
   }, [postCloseTimeouts]);
@@ -42,9 +44,12 @@ const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
 
   const handleResetAll = async () => {
     if (!showConfirm) {
-      if (!window.confirm('Сбросить все индивидуальные таймауты?')) return;
+      if (!window.confirm(t('pages.config.timeoutsResetAsk'))) return;
     } else {
-      const confirmed = await showConfirm('Сбросить все индивидуальные таймауты?', 'Сброс таймаутов');
+      const confirmed = await showConfirm(
+        t('pages.config.timeoutsResetAsk'),
+        t('pages.config.timeoutsResetTitle')
+      );
       if (!confirmed) return;
     }
     const reset = {};
@@ -69,38 +74,38 @@ const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
   return (
     <div className="timeouts-tab">
       <div className="timeouts-tab-header">
-        <h2>Индивидуальные таймауты post-close</h2>
+        <h2>{t('pages.timeoutsTab.postCloseTitle')}</h2>
         <div className="timeouts-tab-info">
           <p>
-            Таймаут, когда дверь долго открыта: <strong>{openTimeoutSec} с</strong> (по умолчанию 30 с).
+            {t('pages.timeoutsTab.introOpen', { sec: String(openTimeoutSec) })}
           </p>
           <p>
-            Установите индивидуальные таймауты post-close для каждой двери (с). По умолчанию 0 с.
+            {t('pages.timeoutsTab.introPostClose')}
           </p>
         </div>
         <Button onClick={handleResetAll} variant="secondary" disabled={loading}>
-          Сбросить все
+          {t('pages.timeoutsTab.resetAll')}
         </Button>
       </div>
 
       {doors.length === 0 ? (
         <div className="empty-state">
-          <p>Нет дверей. Добавьте двери на вкладке «Двери».</p>
+          <p>{t('pages.timeoutsTab.noDoors')}</p>
         </div>
       ) : (
         <div className="timeouts-content">
           {Object.entries(doorsByNode).map(([nodeId, nodeDoors]) => (
             <div key={nodeId} className="timeouts-node-group">
-              <h3>Плата {nodeId}</h3>
+              <h3>{t('pages.timeoutsTab.board')} {nodeId}</h3>
               <div className="timeouts-table-container">
                 <table className="timeouts-table">
                   <thead>
                     <tr>
-                      <th>Дверь</th>
-                      <th>Global ID</th>
-                      <th>Комментарий</th>
-                      <th>Таймаут post-close (с)</th>
-                      <th>Действия</th>
+                      <th>{t('pages.timeoutsTab.colDoor')}</th>
+                      <th>{t('pages.timeoutsTab.colGlobalId')}</th>
+                      <th>{t('pages.timeoutsTab.colComment')}</th>
+                      <th>{t('pages.timeoutsTab.colPostClose')}</th>
+                      <th>{t('pages.timeoutsTab.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -128,7 +133,7 @@ const TimeoutsTab = ({ config, updateConfig, loading, showConfirm }) => {
                             size="small"
                             disabled={(timeoutsSec[door.globalDoorId] ?? 0) === 0}
                           >
-                            Сбросить
+                            {t('pages.timeoutsTab.reset')}
                           </Button>
                         </td>
                       </tr>

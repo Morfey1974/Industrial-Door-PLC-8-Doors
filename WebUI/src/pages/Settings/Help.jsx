@@ -6,21 +6,22 @@
 import { useState, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
-import { getSectionContent } from './HelpContent';
+import { getSectionContent, getHelpSectionTitle } from './HelpContent';
 import './Help.css';
 
-export const HELP_SECTIONS = [
-  { id: 'overview', title: 'Обзор интерфейса', keywords: 'главная шапка меню вкладки сайдбар' },
-  { id: 'monitoring-doors', title: 'Мониторинг → Двери', keywords: 'двери состояние открыто закрыто карта' },
-  { id: 'monitoring-events', title: 'Мониторинг → События', keywords: 'события журнал лог' },
-  { id: 'monitoring-alarms', title: 'Мониторинг → Алармы', keywords: 'алармы тревоги предупреждения' },
-  { id: 'monitoring-statistics', title: 'Мониторинг → Статистика', keywords: 'статистика счётчики' },
-  { id: 'config-doors', title: 'Конфигурация → Настройка дверей', keywords: 'конфигурация двери настройка маппинг' },
-  { id: 'config-mapping', title: 'Конфигурация → Маппинг', keywords: 'маппинг карта дверей редактор' },
-  { id: 'settings-system', title: 'Настройки → Параметры системы', keywords: 'система сеть параметры IP адрес' },
-  { id: 'settings-profile', title: 'Настройки → Профиль', keywords: 'профиль пароль смена' },
-  { id: 'settings-permissions', title: 'Настройки → Права доступа', keywords: 'права роли доступ' },
-  { id: 'settings-users', title: 'Настройки → Пользователи', keywords: 'пользователи учётные записи' },
+/** Порядок разделов в содержании; заголовки и ключевые слова — из локалей */
+export const HELP_SECTION_IDS = [
+  'overview',
+  'monitoring-doors',
+  'monitoring-events',
+  'monitoring-alarms',
+  'monitoring-statistics',
+  'config-doors',
+  'config-mapping',
+  'settings-system',
+  'settings-profile',
+  'settings-permissions',
+  'settings-users',
 ];
 
 /**
@@ -31,31 +32,34 @@ function HelpIndex() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredSections = useMemo(() => {
-    if (!searchQuery.trim()) return HELP_SECTIONS;
+    const sections = HELP_SECTION_IDS.map((id) => ({
+      id,
+      title: getHelpSectionTitle(id, t),
+      keywords: t(`pages.help.keywords.${id}`),
+    }));
+    if (!searchQuery.trim()) return sections;
     const q = searchQuery.trim().toLowerCase();
-    return HELP_SECTIONS.filter(
+    return sections.filter(
       (s) =>
         s.title.toLowerCase().includes(q) ||
         s.keywords.toLowerCase().includes(q)
     );
-  }, [searchQuery]);
+  }, [searchQuery, t]);
 
   return (
     <div className="help-page">
       <header className="help-header">
-        <h1 className="help-title">Помощь по системе</h1>
-        <p className="help-intro">
-          Выберите раздел — откроется отдельная страница. В будущем здесь будет полноценная справка по приложению.
-        </p>
+        <h1 className="help-title">{t('pages.help.title')}</h1>
+        <p className="help-intro">{t('pages.help.indexIntro')}</p>
         <div className="help-search-wrap">
           <label htmlFor="help-search" className="help-search-label">
-            Быстрый поиск по разделам
+            {t('pages.help.searchLabel')}
           </label>
           <input
             id="help-search"
             type="search"
             className="help-search-input"
-            placeholder="Введите слово или фразу (например: двери, пароль, права)..."
+            placeholder={t('pages.help.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             autoComplete="off"
@@ -65,7 +69,7 @@ function HelpIndex() {
               type="button"
               className="help-search-clear"
               onClick={() => setSearchQuery('')}
-              aria-label="Очистить поиск"
+              aria-label={t('pages.help.clearSearchAria')}
             >
               ✕
             </button>
@@ -76,7 +80,7 @@ function HelpIndex() {
       <main className="help-index-content">
         <h2 className="help-index-title">{t('pages.help.contents')}</h2>
         {filteredSections.length === 0 ? (
-          <p className="help-index-empty">Ничего не найдено</p>
+          <p className="help-index-empty">{t('pages.help.nothingFound')}</p>
         ) : (
           <ul className="help-index-list">
             {filteredSections.map((s) => (
@@ -98,15 +102,16 @@ function HelpIndex() {
  */
 export function HelpSectionPage() {
   const { sectionId } = useParams();
-  const section = HELP_SECTIONS.find((s) => s.id === sectionId);
-  const content = sectionId ? getSectionContent(sectionId) : null;
+  const { t } = useLanguage();
+  const title = sectionId ? getHelpSectionTitle(sectionId, t) : '';
+  const content = sectionId ? getSectionContent(sectionId, t) : null;
 
-  if (!section || !content) {
+  if (!sectionId || !HELP_SECTION_IDS.includes(sectionId) || !content) {
     return (
       <div className="help-page help-section-page">
-        <p className="help-not-found">Раздел не найден.</p>
+        <p className="help-not-found">{t('pages.help.notFound')}</p>
         <Link to="/settings/help" className="help-back-link">
-          ← К содержанию
+          {t('pages.help.backToContents')}
         </Link>
       </div>
     );
@@ -116,11 +121,11 @@ export function HelpSectionPage() {
     <div className="help-page help-section-page">
       <div className="help-section-back">
         <Link to="/settings/help" className="help-back-link">
-          ← К содержанию
+          {t('pages.help.backToContents')}
         </Link>
       </div>
       <main className="help-content help-section-only">
-        <h1 className="help-section-title">{section.title}</h1>
+        <h1 className="help-section-title">{title}</h1>
         <div className="help-section-body">
           {content}
         </div>

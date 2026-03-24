@@ -10,7 +10,6 @@
  */
 
 import { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUsers, createUser, updateUser, deleteUser } from '../../services/users';
@@ -20,9 +19,9 @@ import PasswordInput from '../../components/common/PasswordInput';
 import './Users.css';
 
 const Users = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const dateLocale = language === 'en' ? 'en-US' : 'ru-RU';
   const { user } = useContext(AuthContext);
-  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -43,12 +42,12 @@ const Users = () => {
   // Проверка прав доступа
   useEffect(() => {
     if (user && user.role !== 'super_admin') {
-      setError('Доступ запрещен. Только для Супер-администратора.');
+      setError(t('pages.users.accessDenied'));
       setLoading(false);
     } else if (user && user.role === 'super_admin') {
       loadUsers();
     }
-  }, [user]);
+  }, [user, t]);
 
   const loadUsers = async () => {
     try {
@@ -58,10 +57,10 @@ const Users = () => {
       if (response.ok && response.users) {
         setUsers(response.users);
       } else {
-        setError(response.error || 'Ошибка загрузки пользователей');
+        setError(response.error || t('pages.users.loadError'));
       }
     } catch (err) {
-      setError(err.message || 'Ошибка подключения к серверу');
+      setError(err.message || t('pages.users.connectionError'));
     } finally {
       setLoading(false);
     }
@@ -88,7 +87,7 @@ const Users = () => {
   };
 
   const handleDelete = async (username) => {
-    if (!window.confirm(`Вы уверены, что хотите удалить пользователя "${username}"?`)) {
+    if (!window.confirm(t('pages.users.deleteConfirm', { name: username }))) {
       return;
     }
 
@@ -98,10 +97,10 @@ const Users = () => {
       if (response.ok) {
         await loadUsers();
       } else {
-        alert(response.error || 'Ошибка удаления пользователя');
+        alert(response.error || t('pages.users.deleteError'));
       }
     } catch (err) {
-      alert(err.message || 'Ошибка подключения к серверу');
+      alert(err.message || t('pages.users.connectionError'));
     } finally {
       setFormLoading(false);
     }
@@ -116,12 +115,12 @@ const Users = () => {
       if (showCreateModal) {
         // Создание
         if (!formData.username || !formData.password) {
-          setFormError('Имя пользователя и пароль обязательны');
+          setFormError(t('pages.users.errUserPassRequired'));
           setFormLoading(false);
           return;
         }
         if (formData.password.length < 8) {
-          setFormError('Пароль должен содержать минимум 8 символов');
+          setFormError(t('pages.users.errPasswordMin'));
           setFormLoading(false);
           return;
         }
@@ -132,7 +131,7 @@ const Users = () => {
           setShowCreateModal(false);
           await loadUsers();
         } else {
-          setFormError(response.error || 'Ошибка создания пользователя');
+          setFormError(response.error || t('pages.users.errCreate'));
         }
       } else {
         // Редактирование
@@ -146,7 +145,7 @@ const Users = () => {
 
         if (formData.password && formData.password.length > 0) {
           if (formData.password.length < 8) {
-            setFormError('Пароль должен содержать минимум 8 символов');
+            setFormError(t('pages.users.errPasswordMin'));
             setFormLoading(false);
             return;
           }
@@ -160,23 +159,25 @@ const Users = () => {
           setEditingUser(null);
           await loadUsers();
         } else {
-          setFormError(response.error || 'Ошибка обновления пользователя');
+          setFormError(response.error || t('pages.users.errUpdate'));
         }
       }
     } catch (err) {
-      setFormError(err.message || 'Ошибка подключения к серверу');
+      setFormError(err.message || t('pages.users.connectionError'));
     } finally {
       setFormLoading(false);
     }
   };
 
   const getRoleName = (role) => {
-    const roleNames = {
-      'super_admin': 'Супер-администратор',
-      'admin': 'Администратор',
-      'operator': 'Оператор'
+    const map = {
+      super_admin: 'pages.users.roleSuperAdmin',
+      admin: 'pages.users.roleAdmin',
+      operator: 'pages.users.roleOperator',
+      monitor: 'pages.users.roleMonitor',
     };
-    return roleNames[role] || role;
+    const key = map[role];
+    return key ? t(key) : role;
   };
 
   // Если не Super Admin, показываем сообщение
@@ -185,7 +186,7 @@ const Users = () => {
       <div className="settings-users">
         <h1>{t('pages.users.title')}</h1>
         <div className="error-message" style={{ padding: '20px', backgroundColor: '#ffebee', border: '1px solid #f44336', borderRadius: '4px', color: '#c62828' }}>
-          Доступ запрещен. Только для Супер-администратора.
+          {t('pages.users.accessDenied')}
         </div>
       </div>
     );
@@ -196,11 +197,11 @@ const Users = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1>{t('pages.users.title')}</h1>
         <Button onClick={handleCreate} variant="primary">
-          + Создать пользователя
+          + {t('pages.users.createUser')}
         </Button>
       </div>
 
-      {loading && <div>Загрузка...</div>}
+      {loading && <div>{t('pages.users.loading')}</div>}
       {error && (
         <div className="error-message" style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#ffebee', border: '1px solid #f44336', borderRadius: '4px', color: '#c62828' }}>
           {error}
@@ -212,19 +213,19 @@ const Users = () => {
           <table className="users-table">
             <thead>
               <tr>
-                <th>Имя пользователя</th>
-                <th>Роль</th>
-                <th>Статус</th>
-                <th>Создан</th>
-                <th>Последний вход</th>
-                <th>Действия</th>
+                <th>{t('pages.users.colUsername')}</th>
+                <th>{t('pages.users.colRole')}</th>
+                <th>{t('pages.users.colStatus')}</th>
+                <th>{t('pages.users.colCreated')}</th>
+                <th>{t('pages.users.colLastLogin')}</th>
+                <th>{t('pages.users.colActions')}</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr>
                   <td colSpan="6" style={{ textAlign: 'center', padding: '20px' }}>
-                    Пользователи не найдены
+                    {t('pages.users.noUsers')}
                   </td>
                 </tr>
               ) : (
@@ -234,19 +235,19 @@ const Users = () => {
                     <td>{getRoleName(u.role)}</td>
                     <td>
                       <span className={`status-badge ${u.enabled ? 'enabled' : 'disabled'}`}>
-                        {u.enabled ? 'Включен' : 'Отключен'}
+                        {u.enabled ? t('pages.users.enabled') : t('pages.users.disabled')}
                       </span>
                     </td>
-                    <td>{u.createdAt ? new Date(u.createdAt).toLocaleString('ru-RU') : '—'}</td>
-                    <td>{u.lastLogin ? new Date(u.lastLogin).toLocaleString('ru-RU') : 'Никогда'}</td>
+                    <td>{u.createdAt ? new Date(u.createdAt).toLocaleString(dateLocale) : t('pages.profile.dash')}</td>
+                    <td>{u.lastLogin ? new Date(u.lastLogin).toLocaleString(dateLocale) : t('pages.users.never')}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <Button onClick={() => handleEdit(u)} variant="secondary" size="small">
-                          Редактировать
+                          {t('pages.users.edit')}
                         </Button>
                         {u.username !== user.username && (
                           <Button onClick={() => handleDelete(u.username)} variant="danger" size="small" disabled={formLoading}>
-                            Удалить
+                            {t('pages.users.delete')}
                           </Button>
                         )}
                       </div>
@@ -260,7 +261,7 @@ const Users = () => {
       )}
 
       {/* Модальное окно создания */}
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Создать пользователя">
+      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title={t('pages.users.modalCreateTitle')}>
         <form onSubmit={handleSubmit}>
           {formError && (
             <div className="error-message" style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#ffebee', border: '1px solid #f44336', borderRadius: '4px', color: '#c62828' }}>
@@ -269,7 +270,7 @@ const Users = () => {
           )}
           
           <div className="form-group">
-            <label style={{ color: '#333' }}>Имя пользователя *</label>
+            <label style={{ color: '#333' }}>{t('pages.users.usernameLabel')} {t('pages.users.requiredMark')}</label>
             <input
               type="text"
               className="form-control"
@@ -282,10 +283,10 @@ const Users = () => {
 
           <PasswordInput
             id="password"
-            label="Пароль"
+            label={t('pages.users.passwordLabel')}
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            placeholder="Минимум 8 символов"
+            placeholder={t('pages.users.passwordPlaceholder')}
             required
             minLength={8}
             disabled={formLoading}
@@ -293,7 +294,7 @@ const Users = () => {
           />
 
           <div className="form-group">
-            <label style={{ color: '#333' }}>Роль *</label>
+            <label style={{ color: '#333' }}>{t('pages.users.roleLabel')} {t('pages.users.requiredMark')}</label>
             <select
               className="form-control"
               value={formData.role}
@@ -301,8 +302,8 @@ const Users = () => {
               required
               disabled={formLoading}
             >
-              <option value="operator">Оператор</option>
-              <option value="admin">Администратор</option>
+              <option value="operator">{t('pages.users.roleOperator')}</option>
+              <option value="admin">{t('pages.users.roleAdmin')}</option>
               {/* Супер-администратор создаётся по умолчанию, новых с этой ролью создавать нельзя */}
             </select>
           </div>
@@ -315,23 +316,23 @@ const Users = () => {
                 onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
                 disabled={formLoading}
               />
-              <span style={{ color: '#333' }}>Включен</span>
+              <span style={{ color: '#333' }}>{t('pages.users.enabledLabel')}</span>
             </label>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
             <Button type="button" onClick={() => setShowCreateModal(false)} disabled={formLoading}>
-              Отмена
+              {t('pages.users.cancel')}
             </Button>
             <Button type="submit" variant="primary" disabled={formLoading}>
-              {formLoading ? 'Создание...' : 'Создать'}
+              {formLoading ? t('pages.users.creating') : t('pages.users.create')}
             </Button>
           </div>
         </form>
       </Modal>
 
       {/* Модальное окно редактирования */}
-      <Modal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setEditingUser(null); }} title="Редактировать пользователя">
+      <Modal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setEditingUser(null); }} title={t('pages.users.modalEditTitle')}>
         <form onSubmit={handleSubmit}>
           {formError && (
             <div className="error-message" style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#ffebee', border: '1px solid #f44336', borderRadius: '4px', color: '#c62828' }}>
@@ -340,7 +341,7 @@ const Users = () => {
           )}
           
           <div className="form-group">
-            <label style={{ color: '#333' }}>Имя пользователя</label>
+            <label style={{ color: '#333' }}>{t('pages.users.usernameLabel')}</label>
             <input
               type="text"
               className="form-control"
@@ -352,33 +353,33 @@ const Users = () => {
 
           <PasswordInput
             id="edit-password"
-            label="Новый пароль (оставьте пустым, чтобы не менять)"
+            label={t('pages.users.newPasswordOptional')}
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            placeholder="Минимум 8 символов"
+            placeholder={t('pages.users.passwordPlaceholder')}
             minLength={8}
             disabled={formLoading}
             showForgotPassword={false}
           />
           <small className="form-help" style={{ display: 'block', marginTop: '-10px', marginBottom: '15px', color: '#333' }}>
-            Минимум 8 символов. Оставьте пустым, чтобы не менять пароль.
+            {t('pages.users.passwordHint')}
           </small>
 
           {/* Для Супер-администратора показываем только роль текстом; роль и «Включен» не редактируются */}
           {editingUser?.role === 'super_admin' ? (
             <div className="form-group">
-              <label style={{ color: '#333' }}>Роль</label>
+              <label style={{ color: '#333' }}>{t('pages.users.roleLabel')}</label>
               <div style={{ padding: '8px 12px', backgroundColor: '#f5f5f5', borderRadius: '4px', color: '#333' }}>
-                Супер-администратор (всегда включён)
+                {t('pages.users.roleSuperLocked')}
               </div>
               <small className="form-help" style={{ display: 'block', marginTop: '6px', color: '#666' }}>
-                У Супер-администратора можно изменить только пароль. Отключить его нельзя.
+                {t('pages.users.superAdminPasswordOnly')}
               </small>
             </div>
           ) : (
             <>
               <div className="form-group">
-                <label style={{ color: '#333' }}>Роль *</label>
+                <label style={{ color: '#333' }}>{t('pages.users.roleLabel')} {t('pages.users.requiredMark')}</label>
                 <select
                   className="form-control"
                   value={formData.role}
@@ -386,9 +387,9 @@ const Users = () => {
                   required
                   disabled={formLoading}
                 >
-                  <option value="operator">Оператор</option>
-                  <option value="admin">Администратор</option>
-                  <option value="super_admin">Супер-администратор</option>
+                  <option value="operator">{t('pages.users.roleOperator')}</option>
+                  <option value="admin">{t('pages.users.roleAdmin')}</option>
+                  <option value="super_admin">{t('pages.users.roleSuperAdmin')}</option>
                 </select>
               </div>
 
@@ -400,7 +401,7 @@ const Users = () => {
                     onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
                     disabled={formLoading}
                   />
-                  <span style={{ color: '#333' }}>Включен</span>
+                  <span style={{ color: '#333' }}>{t('pages.users.enabledLabel')}</span>
                 </label>
               </div>
             </>
@@ -408,10 +409,10 @@ const Users = () => {
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
             <Button type="button" onClick={() => { setShowEditModal(false); setEditingUser(null); }} disabled={formLoading}>
-              Отмена
+              {t('pages.users.cancel')}
             </Button>
             <Button type="submit" variant="primary" disabled={formLoading}>
-              {formLoading ? 'Сохранение...' : 'Сохранить'}
+              {formLoading ? t('pages.users.saving') : t('pages.users.save')}
             </Button>
           </div>
         </form>

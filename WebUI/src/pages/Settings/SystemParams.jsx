@@ -17,20 +17,6 @@ import './SystemParams.css';
 const UI_TIMEZONE_STORAGE_KEY = 'ui_timezone';
 const DEFAULT_TIMEZONE = 'Asia/Jerusalem';
 
-const formatUptime = (seconds) => {
-  if (seconds == null) return '—';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const parts = [];
-  if (d > 0) parts.push(`${d} д`);
-  if (h > 0) parts.push(`${h} ч`);
-  if (m > 0) parts.push(`${m} мин`);
-  if (s > 0 || parts.length === 0) parts.push(`${s} с`);
-  return parts.join(' ');
-};
-
 const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const isValidIpv4 = (str) => {
   const m = ipv4Regex.exec(str);
@@ -46,7 +32,23 @@ const DEFAULT_NETMASK = '255.255.255.0';
 const DEFAULT_GATEWAY = '192.168.1.1';
 
 const SystemParams = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const dateLocale = language === 'en' ? 'en-US' : 'ru-RU';
+
+  /** Человекочитаемый uptime с локализованными единицами (д, ч, мин, с). */
+  const formatUptime = (seconds) => {
+    if (seconds == null) return t('pages.profile.dash');
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const parts = [];
+    if (d > 0) parts.push(`${d} ${t('pages.systemParams.uptimeDay')}`);
+    if (h > 0) parts.push(`${h} ${t('pages.systemParams.uptimeHour')}`);
+    if (m > 0) parts.push(`${m} ${t('pages.systemParams.uptimeMin')}`);
+    if (s > 0 || parts.length === 0) parts.push(`${s} ${t('pages.systemParams.uptimeSec')}`);
+    return parts.join(' ');
+  };
   const stateData = useStateData();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -90,7 +92,7 @@ const SystemParams = () => {
         timezone: net.timezone ?? localStorage.getItem(UI_TIMEZONE_STORAGE_KEY) ?? DEFAULT_TIMEZONE,
       });
     } catch (err) {
-      setError(err?.message || 'Не удалось загрузить настройки');
+      setError(err?.message || t('pages.systemParams.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -116,10 +118,10 @@ const SystemParams = () => {
 
   const validateStaticIp = () => {
     if (form.dhcpEnabled) return null;
-    if (!isValidIpv4(form.ip)) return 'Неверный формат IP-адреса';
-    if (!isValidIpv4(form.netmask)) return 'Неверный формат маски подсети';
+    if (!isValidIpv4(form.ip)) return t('pages.systemParams.errIp');
+    if (!isValidIpv4(form.netmask)) return t('pages.systemParams.errNetmask');
     if (!form.gateway.trim()) return null;
-    if (!isValidIpv4(form.gateway)) return 'Неверный формат шлюза';
+    if (!isValidIpv4(form.gateway)) return t('pages.systemParams.errGateway');
     return null;
   };
 
@@ -145,9 +147,9 @@ const SystemParams = () => {
         if (form.gateway.trim() && isValidIpv4(form.gateway)) net.gateway = form.gateway.trim();
       }
       await putConfig({ net });
-      setSuccess('Настройки сохранены. Контроллер может перезагрузиться.');
+      setSuccess(t('pages.systemParams.saveSuccess'));
     } catch (err) {
-      setError(err?.message || 'Не удалось сохранить настройки');
+      setError(err?.message || t('pages.systemParams.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -171,7 +173,7 @@ const SystemParams = () => {
       const data = await getTime();
       setControllerTime(data?.ok ? { unix: data.unix, source: data.source } : null);
     } catch (err) {
-      setTimeError(err?.message || 'Не удалось получить время');
+      setTimeError(err?.message || t('pages.systemParams.timeFetchError'));
       setControllerTime(null);
     } finally {
       setTimeLoading(false);
@@ -192,22 +194,22 @@ const SystemParams = () => {
       await setTime(unix);
       await fetchControllerTime();
     } catch (err) {
-      setTimeError(err?.message || 'Не удалось установить время');
+      setTimeError(err?.message || t('pages.systemParams.timeSetError'));
     } finally {
       setTimeSyncLoading(false);
     }
   };
 
   const formatControllerTime = (unix) => {
-    if (unix == null || unix === 0) return '—';
+    if (unix == null || unix === 0) return t('pages.profile.dash');
     try {
-      return new Date(unix * 1000).toLocaleString('ru-RU', {
+      return new Date(unix * 1000).toLocaleString(dateLocale, {
         timeZone: form.timezone || DEFAULT_TIMEZONE,
         dateStyle: 'short',
         timeStyle: 'medium',
       });
     } catch {
-      return '—';
+      return t('pages.profile.dash');
     }
   };
 
@@ -215,12 +217,12 @@ const SystemParams = () => {
     <div className="settings-system-params">
       <h1>{t('pages.systemParams.title')}</h1>
       <p className="system-params-page-intro">
-        Полный удалённый доступ к контроллеру имеет только Супер-администратор. Настройки для подключения и обеспечения безопасного удалённого доступа.
+        {t('pages.systemParams.pageIntro')}
       </p>
 
       {typeof window !== 'undefined' && window.location?.protocol === 'http:' && (
         <div className="system-params-message" style={{ backgroundColor: '#fff8e1', border: '1px solid #ffa000', color: '#e65100' }} role="status">
-          Подключение по HTTP — трафик не шифруется. Для защиты данных рекомендуется использовать HTTPS.
+          {t('pages.systemParams.httpWarning')}
         </div>
       )}
 
@@ -239,7 +241,7 @@ const SystemParams = () => {
       <section className="system-params-section">
         <h2>1. {t('pages.systemParams.section1')}</h2>
         <p className="system-params-intro">
-          Параметры для доступа к контроллеру с любого устройства (ПК, планшет, смартфон). Укажите IP, маску, шлюз, порт — выданные IT-отделом или настраиваемые для LAN.
+          {t('pages.systemParams.networkIntro')}
         </p>
         <form onSubmit={handleSubmit} className="system-params-form">
           <div className="form-group">
@@ -251,11 +253,10 @@ const SystemParams = () => {
                 disabled={loading}
                 className="form-checkbox"
               />
-              <span>Включить DHCP (автоматическое получение IP)</span>
+              <span>{t('pages.systemParams.dhcpLabel')}</span>
             </label>
             <small>
-              При включённом DHCP контроллер получит IP, маску и шлюз от сервера DHCP в сети.
-              При выключенном DHCP укажите статический IP вручную.
+              {t('pages.systemParams.dhcpHint')}
             </small>
           </div>
 
@@ -263,7 +264,7 @@ const SystemParams = () => {
             <>
               <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="ip">IP-адрес</label>
+                  <label htmlFor="ip">{t('pages.systemParams.ipLabel')}</label>
                   <input
                     id="ip"
                     type="text"
@@ -273,10 +274,10 @@ const SystemParams = () => {
                     disabled={loading}
                     className={`form-input ${!form.dhcpEnabled && form.ip && !isValidIpv4(form.ip) ? 'form-input-error' : ''}`}
                   />
-                  <small>Например: 192.168.1.50. Должен быть уникальным в сети.</small>
+                  <small>{t('pages.systemParams.ipHint')}</small>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="netmask">Маска подсети</label>
+                  <label htmlFor="netmask">{t('pages.systemParams.netmaskLabel')}</label>
                   <input
                     id="netmask"
                     type="text"
@@ -286,11 +287,11 @@ const SystemParams = () => {
                     disabled={loading}
                     className={`form-input ${!form.dhcpEnabled && form.netmask && !isValidIpv4(form.netmask) ? 'form-input-error' : ''}`}
                   />
-                  <small>Обычно: 255.255.255.0 (/24)</small>
+                  <small>{t('pages.systemParams.netmaskHint')}</small>
                 </div>
               </div>
               <div className="form-group">
-                <label htmlFor="gateway">Шлюз по умолчанию</label>
+                <label htmlFor="gateway">{t('pages.systemParams.gatewayLabel')}</label>
                 <input
                   id="gateway"
                   type="text"
@@ -300,41 +301,41 @@ const SystemParams = () => {
                   disabled={loading}
                   className={`form-input form-input-narrow ${!form.dhcpEnabled && form.gateway && !isValidIpv4(form.gateway) ? 'form-input-error' : ''}`}
                 />
-                <small>IP маршрутизатора или шлюза в вашей сети. Нужен для доступа в другие подсети и интернет.</small>
+                <small>{t('pages.systemParams.gatewayHint')}</small>
               </div>
             </>
           )}
 
           <div className="form-group">
-            <label htmlFor="dnsPrimary">DNS-сервер 1</label>
+            <label htmlFor="dnsPrimary">{t('pages.systemParams.dns1Label')}</label>
             <input
               id="dnsPrimary"
               type="text"
               value={form.dnsPrimary}
               onChange={(e) => handleChange('dnsPrimary', e.target.value)}
-              placeholder="192.168.1.1 или 8.8.8.8"
+              placeholder={t('pages.systemParams.dns1Placeholder')}
               disabled={loading}
               className="form-input form-input-narrow"
             />
-            <small>Для разрешения имён хостов (NTP, обновления). Часто совпадает со шлюзом.</small>
+            <small>{t('pages.systemParams.dns1Hint')}</small>
           </div>
 
           <div className="form-group">
-            <label htmlFor="dnsSecondary">DNS-сервер 2</label>
+            <label htmlFor="dnsSecondary">{t('pages.systemParams.dns2Label')}</label>
             <input
               id="dnsSecondary"
               type="text"
               value={form.dnsSecondary}
               onChange={(e) => handleChange('dnsSecondary', e.target.value)}
-              placeholder="8.8.4.4 (опционально)"
+              placeholder={t('pages.systemParams.dns2Placeholder')}
               disabled={loading}
               className="form-input form-input-narrow"
             />
-            <small>Резервный DNS. Может быть пустым.</small>
+            <small>{t('pages.systemParams.dns2Hint')}</small>
           </div>
 
           <div className="form-group">
-            <label htmlFor="webPort">Порт веб-интерфейса</label>
+            <label htmlFor="webPort">{t('pages.systemParams.webPortLabel')}</label>
             <input
               id="webPort"
               type="number"
@@ -346,12 +347,12 @@ const SystemParams = () => {
               disabled={loading}
               className="form-input form-input-narrow"
             />
-            <small>Порт для доступа к веб-интерфейсу (1–65535). По умолчанию 8080. Для удалённого доступа: http://IP_контроллера:{form.webPort}</small>
+            <small>{t('pages.systemParams.webPortHint', { port: String(form.webPort) })}</small>
           </div>
 
           <div className="system-params-actions">
             <Button type="submit" disabled={loading || saving}>
-              {saving ? 'Сохранение…' : 'Сохранить'}
+              {saving ? t('pages.systemParams.saving') : t('pages.systemParams.save')}
             </Button>
           </div>
         </form>
@@ -361,21 +362,21 @@ const SystemParams = () => {
       <section className="system-params-section system-params-section-security">
         <h2>2. {t('pages.systemParams.section2')}</h2>
         <p className="system-params-intro">
-          Рекомендации по защите контроллера от несанкционированного доступа при удалённой работе администратора.
+          {t('pages.systemParams.securityIntro')}
         </p>
         <div className="system-params-security-checklist">
           <h3>{t('pages.systemParams.section2h3')}</h3>
           <ul>
-            <li><strong>VPN:</strong> при доступе через интернет или из другой подсети используйте VPN предприятия. Контроллер не должен быть доступен напрямую из интернета.</li>
-            <li><strong>Локальная сеть:</strong> предпочтительно подключаться из той же подсети, что и контроллер (LAN).</li>
-            <li><strong>Учётные записи:</strong> используйте надёжные пароли (минимум 8 символов). Регулярно меняйте пароли администраторов.</li>
-            <li><strong>Роли:</strong> выдавайте минимально необходимые права. Операторам — только просмотр, администраторам — конфигурация и параметры системы.</li>
-            <li><strong>HTTPS:</strong> при появлении поддержки в прошивке — включайте HTTPS для шифрования трафика.</li>
-            <li><strong>Firewall:</strong> на маршрутизаторе/шлюзе ограничьте доступ к контроллеру только с доверенных IP или VPN.</li>
+            <li>{t('pages.systemParams.secVpn')}</li>
+            <li>{t('pages.systemParams.secLan')}</li>
+            <li>{t('pages.systemParams.secAccounts')}</li>
+            <li>{t('pages.systemParams.secRoles')}</li>
+            <li>{t('pages.systemParams.secHttps')}</li>
+            <li>{t('pages.systemParams.secFirewall')}</li>
           </ul>
         </div>
         <div className="system-params-security-warning">
-          <strong>Ограничения текущей версии:</strong> соединение по HTTP (без шифрования). Для удалённого доступа через интернет обязательно используйте VPN.
+          <strong>{t('pages.systemParams.secLimitsLead')}</strong> {t('pages.systemParams.secLimitsBody')}
         </div>
       </section>
 
@@ -383,26 +384,26 @@ const SystemParams = () => {
       <section className="system-params-section system-params-section-vpn">
         <h2>3. {t('pages.systemParams.section3')}</h2>
         <p className="system-params-intro">
-          VPN настраивается на <strong>роутере</strong> или на <strong>ПК в сети</strong>, не на контроллере. После подключения к VPN вы оказываетесь в локальной сети и можете открыть WebUI по адресу 192.168.1.x.
+          {t('pages.systemParams.vpnIntro')}
         </p>
         <div className="system-params-vpn-options">
           <h3>{t('pages.systemParams.section3options')}</h3>
           <ul>
-            <li><strong>VPN на роутере:</strong> если роутер поддерживает WireGuard или OpenVPN — включите VPN-сервер в веб-интерфейсе роутера, создайте пользователя/ключ. С телефона или ноутбука из другого города подключайтесь к этому VPN — затем откройте <code>http://IP_ПК:3000</code> и в «Подключение к контроллеру» укажите <code>http://IP_контроллера:порт</code>.</li>
-            <li><strong>VPN на ПК:</strong> на компьютере, где запущен WebUI, установите VPN-сервер (WireGuard, OpenVPN). На роутере настройте переадресацию порта VPN на этот ПК. С удалённого устройства подключайтесь к VPN по внешнему IP или динамическому DNS.</li>
-            <li><strong>Tailscale / ZeroTier:</strong> установите на ПК в сети и на устройство, с которого подключаетесь. Сервис создаёт зашифрованный туннель без настройки роутера. После подключения используйте тот же IP ПК (например 100.x.x.x в Tailscale), порт 3000.</li>
+            <li>{t('pages.systemParams.vpnRouter')}</li>
+            <li>{t('pages.systemParams.vpnPc')}</li>
+            <li>{t('pages.systemParams.vpnTailscale')}</li>
           </ul>
         </div>
         <div className="system-params-vpn-after">
           <h3>{t('pages.systemParams.section3after')}</h3>
           <ol>
-            <li>Откройте в браузере <code>http://IP_ПК_с_WebUI:3000</code> (IP — из локальной сети или из VPN, например Tailscale выдаёт свой IP).</li>
-            <li>Нажмите «Подключение к контроллеру» и укажите адрес контроллера (<code>http://192.168.1.50:80</code>).</li>
-            <li>Войдите (admin / admin или свои учётные данные).</li>
+            <li>{t('pages.systemParams.vpnAfter1')}</li>
+            <li>{t('pages.systemParams.vpnAfter2')}</li>
+            <li>{t('pages.systemParams.vpnAfter3')}</li>
           </ol>
         </div>
         <p className="system-params-note">
-          Подробная пошаговая инструкция — в документации <strong>REMOTE_TESTING.md</strong>, раздел «Доступ из другого города (VPN)».
+          {t('pages.systemParams.vpnDocNote')}
         </p>
       </section>
 
@@ -410,24 +411,24 @@ const SystemParams = () => {
       <section className="system-params-section">
         <h2>4. {t('pages.systemParams.section4')}</h2>
         <p className="system-params-intro">
-          Корректное время нужно для журнала событий. Hostname помогает идентифицировать устройство в сети.
+          {t('pages.systemParams.timeIntro')}
         </p>
         <div className="system-params-form">
           <div className="form-group">
-            <label htmlFor="ntpServer">NTP-сервер</label>
+            <label htmlFor="ntpServer">{t('pages.systemParams.ntpLabel')}</label>
             <input
               id="ntpServer"
               type="text"
               value={form.ntpServer}
               onChange={(e) => handleChange('ntpServer', e.target.value)}
-              placeholder="pool.ntp.org или ntp.company.local"
+              placeholder={t('pages.systemParams.ntpPlaceholder')}
               disabled={loading}
               className="form-input"
             />
-            <small>Сервер синхронизации времени. На предприятиях часто используется внутренний NTP (например ntp.company.local).</small>
+            <small>{t('pages.systemParams.ntpHint')}</small>
           </div>
           <div className="form-group">
-            <label htmlFor="hostname">Имя устройства (Hostname)</label>
+            <label htmlFor="hostname">{t('pages.systemParams.hostnameLabel')}</label>
             <input
               id="hostname"
               type="text"
@@ -437,10 +438,10 @@ const SystemParams = () => {
               disabled={loading}
               className="form-input form-input-narrow"
             />
-            <small>Имя для идентификации в сети (например: doors-controller-floor1). Используется в DNS и при поиске устройств.</small>
+            <small>{t('pages.systemParams.hostnameHint')}</small>
           </div>
           <div className="form-group">
-            <label htmlFor="timezone">Часовой пояс</label>
+            <label htmlFor="timezone">{t('pages.systemParams.timezoneLabel')}</label>
             <select
               id="timezone"
               value={form.timezone}
@@ -448,18 +449,18 @@ const SystemParams = () => {
               disabled={loading}
               className="form-input form-input-narrow"
             >
-              <option value="Asia/Jerusalem">Иерусалим (Asia/Jerusalem)</option>
-              <option value="Europe/Moscow">Москва (Europe/Moscow)</option>
-              <option value="Europe/Samara">Самара (Europe/Samara)</option>
-              <option value="Asia/Yekaterinburg">Екатеринбург (Asia/Yekaterinburg)</option>
-              <option value="Asia/Novosibirsk">Новосибирск (Asia/Novosibirsk)</option>
-              <option value="Asia/Vladivostok">Владивосток (Asia/Vladivostok)</option>
-              <option value="UTC">UTC</option>
+              <option value="Asia/Jerusalem">{t('pages.systemParams.tzJerusalem')}</option>
+              <option value="Europe/Moscow">{t('pages.systemParams.tzMoscow')}</option>
+              <option value="Europe/Samara">{t('pages.systemParams.tzSamara')}</option>
+              <option value="Asia/Yekaterinburg">{t('pages.systemParams.tzYekaterinburg')}</option>
+              <option value="Asia/Novosibirsk">{t('pages.systemParams.tzNovosibirsk')}</option>
+              <option value="Asia/Vladivostok">{t('pages.systemParams.tzVladivostok')}</option>
+              <option value="UTC">{t('pages.systemParams.tzUtc')}</option>
             </select>
-            <small>Для корректного отображения времени в журнале событий.</small>
+            <small>{t('pages.systemParams.timezoneHint')}</small>
           </div>
           <p className="system-params-note">
-            NTP, Hostname и часовой пояс будут сохранены при появлении поддержки в прошивке контроллера.
+            {t('pages.systemParams.timeNote')}
           </p>
         </div>
       </section>
@@ -469,27 +470,27 @@ const SystemParams = () => {
         <h2>5. {t('pages.systemParams.section5')}</h2>
         <div className="system-params-info-grid">
           <div className="system-params-info-item">
-            <span className="system-params-info-label">Текущий IP-адрес</span>
+            <span className="system-params-info-label">{t('pages.systemParams.infoIp')}</span>
             <span className="system-params-info-value">{ip}</span>
           </div>
           <div className="system-params-info-item">
-            <span className="system-params-info-label">Node ID</span>
+            <span className="system-params-info-label">{t('pages.systemParams.infoNodeId')}</span>
             <span className="system-params-info-value">{nodeId}</span>
           </div>
           <div className="system-params-info-item">
-            <span className="system-params-info-label">Время работы</span>
+            <span className="system-params-info-label">{t('pages.systemParams.infoUptime')}</span>
             <span className="system-params-info-value">{formatUptime(uptimeSeconds)}</span>
           </div>
           <div className="system-params-info-item">
-            <span className="system-params-info-label">Состояние сети</span>
+            <span className="system-params-info-label">{t('pages.systemParams.infoNet')}</span>
             <span className="system-params-info-value">
-              {stateData?.loading ? '…' : (state?.netReady ? 'Готово' : 'Не готово')}
+              {stateData?.loading ? t('pages.systemParams.ellipsis') : (state?.netReady ? t('pages.systemParams.netReady') : t('pages.systemParams.netNotReady'))}
             </span>
           </div>
           <div className="system-params-info-item">
-            <span className="system-params-info-label">Время контроллера (RTC)</span>
+            <span className="system-params-info-label">{t('pages.systemParams.infoRtc')}</span>
             <span className="system-params-info-value">
-              {timeLoading ? '…' : (controllerTime?.unix ? formatControllerTime(controllerTime.unix) : (timeError || 'Недоступно'))}
+              {timeLoading ? t('pages.systemParams.ellipsis') : (controllerTime?.unix ? formatControllerTime(controllerTime.unix) : (timeError || t('pages.systemParams.timeUnavailable')))}
             </span>
           </div>
         </div>
@@ -503,7 +504,7 @@ const SystemParams = () => {
             onClick={fetchControllerTime}
             disabled={timeLoading}
           >
-            Обновить
+            {t('pages.systemParams.refresh')}
           </Button>
           <Button
             type="button"
@@ -511,7 +512,7 @@ const SystemParams = () => {
             onClick={handleSyncTimeWithPc}
             disabled={timeSyncLoading || timeLoading}
           >
-            {timeSyncLoading ? 'Синхронизация…' : 'Синхронизировать с ПК'}
+            {timeSyncLoading ? t('pages.systemParams.syncing') : t('pages.systemParams.syncPc')}
           </Button>
         </div>
       </section>

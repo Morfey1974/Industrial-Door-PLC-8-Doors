@@ -59,7 +59,7 @@ const Doors = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['ID', 'Статус', 'Физически закрыта', 'Замок', 'Alarm', 'Открыта (сек)'].map((h) => (
+                  {['ID', t('pages.doors.colStatus'), t('pages.doors.colPhysClosed'), t('pages.doors.colLock'), 'Alarm', t('pages.doors.colOpenSeconds')].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '0.5rem', borderBottom: '1px solid var(--color-border)' }}>{h}</th>
                   ))}
                 </tr>
@@ -77,7 +77,7 @@ const Doors = () => {
               </tbody>
             </table>
             <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', opacity: 0.7 }}>
-              Ожидание ответа до 15 с. Проверьте подключение к контроллеру при долгой загрузке.
+              {t('pages.doors.loadingHint')}
             </p>
           </div>
         </div>
@@ -88,7 +88,7 @@ const Doors = () => {
         <div className="error-state">
           <h3>{t('pages.doors.errorLoad')}</h3>
           <p>{error}</p>
-          <p>Проверьте, что контроллер доступен по адресу: http://192.168.1.50</p>
+          <p>{t('pages.doors.errorCheckController')}</p>
           <Button variant="primary" onClick={() => refetch(false)}>
             {t('common.retryAgain')}
           </Button>
@@ -103,7 +103,7 @@ const Doors = () => {
           {error && doors && (
             <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
               <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                ⚠️ Ошибка автообновления: {error}. Данные могут быть устаревшими.
+                ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(error))}
               </p>
             </div>
           )}
@@ -113,7 +113,7 @@ const Doors = () => {
       {/* Нет данных - показываем только если нет данных и нет ошибки */}
       {!loading && !error && (!doors || !doors.doors || doors.doors.length === 0) && (
         <div className="no-data-state">
-          <p>Нет данных о дверях</p>
+          <p>{t('pages.doors.noData')}</p>
         </div>
       )}
     </div>

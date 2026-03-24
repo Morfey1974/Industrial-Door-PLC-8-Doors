@@ -30,9 +30,9 @@ const Alarms = () => {
       {!loading && !error && doors && (
         <div className="alarms-info alarms-info-row">
           <span className="alarms-info-text">
-            Дверей с аварией: <strong>{alarmingDoors.length}</strong>
+            {t('pages.alarms.doorsWithAlarm')}: <strong>{alarmingDoors.length}</strong>
             {doors.doors?.length > 0 && (
-              <span className="alarms-info-total"> из {doors.doors.length} всего</span>
+              <span className="alarms-info-total"> {t('pages.alarms.ofTotal').replace('{count}', String(doors.doors.length))}</span>
             )}
           </span>
           <Button variant="secondary" size="small" onClick={() => refetch(false)}>
@@ -43,7 +43,7 @@ const Alarms = () => {
 
       {loading && !doors && (
         <div className="loading-state">
-          <p>Загрузка данных о дверях…</p>
+          <p>{t('pages.doors.loadingDoors')}</p>
         </div>
       )}
 
@@ -63,9 +63,9 @@ const Alarms = () => {
             <DoorTable doors={{ doors: alarmingDoors }} filters={{ status: 'alarm' }} />
           ) : (
             <div className="no-data-state">
-              <p>Нет активных аварий</p>
+              <p>{t('pages.alarms.noActive')}</p>
               <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', opacity: 0.8 }}>
-                Все двери в норме. При появлении аварии (например, дверь открыта слишком долго) запись появится здесь.
+                {t('pages.alarms.noActiveHint')}
               </p>
             </div>
           )}
@@ -74,7 +74,7 @@ const Alarms = () => {
 
       {!loading && !error && (!doors || !doors.doors || doors.doors.length === 0) && (
         <div className="no-data-state">
-          <p>Нет данных о дверях</p>
+          <p>{t('pages.doors.noData')}</p>
         </div>
       )}
     </div>

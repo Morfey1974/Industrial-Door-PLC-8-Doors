@@ -6,9 +6,57 @@
 import { memo } from 'react';
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
-import { getDoorStatusText, formatUptime, formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
+import { formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
+import { useLanguage } from '../../context/LanguageContext';
+
+/* Человекочитаемая расшифровка bitmask alarmReasons из прошивки.
+ * Биты:
+ * - 0x1: manual alarm (кнопка Alarm)
+ * - 0x2: open timeout (дверь слишком долго открыта)
+ */
+const formatAlarmReasons = (alarmReasons, t) => {
+  const val = Number(alarmReasons) || 0;
+  if (val === 0) return '—';
+
+  const reasons = [];
+  if (val & 0x1) reasons.push(t('pages.doors.alarmReasonManual'));
+  if (val & 0x2) reasons.push(t('pages.doors.alarmReasonOpenTimeout'));
+
+  /* На случай будущих причин (новые биты), чтобы не терять информацию. */
+  const knownMask = 0x1 | 0x2;
+  const unknown = val & ~knownMask;
+  if (unknown) reasons.push(`UNKNOWN(0x${unknown.toString(16).toUpperCase()})`);
+
+  return reasons.join(' + ');
+};
+
+/* Локализованный формат длительности для колонки "Открыта (сек)". */
+const formatOpenDuration = (seconds, t) => {
+  const total = Number(seconds) || 0;
+  if (total <= 0) return '—';
+
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}${t('pages.doors.timeUnitDays')}`);
+  if (hours > 0) parts.push(`${hours}${t('pages.doors.timeUnitHours')}`);
+  if (minutes > 0) parts.push(`${minutes}${t('pages.doors.timeUnitMinutes')}`);
+  if (secs > 0 && parts.length === 0) parts.push(`${secs}${t('pages.doors.timeUnitSeconds')}`);
+  return parts.join(' ');
+};
+
+const getDoorStatusTextLocalized = (door, t) => {
+  if (door.alarming) return t('pages.doors.statusAlarm');
+  if (!door.physClosed) return t('pages.doors.statusOpen');
+  if (door.locked) return t('pages.doors.statusLocked');
+  return t('pages.doors.statusClosed');
+};
 
 const DoorTable = memo(({ doors, filters = {} }) => {
+  const { t } = useLanguage();
   if (!doors || !doors.doors || doors.doors.length === 0) {
     return <p>Нет данных о дверях</p>;
   }
@@ -49,13 +97,12 @@ const DoorTable = memo(({ doors, filters = {} }) => {
   // Определяем колонки таблицы
   const columns = [
     { key: 'id', label: 'ID' },
-    { key: 'status', label: 'Статус' },
-    { key: 'physClosed', label: 'Физически закрыта' },
-    { key: 'locked', label: 'Замок' },
+    { key: 'status', label: t('pages.doors.colStatus') },
+    { key: 'physClosed', label: t('pages.doors.colPhysClosed') },
+    { key: 'locked', label: t('pages.doors.colLock') },
     { key: 'alarming', label: 'Alarm' },
-    { key: 'alarmReasons', label: 'Причины аварии' },
-    { key: 'openSeconds', label: 'Открыта (сек)' },
-    { key: 'closeDelay', label: 'Задержка закрытия (сек)' },
+    { key: 'alarmReasons', label: t('pages.doors.colAlarmReasons') },
+    { key: 'openSeconds', label: t('pages.doors.colOpenSeconds') },
   ];
 
   const rowFromDoor = (door) => ({
@@ -63,25 +110,24 @@ const DoorTable = memo(({ doors, filters = {} }) => {
     status: (
       <StatusBadge
         status={door.alarming ? 'alarm' : !door.physClosed ? 'open' : door.locked ? 'locked' : 'normal'}
-        label={getDoorStatusText(door)}
+        label={getDoorStatusTextLocalized(door, t)}
       />
     ),
-    physClosed: door.physClosed ? 'Да' : 'Нет',
-    locked: door.locked ? 'Заблокирована' : 'Разблокирована',
+    physClosed: door.physClosed ? t('pages.doors.yes') : t('pages.doors.no'),
+    locked: door.locked ? t('pages.doors.lockedValue') : t('pages.doors.unlockedValue'),
     alarming: door.alarming ? (
       <StatusBadge status="alarm" label="Alarm" />
     ) : (
-      <StatusBadge status="normal" label="Норма" />
+      <StatusBadge status="normal" label={t('pages.doors.normal')} />
     ),
-    alarmReasons: door.alarmReasons ? `0x${door.alarmReasons.toString(16)}` : '—',
-    openSeconds: door.openSeconds > 0 ? formatUptime(door.openSeconds) : '—',
-    closeDelay: door.closeDelayRemainingSeconds > 0 ? door.closeDelayRemainingSeconds : '—',
+    alarmReasons: formatAlarmReasons(door.alarmReasons, t),
+    openSeconds: formatOpenDuration(door.openSeconds, t),
   });
 
   if (filteredDoors.length === 0) {
     return (
       <div className="door-table">
-        <p className="no-results">Нет дверей, соответствующих выбранным фильтрам</p>
+        <p className="no-results">{t('pages.doors.noMatchingDoors')}</p>
       </div>
     );
   }
@@ -91,11 +137,10 @@ const DoorTable = memo(({ doors, filters = {} }) => {
       {sortedNodeIds.map((nodeId) => {
         const nodeDoors = doorsByNode[nodeId];
         const tableData = nodeDoors.map(rowFromDoor);
-        const label = nodeDoors.length === 1 ? 'дверь' : 'дверей';
         return (
           <div key={nodeId} className="door-table-node-section" style={{ marginBottom: '24px' }}>
             <h3 className="door-table-node-title" style={{ marginBottom: '10px', fontSize: '16px', fontWeight: '600' }}>
-              Плата {nodeId} ({nodeDoors.length} {label})
+              {t('pages.doors.boardTitle').replace('{id}', String(nodeId))} ({nodeDoors.length} {nodeDoors.length === 1 ? t('pages.doors.oneDoor') : t('pages.doors.manyDoors')})
             </h3>
             <Table columns={columns} data={tableData} className="doors-table" />
           </div>
