@@ -205,8 +205,25 @@ const Mapping = () => {
   const doLoadFromController = useCallback(async () => {
     try {
       const data = await getMapping();
+      /* Критерий "карта не обнаружена":
+         backend возвращает дефолтный пустой JSON, когда в QSPI нет сохранённой карты.
+         В этом случае важно не перетирать текущую карту в редакторе и показать пользователю
+         понятное сообщение, что на контроллере нет данных для загрузки. */
+      const objects = Array.isArray(data?.objects) ? data.objects : [];
+      const viewport = data?.viewport || {};
+      const isDefaultViewport =
+        (viewport.x ?? 0) === 0 &&
+        (viewport.y ?? 0) === 0 &&
+        (viewport.zoom ?? 1) === 1;
+      const projectName = typeof data?.projectName === 'string' ? data.projectName.trim() : '';
+      const mappingNotFound = objects.length === 0 && projectName.length === 0 && isDefaultViewport;
+
+      if (mappingNotFound) {
+        return { success: false, notFound: true };
+      }
+
       if (data && data.objects) {
-        setObjects(Array.isArray(data.objects) ? data.objects : []);
+        setObjects(objects);
         if (data.viewport) setViewport({ x: data.viewport.x ?? 0, y: data.viewport.y ?? 0, zoom: data.viewport.zoom ?? 1 });
         if (data.projectName != null) setProjectName(data.projectName);
         setIsDirty(false);
@@ -231,6 +248,14 @@ const Mapping = () => {
     const confirmed = await showConfirm(message, 'Загрузить карту из контроллера');
     if (!confirmed) return;
     const result = await doLoadFromController();
+    if (result?.notFound) {
+      setInfoModal({
+        isOpen: true,
+        title: 'Карта не найдена',
+        message: 'На контроллере карта маппинга не обнаружена.',
+      });
+      return;
+    }
     if (result?.success) {
       savedFileHandleRef.current = null; // карта из контроллера — следующее сохранение через диалог
       setInfoModal({ isOpen: true, title: 'Готово', message: 'Карта загружена из контроллера.' });

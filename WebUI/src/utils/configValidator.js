@@ -58,8 +58,8 @@ export const validateConfig = (config, options = {}) => {
   if (!config.doors || !Array.isArray(config.doors)) {
     errors.push(tr(t, 'doorsMustBeArray', null, 'Список дверей должен быть массивом'));
   } else {
-    if (config.doors.length > 32) {
-      errors.push(tr(t, 'doorsTooMany', null, 'Количество дверей не может превышать 32'));
+    if (config.doors.length > 40) {
+      errors.push(tr(t, 'doorsTooMany', null, 'Количество дверей не может превышать 40'));
     }
 
     const techIds = new Set();
@@ -95,8 +95,9 @@ export const validateConfig = (config, options = {}) => {
       }
 
       if (door.globalDoorId) {
-        if (door.globalDoorId < 1 || door.globalDoorId > 32) {
-          errors.push(`${doorPrefix}${tr(t, 'doorGlobalIdRange', null, 'GlobalDoorId должен быть от 1 до 32')}`);
+        /* Совпадает с глобальным масштабом прошивки (1..80). */
+        if (door.globalDoorId < 1 || door.globalDoorId > 80) {
+          errors.push(`${doorPrefix}${tr(t, 'doorGlobalIdRange', null, 'GlobalDoorId должен быть от 1 до 80')}`);
         }
         if (globalDoorIds.has(door.globalDoorId)) {
           errors.push(`${doorPrefix}${tr(t, 'doorGlobalIdDuplicate', { id: door.globalDoorId }, 'GlobalDoorId {id} уже используется')}`);
@@ -123,12 +124,12 @@ export const validateConfig = (config, options = {}) => {
     config.edges.forEach((edge, index) => {
       const edgePrefix = tr(t, 'edgePrefix', { n: index + 1 }, 'Зависимость #{n}: ');
 
-      if (!edge.srcGlobalDoorId || edge.srcGlobalDoorId < 1 || edge.srcGlobalDoorId > 32) {
-        errors.push(`${edgePrefix}${tr(t, 'edgeSrcRange', null, 'srcGlobalDoorId должен быть от 1 до 32')}`);
+      if (!edge.srcGlobalDoorId || edge.srcGlobalDoorId < 1 || edge.srcGlobalDoorId > 80) {
+        errors.push(`${edgePrefix}${tr(t, 'edgeSrcRange', null, 'srcGlobalDoorId должен быть от 1 до 80')}`);
       }
 
-      if (!edge.dstGlobalDoorId || edge.dstGlobalDoorId < 1 || edge.dstGlobalDoorId > 32) {
-        errors.push(`${edgePrefix}${tr(t, 'edgeDstRange', null, 'dstGlobalDoorId должен быть от 1 до 32')}`);
+      if (!edge.dstGlobalDoorId || edge.dstGlobalDoorId < 1 || edge.dstGlobalDoorId > 80) {
+        errors.push(`${edgePrefix}${tr(t, 'edgeDstRange', null, 'dstGlobalDoorId должен быть от 1 до 80')}`);
       }
 
       if (edge.srcGlobalDoorId === edge.dstGlobalDoorId) {

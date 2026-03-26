@@ -34,14 +34,36 @@
 
 #ifndef HTTP_BODY_MAX
 /* Max JSON body size for PUT /api/config (draft merge upload).
- * Увеличено до 8192 для поддержки конфигураций на 16 дверей (MASTER + SLAVE).
- * Конфигурация на 16 дверей может занимать ~2500-3000 байт JSON.
+ * 40 дверей в текущем формате обычно укладываются до ~5-6 КБ.
  */
 #define HTTP_BODY_MAX 8192
 #endif
 
+/* Буфер тела ответа для GET (в т.ч. /api/config/full). */
+#ifndef HTTP_GET_RESPONSE_MAX
+#define HTTP_GET_RESPONSE_MAX 8192
+#endif
+
 static int s_listen_fd = -1;
 static uint16_t s_listen_port = 0;
+
+void HttpServer_Deinit(void)
+{
+    /* Закрываем listen-сокет, чтобы при возврате линка можно было
+     * безопасно поднять сервер заново без перезапуска контроллера.
+     * shutdown перед close ускоряет освобождение локального порта в lwIP.
+     */
+    if (s_listen_fd >= 0) {
+        (void)lwip_shutdown(s_listen_fd, SHUT_RDWR);
+        (void)lwip_close(s_listen_fd);
+        s_listen_fd = -1;
+    }
+}
+
+uint8_t HttpServer_IsReady(void)
+{
+    return (s_listen_fd >= 0) ? 1U : 0U;
+}
 
 static void http_send_simple(int fd, int code, const char *ctype, const char *body)
 {
@@ -344,13 +366,13 @@ void HttpServer_Init(uint16_t port)
 {
     s_listen_port = port;
 
-    if (s_listen_fd >= 0) {
-        (void)lwip_close(s_listen_fd);
-        s_listen_fd = -1;
-    }
+    /* На re-init всегда начинаем с "чистого" состояния сокета. */
+    HttpServer_Deinit();
 
     s_listen_fd = lwip_socket(AF_INET, SOCK_STREAM, 0);
     if (s_listen_fd < 0) {
+        /* Всегда в лог: без этого после link flap «тишина», а WebUI не подключается. */
+        AppLog("HTTP: socket() failed errno=%d", errno);
         return;
     }
 
@@ -364,16 +386,20 @@ void HttpServer_Init(uint16_t port)
     addr.sin_addr.s_addr = PP_HTONL(INADDR_ANY);
 
     if (lwip_bind(s_listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        AppLog("HTTP: bind(%u) failed errno=%d", (unsigned)port, errno);
         (void)lwip_close(s_listen_fd);
         s_listen_fd = -1;
         return;
     }
 
     if (lwip_listen(s_listen_fd, 2) < 0) {
+        AppLog("HTTP: listen() failed errno=%d", errno);
         (void)lwip_close(s_listen_fd);
         s_listen_fd = -1;
         return;
     }
+
+    AppLog("HTTP: listen OK port=%u fd=%d", (unsigned)port, s_listen_fd);
 }
 
 void HttpServer_PollOnce(uint32_t timeout_ms)
@@ -391,6 +417,15 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 
     int sel = lwip_select(s_listen_fd + 1, &rfds, NULL, NULL, (timeout_ms == 0U) ? NULL : &tv);
     if (sel <= 0) {
+        /* При ошибке select (sel < 0) сервер может остаться в "битом" состоянии
+         * после link flap. Закрываем listen-сокет, чтобы HttpTask сделал re-init.
+         */
+        if (sel < 0) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+            AppLog("HTTP: select(listen) error errno=%d -> deinit", errno);
+#endif
+            HttpServer_Deinit();
+        }
         return; /* timeout или ошибка */
     }
 
@@ -398,6 +433,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     socklen_t clilen = sizeof(cli);
     int cfd = lwip_accept(s_listen_fd, (struct sockaddr *)&cli, &clilen);
     if (cfd < 0) {
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
+        AppLog("HTTP: accept() failed errno=%d", errno);
+#endif
         return;
     }
 
@@ -492,7 +530,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     }
 
     if (strcmp(method, "GET") == 0) {
-        char body[8192];
+        char body[HTTP_GET_RESPONSE_MAX];
         memset(body, 0, sizeof(body));
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         AppLog("HTTP: building response for %s", path);
@@ -694,9 +732,12 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 
         (void)lwip_close(cfd);
 
-        /* После успешной записи конфигурации — автосброс, чтобы конфиг вступил в силу при загрузке. */
+        /* После критичных операций (apply config / clear flash) — автосброс,
+         * чтобы изменения консистентно вступили в силу при загрузке. */
         if (api_code == 200 &&
-            (strcmp(path, "/api/config") == 0 || strcmp(path, "/api/config/full") == 0) &&
+            (strcmp(path, "/api/config") == 0 ||
+             strcmp(path, "/api/config/full") == 0 ||
+             strcmp(path, "/api/flash/clear") == 0) &&
             HttpApi_ConfigApplyRequestsReboot()) {
             HttpApi_ClearRebootRequest();
             osDelay(200);
@@ -837,6 +878,15 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             http_send_simple(cfd, api_code, "application/json", resp);
         }
         (void)lwip_close(cfd);
+
+        /* После полной очистки flash — автосброс для консистентного re-init всех сервисов. */
+        if (api_code == 200 &&
+            strcmp(path, "/api/flash/clear") == 0 &&
+            HttpApi_ConfigApplyRequestsReboot()) {
+            HttpApi_ClearRebootRequest();
+            osDelay(200);
+            HAL_NVIC_SystemReset();
+        }
         return;
     }
 

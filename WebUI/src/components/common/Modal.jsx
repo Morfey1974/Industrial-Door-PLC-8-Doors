@@ -17,6 +17,7 @@ const Modal = ({
   onCancel,
   onClose, // Новый проп для закрытия модалки с произвольным содержимым
   children, // Поддержка произвольного содержимого
+  contentClassName = '', // Доп. CSS-класс для точечной настройки размера/вида конкретной модалки
 }) => {
   const [inputValue, setInputValue] = useState(defaultValue);
   const inputRef = useRef(null);
@@ -95,7 +96,9 @@ const Modal = ({
 
   const modalContent = (
     <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      {/* Позволяет отдельным экранам (например, очистка флэш) расширять модалку
+          без изменения базового стиля всех остальных модальных окон. */}
+      <div className={`modal-content ${contentClassName}`.trim()} onClick={(e) => e.stopPropagation()}>
         {title && (
           <div className="modal-header">
             <h3>{title}</h3>

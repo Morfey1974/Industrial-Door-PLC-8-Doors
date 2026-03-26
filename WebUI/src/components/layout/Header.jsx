@@ -3,7 +3,7 @@
  * Статусы Сеть, Link, IP и сообщение об ошибке связи — в шапке на всех страницах
  */
 
-import { useContext, useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { useStateData } from '../../context/StateDataContext';
@@ -27,26 +27,48 @@ const Header = () => {
   const { tryNavigate } = useLeaveConfirm();
   const { t, language, setLanguage } = useLanguage();
   const { data: state, loading: stateLoading, error: stateError, refetch: refetchState } = useStateData();
+  const [browserOffline, setBrowserOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const goHome = () => (tryNavigate || navigate)('/');
 
   const refetchRef = useRef(refetchState);
   refetchRef.current = refetchState;
 
   useEffect(() => {
-    const onOnline = () => refetchRef.current(true);
+    /* Браузерные online/offline события позволяют быстрее подсветить шапку,
+     * не дожидаясь таймаута API запроса /state.
+     */
+    const onOnline = () => {
+      setBrowserOffline(false);
+      refetchRef.current(true, true);
+    };
+    const onOffline = () => {
+      setBrowserOffline(true);
+      refetchRef.current(true, true);
+    };
     window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
   }, []);
 
   useAutoRefresh(() => refetchState(true), 2000);
 
-  const handleRetry = () => refetchState(false);
+  const handleRetry = () => {
+    /* В момент "Нет связи" часто висит предыдущий запрос /state (таймаут/ожидание).
+     * Обычный refetch в этом случае может быть проигнорирован защитой от параллельных запросов.
+     * Force-режим принудительно прерывает текущий запрос и запускает новый.
+     */
+    setBrowserOffline(false);
+    refetchState(false, true);
+  };
 
   const handleLogout = async () => {
     await logout();
   };
 
-  const offline = !!stateError;
+  const offline = browserOffline || !!stateError;
   const netReady = offline ? false : (state?.netReady ?? false);
   const linkUp = offline ? false : (state?.linkUp ?? false);
 

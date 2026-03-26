@@ -9,6 +9,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
+import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
 import './Monitoring.css';
 
 const Doors = () => {
@@ -20,6 +21,7 @@ const Doors = () => {
 
   // Состояние дверей — общий кэш с Дашбордом (при переходе с Дашборда данные уже есть)
   const { data: doors, loading, error, refetch } = useDoorsData();
+  const errorText = mapApiErrorToUiMessage(error, t);
 
   // Автообновление каждые 2.5 с (тихое обновление без показа loading)
   useAutoRefresh(() => {
@@ -87,7 +89,7 @@ const Doors = () => {
       {error && !doors && (
         <div className="error-state">
           <h3>{t('pages.doors.errorLoad')}</h3>
-          <p>{error}</p>
+          <p>{errorText}</p>
           <p>{t('pages.doors.errorCheckController')}</p>
           <Button variant="primary" onClick={() => refetch(false)}>
             {t('common.retryAgain')}
@@ -103,7 +105,7 @@ const Doors = () => {
           {error && doors && (
             <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
               <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(error))}
+                ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(errorText))}
               </p>
             </div>
           )}

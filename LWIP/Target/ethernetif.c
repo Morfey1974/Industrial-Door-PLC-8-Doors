@@ -30,11 +30,52 @@
 #include <string.h>
 #include "cmsis_os.h"
 #include "lwip/tcpip.h"
+#include "lwip/err.h"
+#include <stdio.h>
 
 /* Within 'USER CODE' section, code will be kept by default at each generation */
 /* USER CODE BEGIN 0 */
+#include "net_link_signal.h"
 
+/* Синхронизация netif только из tcpip_thread (tcpip_callback), без LOCK_TCPIP_CORE из EthLink:
+ * иначе при нагрузке возможны долгие блокировки стека и «заморозка» всего, что завязан на сеть/COMMS.
+ * Два статических контекста — чтобы down и up могли стоять в очереди mbox подряд без перезаписи полей. */
+typedef struct {
+  struct netif *netif;
+  uint8_t set_lw_link_up; /* 0: netif+link down + Notify(0); 1: netif+link up + Notify(1) */
+} eth_netif_tcpip_ctx_t;
 
+static eth_netif_tcpip_ctx_t s_eth_tcpip_down_ctx;
+static eth_netif_tcpip_ctx_t s_eth_tcpip_up_ctx;
+
+static void eth_netif_tcpip_sync_fn(void *ctx)
+{
+  eth_netif_tcpip_ctx_t *c = (eth_netif_tcpip_ctx_t *)ctx;
+  if (c == NULL || c->netif == NULL) {
+    return;
+  }
+  if (c->set_lw_link_up == 0U) {
+    netif_set_down(c->netif);
+    netif_set_link_down(c->netif);
+    NetLink_NotifyPhyEdge(0);
+  } else {
+    netif_set_up(c->netif);
+    netif_set_link_up(c->netif);
+    NetLink_NotifyPhyEdge(1);
+  }
+}
+
+static void eth_schedule_netif_lw_sync(struct netif *netif, uint8_t set_link_up)
+{
+  eth_netif_tcpip_ctx_t *slot = (set_link_up != 0U) ? &s_eth_tcpip_up_ctx : &s_eth_tcpip_down_ctx;
+  slot->netif = netif;
+  slot->set_lw_link_up = set_link_up;
+  if (tcpip_callback(eth_netif_tcpip_sync_fn, slot) != ERR_OK) {
+    printf("ETH: tcpip_callback(netif %s) failed, retry\r\n", set_link_up ? "up" : "down");
+    osDelay(20);
+    (void)tcpip_callback(eth_netif_tcpip_sync_fn, slot);
+  }
+}
 /* USER CODE END 0 */
 
 /* Private define ------------------------------------------------------------*/
@@ -812,13 +853,20 @@ void ethernet_link_thread(void* argument)
 
   for(;;)
   {
+/* USER CODE BEGIN ETH_link_thread_each_iter */
+  /* КРИТИЧНО: сбрасывать каждый проход цикла (баг шаблона CubeMX).
+   * Иначе linkchanged остаётся 1 после первого UP, повторный подъём линка ломается. */
+  linkchanged = 0U;
+/* USER CODE END ETH_link_thread_each_iter */
+
   PHYLinkState = LAN8742_GetLinkState(&LAN8742);
 
-  if(netif_is_link_up(netif) && (PHYLinkState <= LAN8742_STATUS_LINK_DOWN))
+  /* Только явный LINK_DOWN. Условие «<= LINK_DOWN» из шаблона CubeMX ловит READ_ERROR/другие
+   * отрицательные коды MDIO — ложный down, HAL_ETH_Stop и обрушение всей сети/логики на платах. */
+  if (netif_is_link_up(netif) && (PHYLinkState == LAN8742_STATUS_LINK_DOWN))
   {
     HAL_ETH_Stop_IT(&heth);
-    netif_set_down(netif);
-    netif_set_link_down(netif);
+    eth_schedule_netif_lw_sync(netif, 0U);
   }
   else if(!netif_is_link_up(netif) && (PHYLinkState > LAN8742_STATUS_LINK_DOWN))
   {
@@ -856,9 +904,17 @@ void ethernet_link_thread(void* argument)
       MACConf.DuplexMode = duplex;
       MACConf.Speed = speed;
       HAL_ETH_SetMACConfig(&heth, &MACConf);
-      HAL_ETH_Start_IT(&heth);
-      netif_set_up(netif);
-      netif_set_link_up(netif);
+      if (HAL_ETH_Start_IT(&heth) != HAL_OK)
+      {
+        /* Вернуть драйвер в READY, иначе следующие итерации снова не смогут Start — «линк UP в логе, МК мёртв». */
+        printf("ETH: HAL_ETH_Start_IT failed (gState=%u) -> Stop_IT\r\n",
+               (unsigned)HAL_ETH_GetState(&heth));
+        (void)HAL_ETH_Stop_IT(&heth);
+      }
+      else
+      {
+        eth_schedule_netif_lw_sync(netif, 1U);
+      }
     }
   }
 

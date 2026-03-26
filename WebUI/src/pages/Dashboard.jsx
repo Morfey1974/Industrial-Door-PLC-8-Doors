@@ -7,10 +7,12 @@ import useAutoRefresh from '../hooks/useAutoRefresh';
 import { useDoorsData } from '../context/DoorsDataContext';
 import { useLanguage } from '../context/LanguageContext';
 import DoorsOverview from '../components/ui/DoorsOverview';
+import { mapApiErrorToUiMessage } from '../utils/apiErrorI18n';
 
 const Dashboard = () => {
   const { t } = useLanguage();
   const { data: doors, loading: doorsLoading, error: doorsError, refetch: refetchDoors } = useDoorsData();
+  const doorsErrorText = mapApiErrorToUiMessage(doorsError, t);
 
   useAutoRefresh(() => refetchDoors(true), 2500);
 
@@ -30,7 +32,7 @@ const Dashboard = () => {
         {doorsLoading && <p className="loading-inline">{t('common.loading')}</p>}
         {doorsError && (
           <div className="error">
-            <p>{t('pages.dashboard.errorDoors')}: {doorsError}</p>
+            <p>{t('pages.dashboard.errorDoors')}: {doorsErrorText}</p>
           </div>
         )}
         {!doorsLoading && !doorsError && doors && <DoorsOverview doors={doors} />}

@@ -29,6 +29,7 @@ import {
   setCurrentConfigName
 } from '../../utils/configStorage';
 import { validateConfig } from '../../utils/configValidator';
+import { PUT_CONFIG_FULL_MAX_JSON_BYTES } from '../../utils/constants';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import './DoorsConfig.css';
@@ -808,7 +809,7 @@ const DoorsConfig = () => {
 
     const doorCount = config.doors?.length ?? 0;
     const edgeCount = config.edges?.length ?? 0;
-    const LIMIT_DOORS_V1 = 32;
+    const LIMIT_DOORS_V1 = 40;
     const LIMIT_EDGES_V1 = 64;
     const LIMIT_POST_CLOSE_V1 = 32;
 
@@ -883,8 +884,13 @@ const DoorsConfig = () => {
 
       const jsonString = JSON.stringify(fullConfig);
       const jsonSize = new Blob([jsonString]).size;
-      if (jsonSize > 4096) {
-        setError(t('pages.config.errJsonTooLarge', { size: String(jsonSize) }));
+      if (jsonSize > PUT_CONFIG_FULL_MAX_JSON_BYTES) {
+        setError(
+          t('pages.config.errJsonTooLarge', {
+            size: String(jsonSize),
+            max: String(PUT_CONFIG_FULL_MAX_JSON_BYTES),
+          })
+        );
         setSaving(false);
         return;
       }

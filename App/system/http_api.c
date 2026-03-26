@@ -16,12 +16,17 @@ extern osThreadId_t httpTaskHandle;
 #include "log/event_journal.h"
 #include "system_node.h"
 #include "net_service.h"
+#include "can_task.h"
 
 #include "config/config_format.h"
+#include "config/config_layout.h"
+#include "config/users_format.h"
 #include "config/mapping_storage_qspi.h"
 #include "logic/logic_deps.h"
 #include "logic/global_door_id.h"
 #include "logic/logic_core.h"
+#include "qspi_bringup.h"
+#include "system/app_qspi_lock.h"
 
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
@@ -126,17 +131,18 @@ static uint8_t jw_appendf(jsonw_t *w, const char *fmt, ...)
     return 1U;
 }
 
-/* Флаг: после успешной записи конфигурации запросить сброс (HTTP‑сервер делает HAL_NVIC_SystemReset). */
-static volatile uint8_t s_reboot_after_config_apply = 0;
+/* Флаг: после критичных операций (apply config / clear flash) запросить сброс.
+ * HTTP‑сервер выполняет HAL_NVIC_SystemReset после отправки ответа 200. */
+static volatile uint8_t s_reboot_requested = 0;
 
 int HttpApi_ConfigApplyRequestsReboot(void)
 {
-    return s_reboot_after_config_apply ? 1 : 0;
+    return s_reboot_requested ? 1 : 0;
 }
 
 void HttpApi_ClearRebootRequest(void)
 {
-    s_reboot_after_config_apply = 0;
+    s_reboot_requested = 0;
 }
 
 void HttpApi_GetCorsOrigin(char *buf, size_t sz)
@@ -732,6 +738,222 @@ static uint8_t check_super_admin_access(const char *username)
     return (role == USER_ROLE_SUPER_ADMIN) ? 1U : 0U;
 }
 
+/* Стереть диапазон QSPI по 4K-секторам.
+ * Выполняется в контексте HTTP-задачи; между секторами отдаём CPU, чтобы
+ * не «подвешивать» остальные задачи при длительной очистке. */
+static uint8_t erase_qspi_region_4k(uint32_t base, uint32_t size)
+{
+    if ((size == 0U) || ((size % QSPI_SECTOR_SIZE) != 0U))
+        return 0U;
+
+    const uint32_t sectors = size / QSPI_SECTOR_SIZE;
+    for (uint32_t i = 0U; i < sectors; i++)
+    {
+        const uint32_t addr = base + i * QSPI_SECTOR_SIZE;
+        AppQspiLock_Lock();
+        HAL_StatusTypeDef rc = QSPI_Flash_Erase4K(addr);
+        AppQspiLock_Unlock();
+        if (rc != HAL_OK)
+            return 0U;
+
+        if ((i & 0x07U) == 0U)
+            osDelay(1U);
+    }
+    return 1U;
+}
+
+/* Детализация данных во flash для UI-сканирования.
+ * Биты маски:
+ *  - b0: config (slot A/B),
+ *  - b1: mapping,
+ *  - b2: journal/statistics,
+ *  - b3: users db.
+ *
+ * Важно: users db считаем служебным разделом. Для признака "пользовательские данные"
+ * в UI используем только config+mapping+journal. */
+static uint8_t local_flash_data_mask_http(void)
+{
+    uint8_t mask = 0U;
+    /* mapping */
+    {
+        uint8_t hdr[8];
+        const uint32_t mapping_magic = 0x4D415050u; /* "MAPP" */
+        AppQspiLock_Lock();
+        HAL_StatusTypeDef rc = QSPI_Flash_Read(QSPI_MAPPING_BASE, hdr, sizeof(hdr));
+        AppQspiLock_Unlock();
+        if (rc == HAL_OK) {
+            uint32_t magic = (uint32_t)hdr[0] | ((uint32_t)hdr[1] << 8) |
+                             ((uint32_t)hdr[2] << 16) | ((uint32_t)hdr[3] << 24);
+            uint32_t len = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
+                           ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
+            if (magic == mapping_magic && len > 0U && len <= MAPPING_STORAGE_MAX_LEN)
+                mask |= (1U << 1); /* mapping */
+        }
+    }
+    /* users */
+    {
+        uint32_t h[2] = {0U, 0U};
+        AppQspiLock_Lock();
+        HAL_StatusTypeDef rc = QSPI_Flash_Read(QSPI_USERS_DB_BASE, (uint8_t *)h, sizeof(h));
+        AppQspiLock_Unlock();
+        if (rc == HAL_OK && h[0] == USERS_DB_MAGIC && h[1] == USERS_FORMAT_VERSION)
+            mask |= (1U << 3); /* users db */
+    }
+    /* config slots */
+    {
+        uint32_t a = 0U, b = 0U;
+        const uint32_t cfg_magic = 0x49444346u; /* IDCF */
+        AppQspiLock_Lock();
+        HAL_StatusTypeDef rca = QSPI_Flash_Read(QSPI_CFG_SLOT_A_BASE, (uint8_t *)&a, sizeof(a));
+        HAL_StatusTypeDef rcb = QSPI_Flash_Read(QSPI_CFG_SLOT_B_BASE, (uint8_t *)&b, sizeof(b));
+        AppQspiLock_Unlock();
+        if ((rca == HAL_OK && a == cfg_magic) || (rcb == HAL_OK && b == cfg_magic))
+            mask |= (1U << 0); /* config */
+    }
+    /* journal */
+    {
+        journal_stats_t st;
+        memset(&st, 0, sizeof(st));
+        EventJournal_GetStats(&st);
+        if (st.total_records > 0U)
+            mask |= (1U << 2); /* journal */
+    }
+    return mask;
+}
+
+static int post_flash_scan(const char *current_user, char *out_body, size_t out_sz)
+{
+    if (!check_super_admin_access(current_user))
+    {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    if (System_GetRole() != APP_ROLE_MASTER)
+    {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Flash scan allowed only on MASTER\"}");
+        return 409;
+    }
+
+    jsonw_t w;
+    jw_init(&w, out_body, out_sz);
+    if (!jw_appendf(&w, "{\"ok\":1,\"boards\":["))
+        return 500;
+
+    uint8_t first = 1U;
+    for (uint8_t nodeId = 1U; nodeId <= APP_MAX_NODES; nodeId++)
+    {
+        uint8_t online = (nodeId == 1U) ? 1U : CanTask_MasterIsNodeOnline(nodeId);
+        if (!online) continue;
+
+        uint8_t data_mask = 0U;
+        uint8_t scan_ok = 1U;
+        if (nodeId == 1U)
+        {
+            data_mask = local_flash_data_mask_http();
+        }
+        else
+        {
+            scan_ok = CanTask_MasterFlashScanNode(nodeId, &data_mask);
+            if (!scan_ok) data_mask = (uint8_t)((1U << 0) | (1U << 1) | (1U << 2)); /* fail-safe */
+        }
+
+        const uint8_t has_user_data = ((data_mask & ((1U << 0) | (1U << 1) | (1U << 2))) != 0U) ? 1U : 0U;
+
+        if (!first && !jw_appendf(&w, ",")) return 500;
+        first = 0U;
+        if (!jw_appendf(&w,
+            "{\"nodeId\":%u,\"online\":1,\"scanOk\":%u,\"hasData\":%u,"
+            "\"config\":%u,\"mapping\":%u,\"journal\":%u,\"users\":%u}",
+            (unsigned)nodeId,
+            (unsigned)(scan_ok ? 1U : 0U),
+            (unsigned)has_user_data,
+            (unsigned)((data_mask & (1U << 0)) ? 1U : 0U),
+            (unsigned)((data_mask & (1U << 1)) ? 1U : 0U),
+            (unsigned)((data_mask & (1U << 2)) ? 1U : 0U),
+            (unsigned)((data_mask & (1U << 3)) ? 1U : 0U)))
+            return 500;
+    }
+    if (!jw_appendf(&w, "]}")) return 500;
+    return 200;
+}
+
+static int post_flash_clear_all(const char *body, size_t body_len, const char *current_user, char *out_body, size_t out_sz)
+{
+    if (!check_super_admin_access(current_user))
+    {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
+        return 403;
+    }
+    if (System_GetRole() != APP_ROLE_MASTER)
+    {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Flash clear allowed only on MASTER\"}");
+        return 409;
+    }
+
+    if (!body) body = "";
+    uint32_t nodesMask = 0U;
+    uint32_t clearService = 0U;
+    (void)body_len;
+    if (!Json_GetUint32(body, "nodesMask", &nodesMask))
+        nodesMask = 1U; /* обратная совместимость: очищаем только MASTER */
+    (void)Json_GetUint32(body, "clearService", &clearService);
+    if (nodesMask == 0U) {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"nodesMask is empty\"}");
+        return 400;
+    }
+
+    uint8_t master_ok = 1U;
+    uint16_t slave_ok_mask = 0U;
+    uint16_t slave_fail_mask = 0U;
+
+    if ((nodesMask & 1U) != 0U)
+    {
+        journal_status_t jst = EventJournal_EraseAll();
+        if (jst != JOURNAL_OK) master_ok = 0U;
+        if (master_ok && !erase_qspi_region_4k(QSPI_MAPPING_BASE, QSPI_MAPPING_SIZE)) master_ok = 0U;
+        if (master_ok) MappingStorage_SetData(NULL, 0U);
+        /* Служебный users db по умолчанию не стираем; отдельный опасный режим — clearService=1. */
+        if (master_ok && (clearService != 0U) && !erase_qspi_region_4k(QSPI_USERS_DB_BASE, QSPI_USERS_DB_SIZE)) master_ok = 0U;
+        if (master_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_A_BASE, QSPI_CFG_SLOT_SIZE)) master_ok = 0U;
+        if (master_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_B_BASE, QSPI_CFG_SLOT_SIZE)) master_ok = 0U;
+        if (master_ok) {
+            Config_Default(&g_project_cfg);
+            Config_Finalize(&g_project_cfg);
+            ConfigService_ApplyRuntime(&g_project_cfg);
+        }
+    }
+
+    for (uint8_t nodeId = 2U; nodeId <= APP_MAX_NODES; nodeId++)
+    {
+        if ((nodesMask & (1UL << (nodeId - 1U))) == 0U) continue;
+        if (CanTask_MasterFlashClearNode(nodeId, (clearService != 0U) ? 1U : 0U))
+            slave_ok_mask |= (uint16_t)(1U << (nodeId - 1U));
+        else
+            slave_fail_mask |= (uint16_t)(1U << (nodeId - 1U));
+    }
+
+    if (((nodesMask & 1U) && !master_ok) || slave_fail_mask != 0U)
+    {
+        (void)snprintf(out_body, out_sz,
+                       "{\"ok\":0,\"masterOk\":%u,\"slaveOkMask\":%u,\"slaveFailMask\":%u}",
+                       (unsigned)(master_ok ? 1U : 0U),
+                       (unsigned)slave_ok_mask,
+                       (unsigned)slave_fail_mask);
+        return 500;
+    }
+
+    /* Если очищали мастер — делаем reboot локально. Для удалённых узлов reboot делает сам SLAVE. */
+    if ((nodesMask & 1U) != 0U)
+        s_reboot_requested = 1U;
+
+    (void)snprintf(out_body, out_sz,
+                   "{\"ok\":1,\"reboot\":%u,\"masterOk\":%u,\"slaveOkMask\":%u}",
+                   (unsigned)((nodesMask & 1U) ? 1U : 0U),
+                   (unsigned)(master_ok ? 1U : 0U),
+                   (unsigned)slave_ok_mask);
+    return 200;
+}
+
 /* =========================================================
  * Извлечение Bearer-токена из заголовков запроса
  * Ищет "Authorization: Bearer <token>" (без учёта регистра)
@@ -1186,7 +1408,7 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     AppLog("CFG:6 send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg.seq);
-    s_reboot_after_config_apply = 1;
+    s_reboot_requested = 1;
     return 200;
 }
 
@@ -1439,7 +1661,7 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     AppLog("CFG full: send 200");
     (void)jw_appendf(&w, "{\"ok\":1,\"persistStatus\":%u,\"seq\":%lu}",
                      (unsigned)st, (unsigned long)cfg->seq);
-    s_reboot_after_config_apply = 1;
+    s_reboot_requested = 1;
     return 200;
 }
 
@@ -2063,6 +2285,14 @@ int HttpApi_HandlePost(const char *path,
             return 500;
         }
         return 200;
+    }
+    if (strcmp(path, "/api/flash/scan") == 0) {
+        return post_flash_scan(current_user, out_body, out_sz);
+    }
+    /* POST /api/flash/clear — полная очистка пользовательских областей QSPI.
+     * После успеха контроллер перезагружается автоматически. */
+    if (strcmp(path, "/api/flash/clear") == 0) {
+        return post_flash_clear_all(body, body_len, current_user, out_body, out_sz);
     }
     
     if (strncmp(path, "/api/users/", 11) == 0) {

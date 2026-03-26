@@ -35,9 +35,9 @@
 #define CFG_MAX_EDGES        256U
 
 /* Лимиты первой версии PUT /api/config/full (вариант A).
- * Поддержка до 32 дверей (например 4 узла × 8 дверей).
+ * Поддержка до 40 дверей (например 5 узлов × 8 дверей).
  */
-#define CFG_FULL_MAX_DOORS_V1        32U
+#define CFG_FULL_MAX_DOORS_V1        40U
 #define CFG_FULL_MAX_EDGES_V1       64U
 #define CFG_FULL_MAX_POST_CLOSE_V1   32U
 

@@ -8,10 +8,11 @@
  */
 
 import { useState, useEffect, useContext } from 'react';
-import { getConfig, putConfig, getTime, setTime } from '../../services/api';
+import { getConfig, putConfig, getTime, setTime, scanFlashBoards, clearFlashSelected } from '../../services/api';
 import { useStateData } from '../../context/StateDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
 import './SystemParams.css';
 
 const UI_TIMEZONE_STORAGE_KEY = 'ui_timezone';
@@ -165,6 +166,14 @@ const SystemParams = () => {
   const [timeLoading, setTimeLoading] = useState(false);
   const [timeSyncLoading, setTimeSyncLoading] = useState(false);
   const [timeError, setTimeError] = useState(null);
+  const [flashClearing, setFlashClearing] = useState(false);
+  const [flashModalOpen, setFlashModalOpen] = useState(false);
+  const [flashBoards, setFlashBoards] = useState([]);
+  const [flashSelected, setFlashSelected] = useState({});
+  const [flashScanning, setFlashScanning] = useState(false);
+  const [flashActionError, setFlashActionError] = useState(null);
+  const [flashConfirmOpen, setFlashConfirmOpen] = useState(false);
+  const [flashConfirmServiceClear, setFlashConfirmServiceClear] = useState(false);
 
   const fetchControllerTime = async () => {
     setTimeLoading(true);
@@ -210,6 +219,69 @@ const SystemParams = () => {
       });
     } catch {
       return t('pages.profile.dash');
+    }
+  };
+
+  const openFlashModal = () => {
+    setFlashModalOpen(true);
+    setFlashActionError(null);
+    /* Каждый новый вход в модалку начинаем с чистого состояния,
+       чтобы не показывать результаты предыдущего сканирования. */
+    setFlashBoards([]);
+    setFlashSelected({});
+    setFlashConfirmOpen(false);
+    setFlashConfirmServiceClear(false);
+  };
+
+  const handleScanBoards = async () => {
+    setFlashScanning(true);
+    setFlashActionError(null);
+    try {
+      const resp = await scanFlashBoards();
+      const boards = Array.isArray(resp?.boards) ? resp.boards : [];
+      setFlashBoards(boards);
+      setFlashSelected((prev) => {
+        const next = {};
+        boards.forEach((b) => {
+          const key = String(b.nodeId);
+          next[key] = prev[key] ?? false;
+        });
+        return next;
+      });
+    } catch (err) {
+      setFlashActionError(err?.message || t('pages.systemParams.flashScanFailed'));
+    } finally {
+      setFlashScanning(false);
+    }
+  };
+
+  const selectedNodeIds = flashBoards
+    .filter((b) => flashSelected[String(b.nodeId)])
+    .map((b) => b.nodeId)
+    .sort((a, b) => a - b);
+
+  const selectedNodesMask = selectedNodeIds.reduce((mask, nodeId) => (
+    mask | (1 << (nodeId - 1))
+  ), 0);
+
+  const handleConfirmSelectedClear = async () => {
+    setFlashConfirmOpen(false);
+    if (selectedNodeIds.length === 0) return;
+    const clearService = flashConfirmServiceClear;
+    setFlashClearing(true);
+    setFlashActionError(null);
+    setError(null);
+    setSuccess(null);
+    try {
+      await clearFlashSelected(selectedNodesMask, clearService);
+      setSuccess(t('pages.systemParams.flashClearSuccessList', { nodes: selectedNodeIds.join(', ') }));
+      setFlashModalOpen(false);
+    } catch (err) {
+      const msg = err?.message || t('pages.systemParams.flashClearFailed');
+      setFlashActionError(msg);
+      setError(msg);
+    } finally {
+      setFlashClearing(false);
     }
   };
 
@@ -516,6 +588,148 @@ const SystemParams = () => {
           </Button>
         </div>
       </section>
+
+      {/* 6. Очистка флэш */}
+      <section className="system-params-section system-params-section-flash-clear">
+        <h2>6. {t('pages.systemParams.section6')}</h2>
+        <p className="system-params-intro">
+          {t('pages.systemParams.flashIntro')}
+        </p>
+        <p className="system-params-note">
+          {t('pages.systemParams.flashHint')}
+        </p>
+        <div className="system-params-actions">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={openFlashModal}
+            disabled={flashClearing}
+          >
+            {flashClearing ? t('pages.systemParams.flashClearing') : t('pages.systemParams.flashClearButton')}
+          </Button>
+        </div>
+      </section>
+
+      <Modal
+        isOpen={flashModalOpen}
+        onClose={() => setFlashModalOpen(false)}
+        title={t('pages.systemParams.flashModalTitle')}
+        contentClassName="modal-content-wide-flash"
+      >
+        <div className="flash-clear-modal">
+          <p className="system-params-intro">{t('pages.systemParams.flashModalIntro')}</p>
+          <p className="system-params-note">{t('pages.systemParams.flashUsersPreservedNote')}</p>
+          <div className="flash-clear-actions-row">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleScanBoards}
+              disabled={flashScanning || flashClearing}
+            >
+              {flashScanning ? t('pages.systemParams.flashScanning') : t('pages.systemParams.flashScanButton')}
+            </Button>
+          </div>
+
+          {flashActionError && (
+            <div className="system-params-message system-params-error" role="alert">
+              {flashActionError}
+            </div>
+          )}
+
+          <div className="flash-clear-table-wrap">
+            <table className="flash-clear-table">
+              <thead>
+                <tr>
+                  <th>{t('pages.systemParams.flashColSelect')}</th>
+                  <th>{t('pages.systemParams.flashColNode')}</th>
+                  <th>{t('pages.systemParams.flashColOnline')}</th>
+                  <th>{t('pages.systemParams.flashColHasData')}</th>
+                  <th>{t('pages.systemParams.flashColConfig')}</th>
+                  <th>{t('pages.systemParams.flashColMapping')}</th>
+                  <th>{t('pages.systemParams.flashColJournal')}</th>
+                  <th>{t('pages.systemParams.flashColUsers')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flashBoards.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>{t('pages.systemParams.flashNoScanData')}</td>
+                  </tr>
+                ) : flashBoards.map((board) => (
+                  <tr key={board.nodeId}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={!!flashSelected[String(board.nodeId)]}
+                        onChange={(e) => setFlashSelected((prev) => ({ ...prev, [String(board.nodeId)]: e.target.checked }))}
+                        disabled={flashClearing}
+                      />
+                    </td>
+                    <td>{board.nodeId === 1 ? `Node 1 (${t('pages.systemParams.flashMasterLabel')})` : `Node ${board.nodeId}`}</td>
+                    <td>{board.online ? t('pages.systemParams.flashYes') : t('pages.systemParams.flashNo')}</td>
+                    <td>{board.hasData ? t('pages.systemParams.flashHasData') : t('pages.systemParams.flashEmpty')}</td>
+                    <td>{board.config ? t('pages.systemParams.flashYes') : t('pages.systemParams.flashNo')}</td>
+                    <td>{board.mapping ? t('pages.systemParams.flashYes') : t('pages.systemParams.flashNo')}</td>
+                    <td>{board.journal ? t('pages.systemParams.flashYes') : t('pages.systemParams.flashNo')}</td>
+                    <td>{board.users ? t('pages.systemParams.flashYes') : t('pages.systemParams.flashNo')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flash-clear-actions-row">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                setFlashConfirmServiceClear(false);
+                setFlashConfirmOpen(true);
+              }}
+              disabled={flashClearing || selectedNodeIds.length === 0}
+            >
+              {flashClearing ? t('pages.systemParams.flashClearing') : t('pages.systemParams.flashClearSelectedButton')}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                setFlashConfirmServiceClear(true);
+                setFlashConfirmOpen(true);
+              }}
+              disabled={flashClearing || selectedNodeIds.length === 0}
+            >
+              {flashClearing ? t('pages.systemParams.flashClearing') : t('pages.systemParams.flashClearServiceButton')}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setFlashModalOpen(false)}
+              disabled={flashClearing}
+            >
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={flashConfirmOpen}
+        type="confirm"
+        title={t('pages.systemParams.flashConfirmTitle')}
+        message={
+          flashConfirmServiceClear
+            ? `${t('pages.systemParams.flashConfirmServiceSelectedText', { nodes: selectedNodeIds.join(', ') })}\n${t('pages.systemParams.flashServiceDangerNote')}`
+            : `${t('pages.systemParams.flashConfirmSelectedText', { nodes: selectedNodeIds.join(', ') })}\n${t('pages.systemParams.flashUsersPreservedNote')}`
+        }
+        confirmText={t('pages.systemParams.flashConfirmProceed')}
+        cancelText={t('common.cancel')}
+        onConfirm={handleConfirmSelectedClear}
+        onCancel={() => {
+          setFlashConfirmOpen(false);
+          setFlashConfirmServiceClear(false);
+        }}
+      />
     </div>
   );
 };

@@ -119,9 +119,11 @@ apiClient.interceptors.response.use(
  * API функции для работы с контроллером
  */
 
-// Таймаут для /state увеличен, чтобы при долгой загрузке других запросов (журнал и т.д.)
-// опрос состояния не срабатывал по таймауту и не переводил индикаторы сети в «ошибка».
-export const STATE_REQUEST_TIMEOUT = 45000; // 45 с
+// Таймаут /state держим умеренным:
+// - достаточно большим для кратковременной перегрузки контроллера;
+// - достаточно коротким, чтобы UI быстро увидел потерю связи и так же быстро
+//   восстановился после возврата Ethernet без ручной перезагрузки страницы.
+export const STATE_REQUEST_TIMEOUT = 8000; // 8 с
 export const getState = async (signal = null) => {
   const config = { timeout: STATE_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
   const response = await apiClient.get('/state', config);
@@ -179,6 +181,29 @@ export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
 export const clearJournal = async (signal = null) => {
   const config = { timeout: JOURNAL_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
   const response = await apiClient.post('/journal/clear', {}, config);
+  return response.data;
+};
+
+// Полная очистка пользовательских областей Flash на контроллере.
+// Операция длительная (erase нескольких регионов QSPI), после успеха контроллер перезагружается.
+export const clearFlash = async (signal = null) => {
+  const config = { timeout: 120000, ...(signal ? { signal } : {}) };
+  const response = await apiClient.post('/flash/clear', {}, config);
+  return response.data;
+};
+
+// Сканирование плат (MASTER + online SLAVE) на наличие данных во flash.
+export const scanFlashBoards = async (signal = null) => {
+  const config = { timeout: 15000, ...(signal ? { signal } : {}) };
+  const response = await apiClient.post('/flash/scan', {}, config);
+  return response.data;
+};
+
+// Очистка flash на выбранных платах (bitmask: bit0=Node1/master, bit1=Node2, ...).
+// clearService=true включает опасный режим: также стирается служебный раздел users.
+export const clearFlashSelected = async (nodesMask, clearService = false, signal = null) => {
+  const config = { timeout: 120000, ...(signal ? { signal } : {}) };
+  const response = await apiClient.post('/flash/clear', { nodesMask, clearService: clearService ? 1 : 0 }, config);
   return response.data;
 };
 

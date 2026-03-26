@@ -7,6 +7,8 @@
 #include "lwip/udp.h"
 #include "lwip/ip4_addr.h"
 #include <string.h>
+#include "app_events.h"
+#include "net_link_signal.h"
 
 /* В CubeMX проекте обычно есть глобальный netif с именем gnetif (lwip.c) */
 extern struct netif gnetif;
@@ -117,6 +119,22 @@ void LwIP_BringUp_Poll(void)
         printf("%lu ms | LINK %s\r\n",
                (unsigned long)HAL_GetTick(),
                link_up ? "UP" : "DOWN");
+
+        /* Дублируем фронт для HttpTask: основной путь — tcpip_callback в ethernetif.c,
+         * но при переполнении mbox/очереди callback может не пройти, а здесь мы видим
+         * уже итоговый netif_is_link_up. Повторный PHY UP/DOWN лишь лишний раз перезапустит
+         * listen — это безопаснее, чем «listen OK», с которого браузер не коннектится. */
+        NetLink_NotifyPhyEdge(link_up);
+
+        /* Публикуем событие изменения физического линка в общую шину AppEvents,
+         * чтобы событие попало в журнал и отобразилось в WebUI /api/journal/dump.
+         */
+        app_event_t evt;
+        memset(&evt, 0, sizeof(evt));
+        evt.type = link_up ? EVT_NET_LINK_UP : EVT_NET_LINK_DOWN;
+        evt.source = APP_SRC_SUPERVISOR;
+        evt.timestamp = HAL_GetTick();
+        (void)AppEvents_Publish(&evt, 0);
     }
 
     if (if_up != s_prev_if_up)

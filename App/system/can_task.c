@@ -21,10 +21,17 @@
 #include "comms_task.h" /* MASTER gets LogicCore instance */
 #include "logic/logic_core.h"
 #include "config/config_format.h" /* For door type and Config_MakeGlobalDoorId */
+#include "config/config_layout.h"
 #include "system/config_service.h" /* For g_project_cfg */
+#include "config/users_format.h"
+#include "config/mapping_storage_qspi.h"
+#include "log/event_journal.h"
+#include "qspi_bringup.h"
+#include "system/app_qspi_lock.h"
 
 /* FDCAN handle from CubeMX */
 extern FDCAN_HandleTypeDef hfdcan1;
+extern project_config_t g_project_cfg;
 
 /* =========================================================
  * Параметры таймингов (можно вынести в конфиг позже)
@@ -77,6 +84,19 @@ static uint8_t s_remote_seen[APP_MAX_DOORS];
 static uint8_t s_last_remote_open[APP_MAX_DOORS];
 static uint8_t s_last_remote_signal[APP_MAX_DOORS];
 
+/* Ответы на сервисные команды FLASH (MASTER ждёт ответ синхронно). */
+static volatile uint8_t s_flash_scan_resp_ready = 0U;
+static volatile uint8_t s_flash_scan_resp_node = 0U;
+static volatile uint8_t s_flash_scan_resp_token = 0U;
+static volatile uint8_t s_flash_scan_resp_mask = 0U;
+
+static volatile uint8_t s_flash_clear_ack_ready = 0U;
+static volatile uint8_t s_flash_clear_ack_node = 0U;
+static volatile uint8_t s_flash_clear_ack_token = 0U;
+static volatile uint8_t s_flash_clear_ack_ok = 0U;
+
+static uint8_t s_flash_req_token = 1U;
+
 static uint8_t master_is_node_online(uint8_t nodeId);
 
 static void master_mark_seen(uint8_t nodeId)
@@ -100,6 +120,180 @@ static uint8_t master_is_node_online(uint8_t nodeId)
     uint32_t now = HAL_GetTick();
     if (nodeId < 1U || nodeId > APP_MAX_NODES) return 0U;
     return ((now - s_last_seen_ms[nodeId]) <= CAN_MASTER_OFFLINE_MS) ? 1U : 0U;
+}
+
+uint8_t CanTask_MasterIsNodeOnline(uint8_t nodeId)
+{
+    if (System_GetRole() != APP_ROLE_MASTER) return 0U;
+    if (nodeId == 1U) return 1U;
+    return master_is_node_online(nodeId);
+}
+
+static int qspi_read_local(uint32_t addr, void *dst, uint32_t len)
+{
+    AppQspiLock_Lock();
+    HAL_StatusTypeDef rc = QSPI_Flash_Read(addr, (uint8_t *)dst, len);
+    AppQspiLock_Unlock();
+    return (rc == HAL_OK) ? 0 : -1;
+}
+
+static int qspi_erase_local_4k(uint32_t addr)
+{
+    AppQspiLock_Lock();
+    HAL_StatusTypeDef rc = QSPI_Flash_Erase4K(addr);
+    AppQspiLock_Unlock();
+    return (rc == HAL_OK) ? 0 : -1;
+}
+
+static uint8_t erase_qspi_region_local(uint32_t base, uint32_t size)
+{
+    if ((size == 0U) || ((size % QSPI_SECTOR_SIZE) != 0U)) return 0U;
+    const uint32_t sectors = size / QSPI_SECTOR_SIZE;
+    for (uint32_t i = 0U; i < sectors; i++)
+    {
+        if (qspi_erase_local_4k(base + i * QSPI_SECTOR_SIZE) != 0)
+            return 0U;
+        if ((i & 0x07U) == 0U) osDelay(1U);
+    }
+    return 1U;
+}
+
+/* Проверка: есть ли валидные данные во flash на текущем узле.
+ * Для UI достаточно bool (есть/нет), не нужен полный дамп. */
+static uint8_t local_flash_data_mask(void)
+{
+    uint8_t mask = 0U;
+
+    /* Mapping: magic + len */
+    {
+        uint8_t hdr[8];
+        const uint32_t mapping_magic = 0x4D415050u; /* "MAPP" */
+        if (qspi_read_local(QSPI_MAPPING_BASE, hdr, sizeof(hdr)) == 0)
+        {
+            uint32_t magic = (uint32_t)hdr[0] | ((uint32_t)hdr[1] << 8) |
+                             ((uint32_t)hdr[2] << 16) | ((uint32_t)hdr[3] << 24);
+            uint32_t len = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
+                           ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
+            if (magic == mapping_magic && len > 0U && len <= MAPPING_STORAGE_MAX_LEN)
+                mask |= (1U << 1); /* mapping */
+        }
+    }
+
+    /* Users DB header */
+    {
+        uint32_t u_hdr[2] = {0U, 0U};
+        const uint32_t users_magic = USERS_DB_MAGIC;
+        const uint32_t users_fmt = USERS_FORMAT_VERSION;
+        if (qspi_read_local(QSPI_USERS_DB_BASE, u_hdr, sizeof(u_hdr)) == 0)
+        {
+            if (u_hdr[0] == users_magic && u_hdr[1] == users_fmt)
+                mask |= (1U << 3); /* users */
+        }
+    }
+
+    /* Config slot headers A/B magic */
+    {
+        uint32_t a_magic = 0U, b_magic = 0U;
+        const uint32_t cfg_magic = 0x49444346u; /* "IDCF" */
+        if (qspi_read_local(QSPI_CFG_SLOT_A_BASE, &a_magic, sizeof(a_magic)) == 0 && a_magic == cfg_magic)
+            mask |= (1U << 0); /* config */
+        if (qspi_read_local(QSPI_CFG_SLOT_B_BASE, &b_magic, sizeof(b_magic)) == 0 && b_magic == cfg_magic)
+            mask |= (1U << 0); /* config */
+    }
+
+    /* Journal: есть записи */
+    {
+        journal_stats_t st;
+        memset(&st, 0, sizeof(st));
+        EventJournal_GetStats(&st);
+        if (st.total_records > 0U)
+            mask |= (1U << 2); /* journal */
+    }
+
+    return mask;
+}
+
+uint8_t CanTask_MasterFlashScanNode(uint8_t nodeId, uint8_t *out_mask)
+{
+    if (!out_mask) return 0U;
+    *out_mask = 0U;
+    if (System_GetRole() != APP_ROLE_MASTER) return 0U;
+    if (nodeId < 2U || nodeId > APP_MAX_NODES) return 0U;
+    if (!master_is_node_online(nodeId)) return 0U;
+
+    can_svc_payload_t svc = {0};
+    uint8_t token = s_flash_req_token++;
+    if (s_flash_req_token == 0U) s_flash_req_token = 1U;
+    svc.serviceCode = (uint8_t)CAN_SVC_FLASH_SCAN_REQ;
+    svc.role = (uint8_t)APP_ROLE_MASTER;
+    svc.rsvd4 = token;
+
+    s_flash_scan_resp_ready = 0U;
+    uint32_t id = CanProto_MakeStdId(CAN_MSG_SERVICE, 1U, nodeId);
+    (void)CAN_Link_SendStd(id, (const uint8_t *)&svc, 8U, 0U);
+
+    const uint32_t t0 = HAL_GetTick();
+    while ((HAL_GetTick() - t0) < 700U)
+    {
+        if (s_flash_scan_resp_ready &&
+            s_flash_scan_resp_node == nodeId &&
+            s_flash_scan_resp_token == token)
+        {
+            *out_mask = s_flash_scan_resp_mask;
+            s_flash_scan_resp_ready = 0U;
+            return 1U;
+        }
+        osDelay(10U);
+    }
+    return 0U;
+}
+
+uint8_t CanTask_MasterFlashClearNode(uint8_t nodeId, uint8_t clear_service_users)
+{
+    if (System_GetRole() != APP_ROLE_MASTER) return 0U;
+    if (nodeId < 2U || nodeId > APP_MAX_NODES) return 0U;
+
+    /* Устойчивый режим очистки:
+     * 1) НЕ делаем ранний отказ только по online-флагу (он может кратко "мигать");
+     * 2) выполняем несколько попыток отправки запроса;
+     * 3) увеличенное окно ожидания ACK, чтобы быть совместимыми со старым SLAVE,
+     *    где ACK мог прийти только после длительного erase. */
+    enum { FLASH_CLEAR_TRIES = 3U };
+    enum { FLASH_CLEAR_ACK_TIMEOUT_MS = 45000U };
+    for (uint8_t attempt = 0U; attempt < FLASH_CLEAR_TRIES; attempt++)
+    {
+        can_svc_payload_t svc = {0};
+        uint8_t token = s_flash_req_token++;
+        if (s_flash_req_token == 0U) s_flash_req_token = 1U;
+        svc.serviceCode = (uint8_t)CAN_SVC_FLASH_CLEAR_REQ;
+        svc.role = (uint8_t)APP_ROLE_MASTER;
+        svc.rsvd4 = token;
+        /* Флаги команды очистки:
+         * bit0=1 -> дополнительно стирать служебный users db. */
+        svc.rsvd5 = (clear_service_users != 0U) ? 1U : 0U;
+
+        s_flash_clear_ack_ready = 0U;
+        uint32_t id = CanProto_MakeStdId(CAN_MSG_SERVICE, 1U, nodeId);
+        (void)CAN_Link_SendStd(id, (const uint8_t *)&svc, 8U, 0U);
+
+        const uint32_t t0 = HAL_GetTick();
+        while ((HAL_GetTick() - t0) < FLASH_CLEAR_ACK_TIMEOUT_MS)
+        {
+            if (s_flash_clear_ack_ready &&
+                s_flash_clear_ack_node == nodeId &&
+                s_flash_clear_ack_token == token)
+            {
+                uint8_t ok = s_flash_clear_ack_ok ? 1U : 0U;
+                s_flash_clear_ack_ready = 0U;
+                return ok;
+            }
+            osDelay(20U);
+        }
+
+        /* Небольшая пауза перед повторной отправкой (если предыдущая попытка не дала ACK). */
+        osDelay(50U);
+    }
+    return 0U;
 }
 
 /* =========================================================
@@ -132,6 +326,22 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
              * Подтверждения не требуется.
              */
         }
+        else if (len >= 8U && role == APP_ROLE_MASTER && data[0] == (uint8_t)CAN_SVC_FLASH_SCAN_RESP)
+        {
+            const can_svc_payload_t *svc = (const can_svc_payload_t *)data;
+            s_flash_scan_resp_node = srcNode;
+            s_flash_scan_resp_token = svc->rsvd4;
+            s_flash_scan_resp_mask = svc->rsvd5;
+            s_flash_scan_resp_ready = 1U;
+        }
+        else if (len >= 8U && role == APP_ROLE_MASTER && data[0] == (uint8_t)CAN_SVC_FLASH_CLEAR_ACK)
+        {
+            const can_svc_payload_t *svc = (const can_svc_payload_t *)data;
+            s_flash_clear_ack_node = srcNode;
+            s_flash_clear_ack_token = svc->rsvd4;
+            s_flash_clear_ack_ok = (svc->rsvd5 != 0U) ? 1U : 0U;
+            s_flash_clear_ack_ready = 1U;
+        }
         else if (len >= 8U && data[0] == (uint8_t)CAN_SVC_CONFIG_PARAM && role == APP_ROLE_SLAVE)
         {
             /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: прием параметров конфигурации от MASTER на SLAVE
@@ -157,6 +367,61 @@ static void handle_rx_frame(uint32_t std_id, const uint8_t *data, uint8_t len)
                 {
                     DoorsCfg_SetOpenTimeoutMs(openTimeoutMs);
                 }
+            }
+        }
+        else if (len >= 8U && role == APP_ROLE_SLAVE &&
+                 data[0] == (uint8_t)CAN_SVC_FLASH_SCAN_REQ &&
+                 srcNode == 1U && sub == selfNode)
+        {
+            const can_svc_payload_t *in = (const can_svc_payload_t *)data;
+            can_svc_payload_t out = {0};
+            out.serviceCode = (uint8_t)CAN_SVC_FLASH_SCAN_RESP;
+            out.role = (uint8_t)APP_ROLE_SLAVE;
+            out.rsvd4 = in->rsvd4; /* token */
+            out.rsvd5 = local_flash_data_mask();
+            uint32_t id = CanProto_MakeStdId(CAN_MSG_SERVICE, selfNode, 0U);
+            (void)CAN_Link_SendStd(id, (const uint8_t *)&out, 8U, 0U);
+        }
+        else if (len >= 8U && role == APP_ROLE_SLAVE &&
+                 data[0] == (uint8_t)CAN_SVC_FLASH_CLEAR_REQ &&
+                 srcNode == 1U && sub == selfNode)
+        {
+            const can_svc_payload_t *in = (const can_svc_payload_t *)data;
+            const uint8_t clear_service_users = (in->rsvd5 & 0x01U) ? 1U : 0U;
+            /* ВАЖНО ДЛЯ СТАБИЛЬНОСТИ WebUI НА MASTER:
+             * Раньше ACK отправлялся только ПОСЛЕ полной очистки QSPI на SLAVE.
+             * Это занимало секунды, и HTTP /flash/clear на MASTER висел в ожидании,
+             * блокируя остальные HTTP-запросы (UI видел "пропадание сети").
+             *
+             * Теперь отправляем ACK сразу (подтверждаем, что команда принята),
+             * а длительную очистку выполняем после отправки ACK.
+             * Это убирает длительную блокировку HTTP-обработчика на MASTER.
+             */
+            can_svc_payload_t ack = {0};
+            ack.serviceCode = (uint8_t)CAN_SVC_FLASH_CLEAR_ACK;
+            ack.role = (uint8_t)APP_ROLE_SLAVE;
+            ack.rsvd4 = in->rsvd4; /* token */
+            ack.rsvd5 = 1U; /* accepted */
+            uint32_t id = CanProto_MakeStdId(CAN_MSG_SERVICE, selfNode, 0U);
+            (void)CAN_Link_SendStd(id, (const uint8_t *)&ack, 8U, 0U);
+
+            /* После ACK выполняем фактическую очистку локального flash.
+             * Если очистка не удалась, SLAVE просто не уходит в reset.
+             * В текущем API этого достаточно: оператор видит быстрый ответ
+             * и может перепроверить результат повторным сканированием. */
+            uint8_t ok = 1U;
+            if (EventJournal_EraseAll() != JOURNAL_OK) ok = 0U;
+            if (ok && !erase_qspi_region_local(QSPI_MAPPING_BASE, QSPI_MAPPING_SIZE)) ok = 0U;
+            if (ok && clear_service_users && !erase_qspi_region_local(QSPI_USERS_DB_BASE, QSPI_USERS_DB_SIZE)) ok = 0U;
+            if (ok && !erase_qspi_region_local(QSPI_CFG_SLOT_A_BASE, QSPI_CFG_SLOT_SIZE)) ok = 0U;
+            if (ok && !erase_qspi_region_local(QSPI_CFG_SLOT_B_BASE, QSPI_CFG_SLOT_SIZE)) ok = 0U;
+            if (ok)
+            {
+                Config_Default(&g_project_cfg);
+                Config_Finalize(&g_project_cfg);
+                ConfigService_ApplyRuntime(&g_project_cfg);
+                osDelay(200);
+                HAL_NVIC_SystemReset();
             }
         }
         return;

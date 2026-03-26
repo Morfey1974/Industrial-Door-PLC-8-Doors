@@ -52,12 +52,17 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
         abortControllerRef.current.abort();
       }
 
-      abortControllerRef.current = new AbortController();
+      /* Важно: каждый запоминает «свой» AbortController. Иначе при force-refetch (кнопка «Повторить»
+       * в шапке) новый запрос подменяет abortControllerRef до завершения старого, и finally старого
+       * промиса сбрасывает isFetchingRef в false, пока новый ещё в полёте — на МК открывается
+       * несколько TCP к однопоточному HTTP, стек lwIP забивается, сеть «умирает» до ребута. */
+      const ctrl = new AbortController();
+      abortControllerRef.current = ctrl;
       isFetchingRef.current = true;
 
       // Устанавливаем таймаут для показа ошибки, если запрос слишком долгий
       timeoutId = setTimeout(() => {
-        if (isMounted && isFetchingRef.current && !abortControllerRef.current?.signal.aborted) {
+        if (isMounted && isFetchingRef.current && !ctrl.signal.aborted) {
           console.warn('Запрос выполняется слишком долго, возможно проблема с сетью');
           // Не прерываем запрос, но логируем предупреждение
         }
@@ -68,7 +73,7 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
         setError(null);
         // Передаем signal для возможности отмены запроса
         const startTime = Date.now();
-        const result = await apiFunction(abortControllerRef.current.signal);
+        const result = await apiFunction(ctrl.signal);
         const duration = Date.now() - startTime;
         if (duration > 5000) {
           console.log(`API запрос занял ${duration}ms (медленно)`);
@@ -80,7 +85,7 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
           timeoutId = null;
         }
         
-        if (isMounted && !abortControllerRef.current?.signal.aborted) {
+        if (isMounted && !ctrl.signal.aborted) {
           consecutiveFailuresRef.current = 0;
           // Обновляем данные только если они изменились
           setData((prevData) => {
@@ -98,11 +103,11 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
         }
         
         // Игнорируем ошибки отмены запроса
-        if (err.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        if (err.name === 'AbortError' || ctrl.signal.aborted) {
           return;
         }
         
-        if (isMounted && !abortControllerRef.current?.signal.aborted) {
+        if (isMounted && !ctrl.signal.aborted) {
           // Извлекаем errorMsg из JSON-ответа, если он есть
           let errorMessage = err.message || 'Ошибка загрузки данных';
           if (err.response && err.response.data) {
@@ -131,10 +136,13 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
           }
         }
       } finally {
-        if (isMounted && !abortControllerRef.current?.signal.aborted) {
-          setLoading(false);
+        /* Снимаем busy только если этот запрос всё ещё «текущий» (ref не подменили новым). */
+        if (abortControllerRef.current === ctrl) {
+          if (isMounted) {
+            setLoading(false);
+          }
+          isFetchingRef.current = false;
         }
-        isFetchingRef.current = false;
       }
     };
 
@@ -153,25 +161,30 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
   }, [...dependencies, enabled]);
 
   // Тихое обновление без показа loading состояния
-  const refetch = async (silent = false) => {
-    // Предотвращаем множественные одновременные запросы
-    if (isFetchingRef.current) {
+  const refetch = async (silent = false, force = false) => {
+    /* В обычном режиме не запускаем параллельный refetch.
+     * В force-режиме (например, после online/offline события) сначала
+     * прерываем текущий "зависший" запрос и сразу запускаем новый, чтобы
+     * не ждать длинного таймаута и быстрее восстановить UI.
+     */
+    if (isFetchingRef.current && !force) {
       return;
     }
 
-    // Отменяем предыдущий запрос
+    // Отменяем предыдущий запрос перед новым запуском
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
 
-    abortControllerRef.current = new AbortController();
+    const ctrl = new AbortController();
+    abortControllerRef.current = ctrl;
     isFetchingRef.current = true;
     let timeoutId = null;
 
     // Устанавливаем таймаут для тихого обновления тоже
     if (!silent) {
       timeoutId = setTimeout(() => {
-        if (isFetchingRef.current && !abortControllerRef.current?.signal.aborted) {
+        if (isFetchingRef.current && !ctrl.signal.aborted) {
           console.warn('Запрос выполняется слишком долго');
         }
       }, 15000);
@@ -184,14 +197,14 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
       }
       // При тихом refetch не сбрасываем error в начале — иначе мигает «нет ошибки», пока запрос висит
       
-      const result = await apiFunction(abortControllerRef.current.signal);
+      const result = await apiFunction(ctrl.signal);
       
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
       
-      if (!abortControllerRef.current?.signal.aborted) {
+      if (!ctrl.signal.aborted) {
         consecutiveFailuresRef.current = 0;
         setData((prevData) => {
           if (isDataEqual(prevData, result)) {
@@ -209,11 +222,11 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
       }
       
       // Игнорируем ошибки отмены запроса
-      if (err.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+      if (err.name === 'AbortError' || ctrl.signal.aborted) {
         return;
       }
       
-      if (!abortControllerRef.current?.signal.aborted) {
+      if (!ctrl.signal.aborted) {
         const msg = err.message || 'Ошибка загрузки данных';
         if (silent && consecutiveFailuresForError != null) {
           consecutiveFailuresRef.current += 1;
@@ -230,12 +243,12 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
         }
       }
     } finally {
-      if (!abortControllerRef.current?.signal.aborted) {
+      if (abortControllerRef.current === ctrl) {
         if (!silent) {
           setLoading(false);
         }
+        isFetchingRef.current = false;
       }
-      isFetchingRef.current = false;
     }
   };
 

@@ -105,6 +105,71 @@
   border-left: 4px solid var(--color-success);
 }
 
+/* Очистка флэш — опасное действие */
+.system-params-section-flash-clear {
+  border-left: 4px solid var(--color-error, #c82333);
+}
+
+.system-params-btn-danger {
+  border-color: var(--color-error, #c82333) !important;
+  color: var(--color-error, #c82333) !important;
+}
+
+.system-params-btn-danger:hover:not(:disabled) {
+  background: var(--color-error, #c82333) !important;
+  color: var(--color-white, #fff) !important;
+}
+
+.flash-clear-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Расширенный размер только для модалки очистки флэш:
+ * не влияет на другие модальные окна в приложении. */
+.modal-content.modal-content-wide-flash {
+  width: min(920px, 92vw);
+  max-width: 920px;
+}
+
+.flash-clear-actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.flash-clear-table-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 260px;
+}
+
+.flash-clear-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.flash-clear-table th,
+.flash-clear-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.flash-clear-table thead th {
+  background: var(--color-secondary);
+  color: var(--color-primary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
 .system-params-vpn-options,
 .system-params-vpn-after {
   margin-bottom: var(--spacing-md, 16px);

@@ -114,6 +114,25 @@
 /*-----------------------------------------------------------------------------*/
 /* USER CODE BEGIN 1 */
 
+/* В lwIP макрос называется SO_REUSE (см. opt.h), не LWIP_SO_REUSE.
+ * SO_REUSE==1: реально включает обработку setsockopt(SO_REUSEADDR) в sockets.c.
+ * Без этого после link flap bind(:80) часто даёт errno=98 (EADDRINUSE).
+ */
+#ifndef SO_REUSE
+#define SO_REUSE                        1
+#endif
+
+/* SO_REUSE_RXTOALL: см. комментарий в opt.h (multicast/broadcast fanout). */
+#ifndef SO_REUSE_RXTOALL
+#define SO_REUSE_RXTOALL                1
+#endif
+
+/* Link flap + tcpip_callback(netif): больше слотов и блоков сообщений, иначе ERR_MEM и
+ * HttpTask не получает надёжный перезапуск listen — UI «молчит», пока CAN/двери живы. */
+#undef TCPIP_MBOX_SIZE
+#define TCPIP_MBOX_SIZE                 16
+#define MEMP_NUM_TCPIP_MSG_API          16
+
 /* USER CODE END 1 */
 
 #ifdef __cplusplus

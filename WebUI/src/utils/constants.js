@@ -55,6 +55,9 @@ export function getControllerUrlForDisplay() {
 // Для обратной совместимости
 export const API_URL = defaultApiUrl;
 
+/* Макс. размер JSON для PUT /api/config/full — не больше HTTP_BODY_MAX в App/system/http_server.c */
+export const PUT_CONFIG_FULL_MAX_JSON_BYTES = 16384;
+
 // Таймауты
 export const API_TIMEOUT = 30000; // 30 секунд (увеличено для медленных соединений)
 export const AUTO_REFRESH_INTERVAL = 5000; // 5 секунд для автообновления

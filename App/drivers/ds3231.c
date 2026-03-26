@@ -12,11 +12,22 @@
 
 #define DS3231_TIMEOUT_MS  50u
 
-/* Отладка: маркер в UART3 (убрать после выяснения зависания) */
+/* Отладочные маркеры драйвера DS3231 в UART3.
+ * По умолчанию выключены, чтобы не забивать последовательный канал в поле.
+ * При необходимости диагностики можно временно включить (1U) и получить D0/D1/D2.
+ */
+#ifndef DS3231_DEBUG_UART
+#define DS3231_DEBUG_UART 0U
+#endif
+
+#if DS3231_DEBUG_UART
 #define DS3231_MARK(id) do { \
   static const char d[] = "RTC: D" id "\r\n"; \
   (void)HAL_UART_Transmit(&huart3, (const uint8_t *)d, (uint16_t)(sizeof(d)-1), 50); \
 } while(0)
+#else
+#define DS3231_MARK(id) do { (void)(id); } while(0)
+#endif
 
 static uint8_t bcd_to_dec(uint8_t bcd)
 {

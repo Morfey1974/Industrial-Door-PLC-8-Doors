@@ -28,7 +28,8 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
     return doors.filter((door) => door.nodeId === nodeId);
   }, [doors, filterNodeId]);
 
-  const MAX_DOORS_V1 = 32;
+  /* Совпадает с CFG_FULL_MAX_DOORS_V1 на контроллере (PUT /api/config/full). */
+  const MAX_DOORS_V1 = 40;
 
   const notifyMaxDoors = () => {
     const msg = t('pages.config.doorsMaxReached');
@@ -47,7 +48,8 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
     let newNodeId = 1;
     let newLocalDoor = 1;
     let found = false;
-    const maxNodes = 4;
+    /* До 10 плат по ТЗ; иначе при 5+ платах «Добавить дверь» не находило бы слоты на узлах 5–10. */
+    const maxNodes = 10;
     for (let nodeId = 1; nodeId <= maxNodes && !found; nodeId++) {
       for (let localDoor = 1; localDoor <= 8; localDoor++) {
         const exists = doors.some((d) => d.nodeId === nodeId && d.localDoor === localDoor);

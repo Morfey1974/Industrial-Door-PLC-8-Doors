@@ -26,7 +26,11 @@ typedef enum
 typedef enum
 {
     CAN_SVC_HEARTBEAT = 1,
-    CAN_SVC_CONFIG_PARAM = 2  /* Передача параметров конфигурации (openTimeoutMs) от MASTER к SLAVE */
+    CAN_SVC_CONFIG_PARAM = 2,  /* Передача параметров конфигурации (openTimeoutMs) от MASTER к SLAVE */
+    CAN_SVC_FLASH_SCAN_REQ = 3,/* MASTER -> SLAVE: запрос наличия данных во flash */
+    CAN_SVC_FLASH_SCAN_RESP = 4,/* SLAVE -> MASTER: ответ со статусом flash */
+    CAN_SVC_FLASH_CLEAR_REQ = 5,/* MASTER -> SLAVE: команда очистки flash */
+    CAN_SVC_FLASH_CLEAR_ACK = 6 /* SLAVE -> MASTER: результат очистки flash */
 } can_service_code_t;
 
 /* ---------------- CAN ID helpers ---------------- */
