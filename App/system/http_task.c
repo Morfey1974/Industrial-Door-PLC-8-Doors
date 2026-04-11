@@ -56,7 +56,7 @@ void HttpTask_Run(void const *argument)
     /* Антидребезг линка:
      * Чтобы при "шатающемся" кабеле не дергать сервер на каждом кратком
      * скачке состояния, требуем несколько подряд одинаковых опросов.
-     * Цикл задачи ~40мс (PollOnce 20мс + osDelay 20мс), значит:
+     * Цикл задачи ~25мс (PollOnce 15мс + osDelay 10мс), значит:
      * - 3 подтверждения ~= 120мс устойчивого состояния.
      */
     uint8_t stable_up_count = 0U;
@@ -171,7 +171,7 @@ void HttpTask_Run(void const *argument)
             /* Линк ещё «качается» по Net_IsReady(), но после PHY UP сервер уже может быть поднят —
              * раньше здесь был голый continue и PollOnce не вызывался сотни мс: UI «иногда» отвечал. */
             if (server_started && HttpServer_IsReady()) {
-                HttpServer_PollOnce(20);
+                HttpServer_PollOnce(15);
             }
             osDelay(50);
             continue;
@@ -227,8 +227,9 @@ void HttpTask_Run(void const *argument)
         /* Обслуживаем максимум 1 клиента за итерацию, чтобы не съедать CPU.
          * Timeout небольшой — если никто не подключается, быстро возвращаемся.
          */
-        HttpServer_PollOnce(20 /*ms*/);
+        /* Один клиент за итерацию: чуть короче пауза — быстрее очередь к /api/state в шапке + /api/doors. */
+        HttpServer_PollOnce(15 /*ms*/);
 
-        osDelay(20);
+        osDelay(10);
     }
 }

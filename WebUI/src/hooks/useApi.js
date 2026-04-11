@@ -13,6 +13,8 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef(null);
   const consecutiveFailuresRef = useRef(0);
+  /* Тихий refetch при занятости (автоопрос): не терять тик — один догон после завершения запроса. */
+  const pendingSilentRefetchRef = useRef(false);
 
   // Функция для сравнения данных (глубокое сравнение для объектов)
   const isDataEqual = (oldData, newData) => {
@@ -168,6 +170,9 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
      * не ждать длинного таймаута и быстрее восстановить UI.
      */
     if (isFetchingRef.current && !force) {
+      if (silent) {
+        pendingSilentRefetchRef.current = true;
+      }
       return false;
     }
 
@@ -251,6 +256,13 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
           setLoading(false);
         }
         isFetchingRef.current = false;
+        const runPending = pendingSilentRefetchRef.current;
+        pendingSilentRefetchRef.current = false;
+        if (runPending) {
+          queueMicrotask(() => {
+            void refetch(true, false);
+          });
+        }
       }
     }
   };

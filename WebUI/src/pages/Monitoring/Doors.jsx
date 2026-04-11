@@ -11,6 +11,7 @@ import DoorsOverview from '../../components/ui/DoorsOverview';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
+import { DOORS_MONITOR_REFRESH_MS } from '../../utils/constants';
 import './Monitoring.css';
 
 const Doors = () => {
@@ -42,7 +43,7 @@ const Doors = () => {
 
   useAutoRefresh(() => {
     refetch(true);
-  }, 2500);
+  }, DOORS_MONITOR_REFRESH_MS);
 
   const doorList = doors?.doors;
   const countForTitle = Array.isArray(doorList) ? doorList.length : null;

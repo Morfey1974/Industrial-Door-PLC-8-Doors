@@ -38,7 +38,7 @@ const useAutoRefresh = (callback, interval = 5000) => {
       Promise.resolve(callbackRef.current())
         .catch((err) => console.error('Auto refresh callback error:', err))
         .finally(() => {
-          setTimeout(() => { isRunningRef.current = false; }, 100);
+          isRunningRef.current = false;
         });
     };
 

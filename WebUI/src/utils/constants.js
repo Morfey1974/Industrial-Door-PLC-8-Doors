@@ -60,7 +60,9 @@ export const PUT_CONFIG_FULL_MAX_JSON_BYTES = 31744;
 
 // Таймауты
 export const API_TIMEOUT = 30000; // 30 секунд (увеличено для медленных соединений)
-export const AUTO_REFRESH_INTERVAL = 5000; // 5 секунд для автообновления
+export const AUTO_REFRESH_INTERVAL = 5000; // 5 секунд для автообновления по умолчанию
+/* Мониторинг дверей: однопоточный HTTP на МК — при медленном ответе тихие refetch раньше терялись; см. useApi pendingSilentRefetchRef */
+export const DOORS_MONITOR_REFRESH_MS = 1500;
 
 // Роли пользователей
 export const USER_ROLES = {
