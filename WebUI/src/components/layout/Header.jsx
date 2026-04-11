@@ -28,7 +28,7 @@ const Header = () => {
   const { t, language, setLanguage } = useLanguage();
   const { data: state, loading: stateLoading, error: stateError, refetch: refetchState } = useStateData();
   const [browserOffline, setBrowserOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
-  const goHome = () => (tryNavigate || navigate)('/');
+  const goHome = () => (tryNavigate || navigate)('/monitoring/doors');
 
   const refetchRef = useRef(refetchState);
   refetchRef.current = refetchState;
@@ -76,7 +76,7 @@ const Header = () => {
     <header className="header">
       <div className="header-left">
         <Link
-          to="/"
+          to="/monitoring/doors"
           className="logo-link"
           style={{ textDecoration: 'none', color: 'inherit' }}
           onClick={(e) => {

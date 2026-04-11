@@ -113,3 +113,7 @@ typedef struct
 void AppEvents_Init(void);
 BaseType_t AppEvents_Publish(const app_event_t *evt, TickType_t ticks_to_wait);
 BaseType_t AppEvents_Wait(app_event_t *evt, TickType_t ticks_to_wait);
+
+/* Для GET /api/buffers: глубина очереди, ёмкость, пик ожидающих (с момента сброса МК). */
+void AppEvents_GetQueueMetrics(uint32_t *out_waiting, uint32_t *out_capacity,
+                               uint32_t *out_peak_waiting);

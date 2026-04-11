@@ -6,6 +6,7 @@
 #define LOG_QUEUE_LEN 32
 
 static QueueHandle_t s_logQ = NULL;
+static UBaseType_t s_log_q_peak_waiting = 0U;
 
 void AppLog_Init(void)
 {
@@ -23,6 +24,24 @@ BaseType_t AppLog_Pop(app_log_msg_t *msg, TickType_t ticks_to_wait)
 {
     if (!s_logQ || !msg) return pdFALSE;
     return xQueueReceive(s_logQ, msg, ticks_to_wait);
+}
+
+void AppLog_GetQueueMetrics(uint32_t *out_waiting, uint32_t *out_capacity,
+                            uint32_t *out_peak_waiting)
+{
+    if (out_waiting) *out_waiting = 0U;
+    if (out_capacity) *out_capacity = 0U;
+    if (out_peak_waiting) *out_peak_waiting = 0U;
+    if (!s_logQ) return;
+
+    UBaseType_t w = uxQueueMessagesWaiting(s_logQ);
+    UBaseType_t sp = uxQueueSpacesAvailable(s_logQ);
+    if (w > s_log_q_peak_waiting)
+        s_log_q_peak_waiting = w;
+
+    if (out_waiting) *out_waiting = (uint32_t)w;
+    if (out_capacity) *out_capacity = (uint32_t)(w + sp);
+    if (out_peak_waiting) *out_peak_waiting = (uint32_t)s_log_q_peak_waiting;
 }
 
 /* --------------------------------------------------------------------------

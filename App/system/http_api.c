@@ -10,6 +10,8 @@
 extern osThreadId_t httpTaskHandle;
 
 #include "app_log.h"
+#include "app_events.h"
+#include "task.h"
 #include "http_server.h"
 
 #include "doors/doors_task.h"
@@ -1192,6 +1194,76 @@ static int put_mapping(const char *body, size_t body_len, char *out_body, size_t
     return 200;
 }
 
+/* Размеры должны совпадать с http_server.c (HTTP_RX_BUF_SZ, HTTP_BODY_MAX, HTTP_GET_RESPONSE_MAX). */
+#define HTTP_API_BUFFERS_TASK_MAX    24U
+#define HTTP_API_HTTP_RX_BUF_SZ      768U
+#define HTTP_API_HTTP_BODY_MAX       8192U
+#define HTTP_API_HTTP_GET_RESP_MAX   8192U
+
+static uint8_t jw_append_json_str_lit(jsonw_t *w, const char *s)
+{
+    if (!jw_appendf(w, "\"")) return 0U;
+    if (s) {
+        for (; *s != '\0'; ++s) {
+            unsigned char c = (unsigned char)*s;
+            if (c == '"' || c == '\\') {
+                if (!jw_appendf(w, "\\%c", (char)c)) return 0U;
+            } else if (c < 32U || c > 126U) {
+                if (!jw_appendf(w, "?")) return 0U;
+            } else {
+                if (!jw_appendf(w, "%c", (char)c)) return 0U;
+            }
+        }
+    }
+    return jw_appendf(w, "\"") ? 1U : 0U;
+}
+
+/* GET /api/buffers: очереди FreeRTOS, RAM-журнал, задачи (stack high water), буферы HTTP. */
+static uint8_t build_buffers_stat(jsonw_t *w)
+{
+    uint32_t ev_w = 0, ev_cap = 0, ev_peak = 0;
+    uint32_t log_w = 0, log_cap = 0, log_peak = 0;
+    uint32_t jq_w = 0, jq_cap = 0, jq_peak = 0;
+    uint32_t jdrop = 0, jio = 0;
+
+    AppEvents_GetQueueMetrics(&ev_w, &ev_cap, &ev_peak);
+    AppLog_GetQueueMetrics(&log_w, &log_cap, &log_peak);
+    EventJournal_GetRamQueueMetrics(&jq_w, &jq_cap, &jq_peak);
+    EventJournal_GetQuickCounters(&jdrop, &jio);
+
+    if (!jw_appendf(w, "{\"ok\":1,\"http\":{\"rxBufBytes\":%lu,\"bodyMaxBytes\":%lu,\"getResponseMaxBytes\":%lu},\"queues\":[",
+                    (unsigned long)HTTP_API_HTTP_RX_BUF_SZ,
+                    (unsigned long)HTTP_API_HTTP_BODY_MAX,
+                    (unsigned long)HTTP_API_HTTP_GET_RESP_MAX))
+        return 0U;
+
+    if (!jw_appendf(w, "{\"id\":\"app_events\",\"waiting\":%lu,\"capacity\":%lu,\"peak\":%lu}",
+                    (unsigned long)ev_w, (unsigned long)ev_cap, (unsigned long)ev_peak))
+        return 0U;
+    if (!jw_appendf(w, ",{\"id\":\"app_log\",\"waiting\":%lu,\"capacity\":%lu,\"peak\":%lu}",
+                    (unsigned long)log_w, (unsigned long)log_cap, (unsigned long)log_peak))
+        return 0U;
+    if (!jw_appendf(w, ",{\"id\":\"journal_ram\",\"waiting\":%lu,\"capacity\":%lu,\"peak\":%lu,\"dropped\":%lu,\"ioErrors\":%lu}]",
+                    (unsigned long)jq_w, (unsigned long)jq_cap, (unsigned long)jq_peak,
+                    (unsigned long)jdrop, (unsigned long)jio))
+        return 0U;
+
+    if (!jw_appendf(w, ",\"tasks\":[")) return 0U;
+
+    TaskStatus_t ts[HTTP_API_BUFFERS_TASK_MAX];
+    const UBaseType_t nt = uxTaskGetSystemState(ts, HTTP_API_BUFFERS_TASK_MAX, NULL);
+    for (UBaseType_t i = 0; i < nt; i++) {
+        if (i > 0U && !jw_appendf(w, ",")) return 0U;
+        const char *nm = ts[i].pcTaskName ? ts[i].pcTaskName : "?";
+        const UBaseType_t hw = uxTaskGetStackHighWaterMark(ts[i].xHandle);
+        if (!jw_appendf(w, "{\"name\":")) return 0U;
+        if (!jw_append_json_str_lit(w, nm)) return 0U;
+        if (!jw_appendf(w, ",\"stackHighWaterWords\":%lu}", (unsigned long)hw)) return 0U;
+    }
+    if (!jw_appendf(w, "]}")) return 0U;
+    return 1U;
+}
+
 int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len,
                       char *out_body, size_t out_sz)
 {
@@ -1250,6 +1322,10 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
     if (strcmp(path, "/api/journal/stat") == 0)
     {
         return build_journal_stat(&w) ? 200 : 500;
+    }
+    if (strcmp(path, "/api/buffers") == 0)
+    {
+        return build_buffers_stat(&w) ? 200 : 500;
     }
     if (strcmp(path, "/api/time") == 0)
     {

@@ -115,6 +115,11 @@ journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
                                           journal_record_t *out_records,
                                           uint32_t *out_count);
 
+/* RAM-очередь журнала → flash (GET /api/buffers). Без полного обхода QSPI. */
+void EventJournal_GetRamQueueMetrics(uint32_t *out_waiting, uint32_t *out_capacity,
+                                     uint32_t *out_peak_waiting);
+void EventJournal_GetQuickCounters(uint32_t *out_dropped_queue, uint32_t *out_io_errors);
+
 /* --- Internal for JournalTask --- */
 BaseType_t EventJournal_WaitEvent(app_event_t *out_evt, TickType_t ticks_to_wait);
 void EventJournal_WriteEventToFlash(const app_event_t *evt);

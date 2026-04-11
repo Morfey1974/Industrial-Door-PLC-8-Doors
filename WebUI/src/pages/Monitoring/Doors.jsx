@@ -1,15 +1,18 @@
 /**
- * Doors страница - мониторинг дверей
+ * Мониторинг дверей — обзор по платам, краткая сводка по журналу и дверям, таблица.
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
+import useApi from '../../hooks/useApi';
 import { useDoorsData } from '../../context/DoorsDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
+import DoorsOverview from '../../components/ui/DoorsOverview';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
+import { getJournalStat } from '../../services/api';
 import './Monitoring.css';
 
 const Doors = () => {
@@ -19,24 +22,98 @@ const Doors = () => {
     doorId: '',
   });
 
-  // Состояние дверей — общий кэш с Дашбордом (при переходе с Дашборда данные уже есть)
   const { data: doors, loading, error, refetch } = useDoorsData();
   const errorText = mapApiErrorToUiMessage(error, t);
 
-  // Автообновление каждые 2.5 с (тихое обновление без показа loading)
+  const fetchJournalStat = useCallback((signal) => getJournalStat(signal), []);
+  const {
+    data: journalStat,
+    loading: journalLoading,
+    error: journalError,
+    refetch: refetchJournal,
+  } = useApi(fetchJournalStat, []);
+
   useAutoRefresh(() => {
-    // Используем тихое обновление, чтобы не показывать состояние загрузки
     refetch(true);
   }, 2500);
 
+  /* Журнал: реже, чем двери — на МК подсчёт totalRecords тяжёлый */
+  useAutoRefresh(() => refetchJournal(true), 8000);
+
+  const totalDoors = doors?.doors?.length ?? 0;
+  const alarmingCount = doors?.doors?.filter((d) => d.alarming)?.length ?? 0;
+
   return (
-    <div className="monitoring-doors">
+    <div className="monitoring-doors dashboard-page">
       <div className="page-header">
         <h1>{t('pages.doors.title')}</h1>
-        <p>{t('pages.doors.subtitle')}</p>
+        <p>{t('pages.doors.subtitleMonitoring')}</p>
       </div>
 
-      {/* Панель фильтров и строка: статус, ID двери, всего дверей, Обновить */}
+      {(journalStat || journalLoading || journalError) && (
+        <div className="stats-grid" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
+          <div className="stats-card">
+            <h2>{t('pages.statistics.journal')}</h2>
+            {journalLoading && !journalStat ? (
+              <p className="stats-muted">{t('common.loading')}</p>
+            ) : journalStat ? (
+              <>
+                <p className="stats-value">{journalStat.recordsWritten ?? 0}</p>
+                <p className="stats-label">{t('pages.statistics.recordsWritten')}</p>
+                <ul className="stats-list">
+                  <li>
+                    {t('pages.statistics.bufferSize')}: {(journalStat.size ?? 0).toLocaleString()} {t('pages.statistics.bytes')}
+                  </li>
+                  <li>
+                    {t('pages.statistics.sector')}: {journalStat.currentSector ?? 0} {t('pages.statistics.of')} {journalStat.sectors ?? 0}
+                  </li>
+                  <li>
+                    {t('pages.statistics.currentSequence')}: {journalStat.currentSeq ?? 0}
+                  </li>
+                  {journalStat.droppedQueue !== undefined && journalStat.droppedQueue > 0 && (
+                    <li className="stats-warning">
+                      {t('pages.statistics.droppedQueue')}: {journalStat.droppedQueue}
+                    </li>
+                  )}
+                  {journalStat.ioErrors !== undefined && journalStat.ioErrors > 0 && (
+                    <li className="stats-warning">
+                      {t('pages.statistics.ioErrors')}: {journalStat.ioErrors}
+                    </li>
+                  )}
+                </ul>
+              </>
+            ) : (
+              <p className="stats-muted">{mapApiErrorToUiMessage(journalError, t) || t('pages.statistics.errorLoad')}</p>
+            )}
+          </div>
+          <div className="stats-card">
+            <h2>{t('pages.statistics.doors')}</h2>
+            {!loading && doors?.doors ? (
+              <>
+                <p className="stats-value">{totalDoors}</p>
+                <p className="stats-label">{t('pages.statistics.totalDoors')}</p>
+                <ul className="stats-list">
+                  <li>
+                    {t('pages.statistics.withAlarm')}: <strong>{alarmingCount}</strong>
+                  </li>
+                  <li>
+                    {t('pages.statistics.normal')}: <strong>{totalDoors - alarmingCount}</strong>
+                  </li>
+                </ul>
+              </>
+            ) : (
+              <p className="stats-muted">{loading ? t('common.loading') : t('pages.doors.noData')}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && doors && doors.doors && doors.doors.length > 0 && (
+        <section className="doors-overview-section" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
+          <DoorsOverview doors={doors} />
+        </section>
+      )}
+
       <div className="filters-section">
         <div className="filters-row">
           <FilterBar filters={filters} onFilterChange={setFilters} />
@@ -53,7 +130,6 @@ const Doors = () => {
         </div>
       </div>
 
-      {/* Скелетон таблицы при первой загрузке — страница сразу имеет структуру */}
       {loading && !doors && (
         <div className="doors-table-section door-table-skeleton" aria-busy="true">
           <div className="door-table" style={{ padding: '1rem' }}>
@@ -85,7 +161,6 @@ const Doors = () => {
         </div>
       )}
 
-      {/* Обработка ошибок - показываем только если нет данных */}
       {error && !doors && (
         <div className="error-state">
           <h3>{t('pages.doors.errorLoad')}</h3>
@@ -97,11 +172,9 @@ const Doors = () => {
         </div>
       )}
 
-      {/* Таблица дверей - показываем если есть данные, даже при ошибке автообновления */}
       {doors && (
         <div className="doors-table-section">
           <DoorTable doors={doors} filters={filters} />
-          {/* Показываем предупреждение об ошибке автообновления, но не скрываем таблицу */}
           {error && doors && (
             <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
               <p style={{ margin: 0, fontSize: '0.875rem' }}>
@@ -112,7 +185,6 @@ const Doors = () => {
         </div>
       )}
 
-      {/* Нет данных - показываем только если нет данных и нет ошибки */}
       {!loading && !error && (!doors || !doors.doors || doors.doors.length === 0) && (
         <div className="no-data-state">
           <p>{t('pages.doors.noData')}</p>

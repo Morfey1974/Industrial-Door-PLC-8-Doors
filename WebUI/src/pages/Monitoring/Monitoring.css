@@ -235,15 +235,17 @@
   color: var(--color-text-dark);
 }
 
-/* Статистика — карточки */
-.monitoring-statistics .stats-grid {
+/* Статистика и краткая сводка на «Мониторинг дверей» — карточки */
+.monitoring-statistics .stats-grid,
+.monitoring-doors .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--spacing-lg, 24px);
   margin-bottom: var(--spacing-xl, 32px);
 }
 
-.monitoring-statistics .stats-card {
+.monitoring-statistics .stats-card,
+.monitoring-doors .stats-card {
   background: var(--color-white);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 16px);
@@ -251,7 +253,8 @@
   box-shadow: var(--shadow-sm);
 }
 
-.monitoring-statistics .stats-card h2 {
+.monitoring-statistics .stats-card h2,
+.monitoring-doors .stats-card h2 {
   margin: 0 0 var(--spacing-md, 16px) 0;
   font-size: var(--font-size-lg, 1.125rem);
   font-weight: var(--font-weight-semibold, 600);
@@ -260,13 +263,15 @@
   padding-bottom: var(--spacing-sm, 8px);
 }
 
-.monitoring-statistics .stats-card .stats-value {
+.monitoring-statistics .stats-card .stats-value,
+.monitoring-doors .stats-card .stats-value {
   font-size: var(--font-size-2xl, 1.5rem);
   font-weight: var(--font-weight-bold, 700);
   color: var(--color-primary);
 }
 
-.monitoring-statistics .stats-card ul {
+.monitoring-statistics .stats-card ul,
+.monitoring-doors .stats-card ul {
   margin: 0;
   padding-left: var(--spacing-lg, 24px);
   font-size: var(--font-size-sm, 0.875rem);
@@ -274,34 +279,40 @@
   color: var(--color-text-dark);
 }
 
-.monitoring-statistics .stats-card .stats-list {
+.monitoring-statistics .stats-card .stats-list,
+.monitoring-doors .stats-card .stats-list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.monitoring-statistics .stats-card .stats-list li {
+.monitoring-statistics .stats-card .stats-list li,
+.monitoring-doors .stats-card .stats-list li {
   padding: var(--spacing-xs, 4px) 0;
   border-bottom: 1px solid var(--color-border);
   font-size: var(--font-size-sm, 0.875rem);
 }
 
-.monitoring-statistics .stats-card .stats-list li:last-child {
+.monitoring-statistics .stats-card .stats-list li:last-child,
+.monitoring-doors .stats-card .stats-list li:last-child {
   border-bottom: none;
 }
 
-.monitoring-statistics .stats-card .stats-label {
+.monitoring-statistics .stats-card .stats-label,
+.monitoring-doors .stats-card .stats-label {
   margin: 0 0 var(--spacing-md, 16px) 0;
   font-size: var(--font-size-sm, 0.875rem);
   color: var(--color-text-muted);
 }
 
-.monitoring-statistics .stats-card .stats-warning {
+.monitoring-statistics .stats-card .stats-warning,
+.monitoring-doors .stats-card .stats-warning {
   color: var(--color-accent);
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.monitoring-statistics .stats-card .stats-muted {
+.monitoring-statistics .stats-card .stats-muted,
+.monitoring-doors .stats-card .stats-muted {
   margin: 0;
   font-size: var(--font-size-sm, 0.875rem);
   color: var(--color-text-muted);
