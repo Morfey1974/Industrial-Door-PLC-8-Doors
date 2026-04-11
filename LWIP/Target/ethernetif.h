@@ -40,6 +40,6 @@ u32_t sys_jiffies(void);
 u32_t sys_now(void);
 
 /* USER CODE BEGIN 1 */
-
+extern volatile uint32_t g_eth_tcpip_cb_fail;
 /* USER CODE END 1 */
 #endif

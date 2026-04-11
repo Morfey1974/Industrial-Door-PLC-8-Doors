@@ -133,6 +133,12 @@
 #define TCPIP_MBOX_SIZE                 16
 #define MEMP_NUM_TCPIP_MSG_API          16
 
+/* По умолчанию в opt.h: MEMP_NUM_TCP_PCB=5, MEMP_NUM_TCP_SEG=16 — мало при link flap,
+ * нескольких клиентах браузера и сокетах в TIME_WAIT → accept/bind падают, HTTP «умирает»
+ * при живом ping. Пулы memp отдельны от MEM_SIZE (куча pbuf). */
+#define MEMP_NUM_TCP_PCB                24
+#define MEMP_NUM_TCP_SEG                48
+
 /* USER CODE END 1 */
 
 #ifdef __cplusplus

@@ -80,6 +80,16 @@ void HttpTask_Run(void const *argument)
             NetLink_FetchAndClearEdges(&phy_down_n, &phy_up_n);
             if (phy_down_n > 0U || phy_up_n > 0U)
             {
+                /* Один физический фронт раньше дублировался (bringup + tcpip); теперь в основном
+                 * один источник. Если за тик всё же пришли UP и DOWN — схлопываем по lwIP link,
+                 * иначе лишний stop сервера после реального UP. */
+                if (phy_down_n > 0U && phy_up_n > 0U) {
+                    if (Net_IsLinkUp()) {
+                        phy_down_n = 0U;
+                    } else {
+                        phy_up_n = 0U;
+                    }
+                }
                 if (phy_down_n > 0U)
                 {
                     if (phy_down_n > 1U) {
@@ -158,7 +168,11 @@ void HttpTask_Run(void const *argument)
          */
         if (stable_up_count < NET_STABLE_TICKS)
         {
-            /* Линк еще не стабилен, ждем подтверждения без перезапуска HTTP. */
+            /* Линк ещё «качается» по Net_IsReady(), но после PHY UP сервер уже может быть поднят —
+             * раньше здесь был голый continue и PollOnce не вызывался сотни мс: UI «иногда» отвечал. */
+            if (server_started && HttpServer_IsReady()) {
+                HttpServer_PollOnce(20);
+            }
             osDelay(50);
             continue;
         }

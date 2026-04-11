@@ -75,6 +75,10 @@ uint8_t HttpServer_IsReady(void);
  */
 void HttpServer_PollOnce(uint32_t timeout_ms);
 
+/* UART / монитор: счётчики с момента сброса МК (растут при сбоях сокета listen). */
+extern volatile uint32_t g_http_listen_sel_fail;
+extern volatile uint32_t g_http_accept_fail;
+
 #ifdef __cplusplus
 }
 #endif

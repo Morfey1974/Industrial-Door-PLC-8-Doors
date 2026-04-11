@@ -57,11 +57,16 @@ static void eth_netif_tcpip_sync_fn(void *ctx)
   if (c->set_lw_link_up == 0U) {
     netif_set_down(c->netif);
     netif_set_link_down(c->netif);
+    /* Всегда уведомляем HttpTask: при повторном callback или гонке had_link мог быть уже 0,
+     * тогда listen не закрывался до «network lost» и вторая серия flap ломала сеть. */
     NetLink_NotifyPhyEdge(0);
   } else {
+    const uint8_t had_no_link = (c->netif->flags & NETIF_FLAG_LINK_UP) == 0U;
     netif_set_up(c->netif);
     netif_set_link_up(c->netif);
-    NetLink_NotifyPhyEdge(1);
+    if (had_no_link != 0U) {
+      NetLink_NotifyPhyEdge(1);
+    }
   }
 }
 
@@ -71,9 +76,12 @@ static void eth_schedule_netif_lw_sync(struct netif *netif, uint8_t set_link_up)
   slot->netif = netif;
   slot->set_lw_link_up = set_link_up;
   if (tcpip_callback(eth_netif_tcpip_sync_fn, slot) != ERR_OK) {
+    g_eth_tcpip_cb_fail++;
     printf("ETH: tcpip_callback(netif %s) failed, retry\r\n", set_link_up ? "up" : "down");
     osDelay(20);
-    (void)tcpip_callback(eth_netif_tcpip_sync_fn, slot);
+    if (tcpip_callback(eth_netif_tcpip_sync_fn, slot) != ERR_OK) {
+      g_eth_tcpip_cb_fail++;
+    }
   }
 }
 /* USER CODE END 0 */
@@ -99,6 +107,11 @@ static void eth_schedule_netif_lw_sync(struct netif *netif, uint8_t set_link_up)
 /* USER CODE BEGIN 1 */
 volatile uint32_t g_eth_rx_cb = 0;
 volatile uint32_t g_eth_tx_cb = 0;
+volatile uint32_t g_eth_tcpip_cb_fail = 0;
+/* 1 = HAL_ETH_Start_IT уже выполнен, DMA RX/TX активны; сброс только после HAL_ETH_Stop_IT.
+ * Без этого при задержке tcpip_callback netif остаётся link-down, а цикл EthLink каждые 100 ms
+ * снова вызывает Start_IT + tcpip — пачка NetLink_NotifyPhyEdge(1) и «мёртвый» Ethernet. */
+static uint8_t s_hal_eth_mac_it_started = 0U;
 /* USER CODE END 1 */
 
 /* Private variables ---------------------------------------------------------*/
@@ -386,6 +399,7 @@ static void low_level_init(struct netif *netif)
     HAL_ETH_SetMACConfig(&heth, &MACConf);
 
     HAL_ETH_Start_IT(&heth);
+    s_hal_eth_mac_it_started = 1U;
     netif_set_up(netif);
     netif_set_link_up(netif);
 /* USER CODE BEGIN PHY_POST_CONFIG */
@@ -848,7 +862,8 @@ void ethernet_link_thread(void* argument)
 
   struct netif *netif = (struct netif *) argument;
 /* USER CODE BEGIN ETH link init */
-
+  static uint8_t s_phy_down_streak = 0U;
+  static uint32_t s_lw_up_reschedule_ms = 0U;
 /* USER CODE END ETH link init */
 
   for(;;)
@@ -865,11 +880,22 @@ void ethernet_link_thread(void* argument)
    * отрицательные коды MDIO — ложный down, HAL_ETH_Stop и обрушение всей сети/логики на платах. */
   if (netif_is_link_up(netif) && (PHYLinkState == LAN8742_STATUS_LINK_DOWN))
   {
-    HAL_ETH_Stop_IT(&heth);
-    eth_schedule_netif_lw_sync(netif, 0U);
+    /* Кратковременный «down» при auto-neg / дребезге MDIO иначе даёт Stop сразу после Up:
+     * netif уже UP в логе, а HttpTask видит пару DOWN+UP и гасит TCP. */
+    if (s_phy_down_streak < 255U) {
+      s_phy_down_streak++;
+    }
+    if (s_phy_down_streak >= 3U)
+    {
+      s_phy_down_streak = 0U;
+      HAL_ETH_Stop_IT(&heth);
+      s_hal_eth_mac_it_started = 0U;
+      eth_schedule_netif_lw_sync(netif, 0U);
+    }
   }
   else if(!netif_is_link_up(netif) && (PHYLinkState > LAN8742_STATUS_LINK_DOWN))
   {
+    s_phy_down_streak = 0U;
 
     switch (PHYLinkState)
     {
@@ -904,18 +930,34 @@ void ethernet_link_thread(void* argument)
       MACConf.DuplexMode = duplex;
       MACConf.Speed = speed;
       HAL_ETH_SetMACConfig(&heth, &MACConf);
-      if (HAL_ETH_Start_IT(&heth) != HAL_OK)
+      if (s_hal_eth_mac_it_started != 0U)
+      {
+        /* DMA уже крутится; если tcpip отстал — добиваем только lwIP, без повторного Start_IT.
+         * Без троттлинга tcpip mbox забивается за 1–2 с при задержке callback. */
+        uint32_t now = HAL_GetTick();
+        if ((now - s_lw_up_reschedule_ms) >= 200U) {
+          s_lw_up_reschedule_ms = now;
+          eth_schedule_netif_lw_sync(netif, 1U);
+        }
+      }
+      else if (HAL_ETH_Start_IT(&heth) != HAL_OK)
       {
         /* Вернуть драйвер в READY, иначе следующие итерации снова не смогут Start — «линк UP в логе, МК мёртв». */
         printf("ETH: HAL_ETH_Start_IT failed (gState=%u) -> Stop_IT\r\n",
                (unsigned)HAL_ETH_GetState(&heth));
         (void)HAL_ETH_Stop_IT(&heth);
+        s_hal_eth_mac_it_started = 0U;
       }
       else
       {
+        s_hal_eth_mac_it_started = 1U;
         eth_schedule_netif_lw_sync(netif, 1U);
       }
     }
+  }
+  else
+  {
+    s_phy_down_streak = 0U;
   }
 
 /* USER CODE BEGIN ETH link Thread core code for User BSP */

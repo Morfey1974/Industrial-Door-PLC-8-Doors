@@ -48,6 +48,7 @@
 #include "can_task.h"
 #include "rs485_task.h"
 #include "http_task.h"
+#include "http_server.h"
 #include "logger_task.h"
 #include "watchdog_task.h"
 #include "system/journal_task.h"
@@ -56,6 +57,7 @@
 extern volatile uint32_t g_eth_irq;
 extern volatile uint32_t g_eth_rx_cb;
 extern volatile uint32_t g_eth_tx_cb;
+extern volatile uint32_t g_eth_tcpip_cb_fail;
 
 /* USER CODE END Includes */
 
@@ -260,7 +262,10 @@ void StartNetTask(void *argument)
   /* USER CODE BEGIN StartNetTask */
   /* Если хочешь задержку "до" LWIP init — её нельзя ставить здесь,
      потому что MX_LWIP_Init() находится в автогенерируемом блоке выше. */
-  printf("ETH: irq=%lu rxcb=%lu txcb=%lu\n", g_eth_irq, g_eth_rx_cb, g_eth_tx_cb);
+  printf("ETH: irq=%lu rxcb=%lu txcb=%lu tcpipcbf=%lu httpsel=%lu httpacc=%lu listen=%u\n",
+         g_eth_irq, g_eth_rx_cb, g_eth_tx_cb,
+         g_eth_tcpip_cb_fail, g_http_listen_sel_fail, g_http_accept_fail,
+         (unsigned)HttpServer_IsReady());
 
   NetTask_Run(argument);
 

@@ -53,6 +53,9 @@ static char s_put_config_full_body[HTTP_CONFIG_PUT_MAX];
 static int s_listen_fd = -1;
 static uint16_t s_listen_port = 0;
 
+volatile uint32_t g_http_listen_sel_fail = 0;
+volatile uint32_t g_http_accept_fail = 0;
+
 void HttpServer_Deinit(void)
 {
     /* Закрываем listen-сокет, чтобы при возврате линка можно было
@@ -427,6 +430,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
          * после link flap. Закрываем listen-сокет, чтобы HttpTask сделал re-init.
          */
         if (sel < 0) {
+            g_http_listen_sel_fail++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
             AppLog("HTTP: select(listen) error errno=%d -> deinit", errno);
 #endif
@@ -439,6 +443,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     socklen_t clilen = sizeof(cli);
     int cfd = lwip_accept(s_listen_fd, (struct sockaddr *)&cli, &clilen);
     if (cfd < 0) {
+        g_http_accept_fail++;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
         AppLog("HTTP: accept() failed errno=%d", errno);
 #endif
