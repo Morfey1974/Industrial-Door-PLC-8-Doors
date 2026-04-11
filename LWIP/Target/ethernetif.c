@@ -38,6 +38,10 @@
 /* USER CODE BEGIN 0 */
 #include "net_link_signal.h"
 
+/* Определены ниже по файлу (после сгенерированного блока); нужны до static helpers. */
+extern ETH_HandleTypeDef heth;
+extern volatile uint32_t g_eth_tcpip_cb_fail;
+
 /* Синхронизация netif только из tcpip_thread (tcpip_callback), без LOCK_TCPIP_CORE из EthLink:
  * иначе при нагрузке возможны долгие блокировки стека и «заморозка» всего, что завязан на сеть/COMMS.
  * Контекст для up; link down — отдельный tcpip_callback (слив RX + netif) перед HAL_ETH_Stop_IT. */
