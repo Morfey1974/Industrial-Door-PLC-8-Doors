@@ -26,7 +26,6 @@ const SECTION_TITLE_KEY_BY_ID = {
   overview: 'sectionTitleOverview',
   'monitoring-doors': 'sectionTitleMonitoringDoors',
   'monitoring-events': 'sectionTitleMonitoringEvents',
-  'monitoring-statistics': 'sectionTitleMonitoringStatistics',
   'config-doors': 'sectionTitleConfigDoors',
   'config-mapping': 'sectionTitleConfigMapping',
   'settings-system': 'sectionTitleSettingsSystem',

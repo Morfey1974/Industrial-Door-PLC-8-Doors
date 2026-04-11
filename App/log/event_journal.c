@@ -63,7 +63,6 @@ enum { elog_record_v2_t_must_be_48_bytes = 1 / ((sizeof(elog_record_v2_t) == 48)
 /* ---------------- State ---------------- */
 
 static QueueHandle_t s_q = NULL;
-static UBaseType_t s_journal_ram_peak_waiting = 0U;
 static uint32_t s_cur_sector = 0;
 static uint32_t s_cur_sector_seq = 0;
 static uint32_t s_cur_write_ofs = ELOG_SECTOR_HDR_BYTES;
@@ -425,11 +424,6 @@ journal_status_t EventJournal_EnqueueEvent(const app_event_t *evt)
     {
         s_stats.dropped_queue++;
         return JOURNAL_QUEUE_FULL;
-    }
-    {
-        UBaseType_t w = uxQueueMessagesWaiting(s_q);
-        if (w > s_journal_ram_peak_waiting)
-            s_journal_ram_peak_waiting = w;
     }
     return JOURNAL_OK;
 }
@@ -864,30 +858,6 @@ void EventJournal_PrintRecordInfo(void)
 /* =========================================================
  * HTTP API: чтение записей с пагинацией (Этап 9)
  * ========================================================= */
-
-void EventJournal_GetRamQueueMetrics(uint32_t *out_waiting, uint32_t *out_capacity,
-                                     uint32_t *out_peak_waiting)
-{
-    if (out_waiting) *out_waiting = 0U;
-    if (out_capacity) *out_capacity = 0U;
-    if (out_peak_waiting) *out_peak_waiting = 0U;
-    if (!s_q) return;
-
-    UBaseType_t w = uxQueueMessagesWaiting(s_q);
-    UBaseType_t sp = uxQueueSpacesAvailable(s_q);
-    if (w > s_journal_ram_peak_waiting)
-        s_journal_ram_peak_waiting = w;
-
-    if (out_waiting) *out_waiting = (uint32_t)w;
-    if (out_capacity) *out_capacity = (uint32_t)(w + sp);
-    if (out_peak_waiting) *out_peak_waiting = (uint32_t)s_journal_ram_peak_waiting;
-}
-
-void EventJournal_GetQuickCounters(uint32_t *out_dropped_queue, uint32_t *out_io_errors)
-{
-    if (out_dropped_queue) *out_dropped_queue = s_stats.dropped_queue;
-    if (out_io_errors) *out_io_errors = s_stats.io_errors;
-}
 
 journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
                                           journal_record_t *out_records,

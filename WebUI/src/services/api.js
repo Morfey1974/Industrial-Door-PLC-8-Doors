@@ -167,13 +167,6 @@ export const getJournalStat = async (signal = null) => {
   return response.data;
 };
 
-// Очереди, стеки задач и буферы HTTP (страница «Статистика»)
-export const getBufferStats = async (signal = null) => {
-  const config = { timeout: 15000, ...(signal ? { signal } : {}) };
-  const response = await apiClient.get('/buffers', config);
-  return response.data;
-};
-
 // Получить записи журнала с пагинацией
 export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
   const config = {

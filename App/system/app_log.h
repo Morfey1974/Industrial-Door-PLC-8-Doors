@@ -29,9 +29,6 @@ void AppLog_Init(void);
 BaseType_t AppLog_Push(const app_log_msg_t *msg, TickType_t ticks_to_wait);
 BaseType_t AppLog_Pop(app_log_msg_t *msg, TickType_t ticks_to_wait);
 
-void AppLog_GetQueueMetrics(uint32_t *out_waiting, uint32_t *out_capacity,
-                            uint32_t *out_peak_waiting);
-
 /* --------------------------------------------------------------------------
  * Высокоуровневый интерфейс логгера (printf-style)
  *

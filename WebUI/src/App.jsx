@@ -14,7 +14,6 @@ import Tabs from './components/layout/Tabs';
 import Login from './pages/Login';
 import Doors from './pages/Monitoring/Doors';
 import Events from './pages/Monitoring/Events';
-import Statistics from './pages/Monitoring/Statistics';
 import DoorsConfig from './pages/Configuration/DoorsConfig';
 import Mapping from './pages/Mapping';
 import Profile from './pages/Settings/Profile';
@@ -56,7 +55,6 @@ function AppContent() {
     const getActiveSidebarItem = () => {
       if (location.pathname === '/monitoring/doors' || location.pathname === '/') return 'doors';
       if (location.pathname === '/monitoring/events') return 'events';
-      if (location.pathname === '/monitoring/statistics') return 'statistics';
       if (location.pathname === '/configuration/doors') return 'doors-config';
       if (location.pathname === '/configuration/mapping') return 'doors-config';
       if (location.pathname === '/settings/system') return 'system-params';
@@ -117,7 +115,6 @@ function AppContent() {
     const monitoringItems = [
       { id: 'doors', label: t('nav.doors'), path: '/monitoring/doors' },
       { id: 'events', label: t('nav.events'), path: '/monitoring/events' },
-      { id: 'statistics', label: t('nav.statistics'), path: '/monitoring/statistics' },
     ];
     const configurationItems = [
       { id: 'doors-config', label: t('nav.doorsConfig'), path: '/configuration/doors' },
@@ -198,7 +195,6 @@ function AppContent() {
                 <Route path="/dashboard" element={<Navigate to="/monitoring/doors" replace />} />
                 <Route path="/monitoring/doors" element={<ProtectedRoute path="/monitoring/doors"><Doors /></ProtectedRoute>} />
                 <Route path="/monitoring/events" element={<ProtectedRoute path="/monitoring/events"><Events /></ProtectedRoute>} />
-                <Route path="/monitoring/statistics" element={<ProtectedRoute path="/monitoring/statistics"><Statistics /></ProtectedRoute>} />
                 <Route path="/configuration/doors" element={<ProtectedRoute path="/configuration/doors"><DoorsConfig /></ProtectedRoute>} />
                 <Route path="/configuration/mapping" element={<ProtectedRoute path="/configuration/mapping"><ErrorBoundary><Mapping /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/settings/system" element={<ProtectedRoute path="/settings/system"><SystemParams /></ProtectedRoute>} />
