@@ -193,6 +193,9 @@ function AppContent() {
                 {/* Доступ по таблице прав (path передаётся в ProtectedRoute) */}
                 <Route path="/" element={<Navigate to="/monitoring/doors" replace />} />
                 <Route path="/dashboard" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/login" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/monitoring/statistics" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/monitoring/alarms" element={<Navigate to="/monitoring/doors" replace />} />
                 <Route path="/monitoring/doors" element={<ProtectedRoute path="/monitoring/doors"><Doors /></ProtectedRoute>} />
                 <Route path="/monitoring/events" element={<ProtectedRoute path="/monitoring/events"><Events /></ProtectedRoute>} />
                 <Route path="/configuration/doors" element={<ProtectedRoute path="/configuration/doors"><DoorsConfig /></ProtectedRoute>} />

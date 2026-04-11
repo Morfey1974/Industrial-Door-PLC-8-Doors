@@ -168,7 +168,7 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
      * не ждать длинного таймаута и быстрее восстановить UI.
      */
     if (isFetchingRef.current && !force) {
-      return;
+      return false;
     }
 
     // Отменяем предыдущий запрос перед новым запуском
@@ -213,7 +213,9 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
           return result;
         });
         setError(null); // Успех — сбрасываем ошибку
+        return true;
       }
+      return false;
     } catch (err) {
       // Очищаем таймаут при ошибке
       if (timeoutId) {
@@ -223,9 +225,9 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
       
       // Игнорируем ошибки отмены запроса
       if (err.name === 'AbortError' || ctrl.signal.aborted) {
-        return;
+        return false;
       }
-      
+
       if (!ctrl.signal.aborted) {
         const msg = err.message || 'Ошибка загрузки данных';
         if (silent && consecutiveFailuresForError != null) {
@@ -242,6 +244,7 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
           setError(msg);
         }
       }
+      return false;
     } finally {
       if (abortControllerRef.current === ctrl) {
         if (!silent) {

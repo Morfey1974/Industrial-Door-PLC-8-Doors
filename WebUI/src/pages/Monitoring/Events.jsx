@@ -13,6 +13,7 @@ import Pagination from '../../components/ui/Pagination';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import { formatTimestamp } from '../../utils/formatters';
+import { formatJournalUserColumn } from '../../utils/journalUserDisplay';
 import './Monitoring.css';
 
 const Events = () => {
@@ -22,13 +23,20 @@ const Events = () => {
   const [filters, setFilters] = useState({
     eventType: 'all',
     doorId: '',
-    source: 'all',
   });
   const [totalRecords, setTotalRecords] = useState(0); // Реальное количество записей из журнала
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного обновления при изменении limit
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [actionMessage, setActionMessage] = useState(null);
+  /** Текст + вариант оформления (как alert-success / alert-error на странице конфигурации). */
+  const [actionBanner, setActionBanner] = useState(null);
+
+  /** Сообщения после сохранения/печати и т.п. — скрываем через несколько секунд и при «Обновить». */
+  useEffect(() => {
+    if (actionBanner == null) return undefined;
+    const id = setTimeout(() => setActionBanner(null), 5000);
+    return () => clearTimeout(id);
+  }, [actionBanner]);
 
   // Функция для получения статистики журнала (для получения общего количества записей)
   const fetchJournalStat = useCallback((signal) => {
@@ -48,10 +56,19 @@ const Events = () => {
     const map = {};
     const doors = configFull?.doors || [];
     for (const door of doors) {
-      const gid = Number(door?.globalDoorId);
+      let gid = Number(door?.globalDoorId);
+      if (!Number.isFinite(gid) || gid <= 0) {
+        const n = Number(door?.nodeId);
+        const l = Number(door?.localDoor);
+        if (Number.isFinite(n) && Number.isFinite(l) && n >= 1 && l >= 1) {
+          gid = (n - 1) * 8 + l;
+        }
+      }
       if (!Number.isFinite(gid) || gid <= 0) continue;
+      const c = door?.comment;
       map[gid] = {
         drawingId: door?.drawingId ?? null,
+        comment: typeof c === 'string' ? c : (c != null ? String(c) : ''),
       };
     }
     return map;
@@ -83,8 +100,7 @@ const Events = () => {
   // Автообновление каждые 5 с (только если нет активных фильтров)
   const hasActiveFilters =
     (filters.eventType && filters.eventType !== 'all') ||
-    filters.doorId ||
-    (filters.source && filters.source !== 'all');
+    filters.doorId;
 
   useAutoRefresh(async () => {
     if (!hasActiveFilters) {
@@ -147,14 +163,17 @@ const Events = () => {
   };
 
   const handleRefresh = async () => {
+    setActionBanner(null);
     try {
       await refetchConfig(true);
       await refetchStat(true);
       await new Promise(resolve => setTimeout(resolve, 100));
       // refetch(false) — показываем загрузку и принудительно обновляем список событий
       await refetch(false);
+      setActionBanner({ text: t('common.refreshDataSuccess'), variant: 'success' });
     } catch (err) {
       console.warn('Ошибка обновления журнала:', err);
+      setActionBanner({ text: t('common.refreshDataFailed'), variant: 'error' });
     }
   };
 
@@ -184,16 +203,16 @@ const Events = () => {
   /* Кнопка "Очистить журнал": подтверждение + очистка на контроллере + обновление UI. */
   const handleClearJournal = async () => {
     setActionLoading(true);
-    setActionMessage(null);
+    setActionBanner(null);
     try {
       await clearJournal();
       setOffset(0);
       await refetchStat(false);
       await refetch(false);
-      setActionMessage(t('pages.events.clearSuccess'));
+      setActionBanner({ text: t('pages.events.clearSuccess'), variant: 'success' });
     } catch (err) {
       console.warn('Ошибка очистки журнала:', err);
-      setActionMessage(t('pages.events.clearFailed'));
+      setActionBanner({ text: t('pages.events.clearFailed'), variant: 'error' });
     } finally {
       setActionLoading(false);
       setShowClearConfirm(false);
@@ -204,15 +223,15 @@ const Events = () => {
    * чтобы пользователь выбрал место сохранения через стандартный диалог. */
   const handleSaveJournal = async () => {
     setActionLoading(true);
-    setActionMessage(null);
+    setActionBanner(null);
     try {
       const records = await fetchAllRecordsForExport();
       if (!records.length) {
-        setActionMessage(t('pages.events.emptyForSave'));
+        setActionBanner({ text: t('pages.events.emptyForSave'), variant: 'neutral' });
         return;
       }
 
-      const header = ['recSeq', 'timestamp', 'time', 'type', 'source', 'doorId', 'username', 'arg', 'flags'];
+      const header = ['recSeq', 'timestamp', 'time', 'type', 'doorId', 'user', 'flags'];
       const lines = [header.join(';')];
 
       records.forEach((r) => {
@@ -221,10 +240,8 @@ const Events = () => {
           r.timestamp ?? '',
           formatTimestamp(r.timestamp),
           r.type ?? '',
-          r.source ?? '',
           r.doorId ?? '',
-          (r.username || '').replace(/;/g, ','),
-          r.arg ?? '',
+          String(formatJournalUserColumn(r, t)).replace(/;/g, ','),
           r.flags ?? '',
         ];
         lines.push(row.join(';'));
@@ -258,10 +275,10 @@ const Events = () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }
-      setActionMessage(t('pages.events.saveSuccess'));
+      setActionBanner({ text: t('pages.events.saveSuccess'), variant: 'success' });
     } catch (err) {
       console.warn('Ошибка сохранения журнала:', err);
-      setActionMessage(t('pages.events.saveFailed'));
+      setActionBanner({ text: t('pages.events.saveFailed'), variant: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -270,12 +287,12 @@ const Events = () => {
   /* Кнопка "Распечатать журнал": открываем отдельное окно с таблицей и запускаем print(). */
   const handlePrintJournal = async () => {
     setActionLoading(true);
-    setActionMessage(null);
+    setActionBanner(null);
     /* Окно открываем синхронно по клику, иначе браузер может заблокировать popup. */
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       setActionLoading(false);
-      setActionMessage(t('pages.events.popupBlocked'));
+      setActionBanner({ text: t('pages.events.popupBlocked'), variant: 'error' });
       return;
     }
     try {
@@ -283,19 +300,21 @@ const Events = () => {
       if (!records.length) {
         printWindow.document.write(`<html><body><h3>${t('pages.events.printEmptyTitle')}</h3></body></html>`);
         printWindow.document.close();
-        setActionMessage(t('pages.events.emptyForPrint'));
+        setActionBanner({ text: t('pages.events.emptyForPrint'), variant: 'neutral' });
         return;
       }
 
+      const escHtml = (s) => String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
       const rowsHtml = records.map((r) => `
         <tr>
           <td>${r.recSeq ?? ''}</td>
-          <td>${formatTimestamp(r.timestamp)}</td>
-          <td>${r.type ?? ''}</td>
-          <td>${r.source ?? ''}</td>
+          <td>${escHtml(formatTimestamp(r.timestamp))}</td>
+          <td>${escHtml(r.type)}</td>
           <td>${r.doorId ?? ''}</td>
-          <td>${r.username ?? ''}</td>
-          <td>${r.arg ?? ''}</td>
+          <td>${escHtml(formatJournalUserColumn(r, t))}</td>
         </tr>
       `).join('');
       printWindow.document.write(`
@@ -318,10 +337,8 @@ const Events = () => {
                   <th>${t('pages.events.printColNum')}</th>
                   <th>${t('pages.events.printColTime')}</th>
                   <th>${t('pages.events.printColType')}</th>
-                  <th>${t('pages.events.printColSource')}</th>
                   <th>${t('pages.events.printColDoor')}</th>
                   <th>${t('pages.events.printColUser')}</th>
-                  <th>${t('pages.events.printColArg')}</th>
                 </tr>
               </thead>
               <tbody>${rowsHtml}</tbody>
@@ -332,10 +349,10 @@ const Events = () => {
       printWindow.document.close();
       printWindow.focus();
       printWindow.print();
-      setActionMessage(t('pages.events.printWindowOpened'));
+      setActionBanner({ text: t('pages.events.printWindowOpened'), variant: 'success' });
     } catch (err) {
       console.warn('Ошибка печати журнала:', err);
-      setActionMessage(t('pages.events.printFailed'));
+      setActionBanner({ text: t('pages.events.printFailed'), variant: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -375,9 +392,16 @@ const Events = () => {
             {t('pages.events.clearJournal')}
           </Button>
         </div>
-        {actionMessage && (
-          <div className="events-info" style={{ marginTop: '0.5rem' }}>
-            <p>{actionMessage}</p>
+        {actionBanner && (
+          <div
+            className={`events-action-banner events-action-banner--${actionBanner.variant}`}
+            role="status"
+          >
+            {actionBanner.variant === 'success' ? (
+              <>✅ {actionBanner.text}</>
+            ) : (
+              actionBanner.text
+            )}
           </div>
         )}
       </div>

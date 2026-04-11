@@ -1425,7 +1425,7 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
 static project_config_t s_put_cfg;
 
 /* Парсинг полной конфигурации из JSON (PUT /api/config/full).
- * Лимиты v1: 8 дверей, 16 edges, 8 postCloseTimeouts.
+ * Лимиты v1: до 40 дверей, 64 рёбер, 32 postClose.
  * Обнуляем doors/edges/postClose, затем заполняем из JSON.
  */
 static int put_config_full(const char *body, size_t body_len, char *out_body, size_t out_sz,
@@ -1502,10 +1502,15 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         if (Json_GetString(net_json, "gateway", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.gw)) { /* ok */ }
     }
 
-    /* doors[] */
+    /* doors[] — обязателен; иначе после обнуления получится пустой конфиг в Flash */
     AppLog("CFG full: parse doors");
     json_span_t doors_arr;
-    if (Json_FindArraySpan(body, "doors", &doors_arr)) {
+    if (!Json_FindArraySpan(body, "doors", &doors_arr)) {
+        AppLog("CFG full: missing doors array");
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"missing doors array\"}");
+        return 400;
+    }
+    {
         char elem_buf[CFG_FULL_ELEM_BUF_SIZE];
         size_t off = 0;
         for (;;) {
@@ -1544,6 +1549,11 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             (void)Json_GetString(elem_buf, "comment", d->comment, sizeof(d->comment));
             cfg->doorCount++;
         }
+    }
+    if (cfg->doorCount == 0U) {
+        AppLog("CFG full: no valid doors parsed (check techId/nodeId/localDoor)");
+        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"no valid doors parsed\"}");
+        return 400;
     }
     AppLog("CFG full: doors count=%u", (unsigned)cfg->doorCount);
 

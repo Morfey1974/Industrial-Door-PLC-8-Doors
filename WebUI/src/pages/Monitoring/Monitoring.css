@@ -29,12 +29,28 @@
   letter-spacing: 0.02em;
 }
 
+.monitoring-doors .page-header h1 {
+  margin-bottom: 0;
+}
+
 .monitoring-doors .page-header p,
 .monitoring-events .page-header p {
   margin: 0;
   font-size: var(--font-size-base, 1rem);
   color: var(--color-text-muted);
   line-height: var(--line-height-normal, 1.5);
+}
+
+/* Ошибки и предупреждения сразу под заголовком (страница Двери) */
+.monitoring-doors .doors-page-messages:not(:empty) {
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.monitoring-doors .doors-page-messages .doors-page-warning {
+  padding: 0.5rem;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
 }
 
 /* Секция фильтров */
@@ -46,6 +62,37 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 16px);
   box-shadow: var(--shadow-sm);
+}
+
+/* Сообщения после обновления / сохранения / печати — те же цвета, что .alert-success / .alert-error в DoorsConfig.css */
+.monitoring-doors .events-action-banner,
+.monitoring-events .events-action-banner {
+  margin-top: var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px);
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-base, 1rem);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+.monitoring-doors .events-action-banner--success,
+.monitoring-events .events-action-banner--success {
+  background: #efe;
+  border: 1px solid #cfc;
+  color: #3c3;
+}
+
+.monitoring-doors .events-action-banner--error,
+.monitoring-events .events-action-banner--error {
+  background: #fee;
+  border: 1px solid #fcc;
+  color: #c33;
+}
+
+.monitoring-doors .events-action-banner--neutral,
+.monitoring-events .events-action-banner--neutral {
+  background: var(--color-secondary, #f5f5f5);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dark);
 }
 
 /* Строка фильтров + инфо + кнопка Обновить (страница Двери) */

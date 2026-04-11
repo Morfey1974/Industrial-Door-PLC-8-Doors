@@ -1,10 +1,9 @@
 /**
- * Мониторинг дверей — обзор по платам, краткая сводка по журналу и дверям, таблица.
+ * Мониторинг дверей — обзор по платам и таблица с фильтрами.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
-import useApi from '../../hooks/useApi';
 import { useDoorsData } from '../../context/DoorsDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
@@ -12,122 +11,116 @@ import DoorsOverview from '../../components/ui/DoorsOverview';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
-import { getJournalStat } from '../../services/api';
 import './Monitoring.css';
 
 const Doors = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [filters, setFilters] = useState({
     status: 'all',
     doorId: '',
   });
+  const [actionBanner, setActionBanner] = useState(null);
 
   const { data: doors, loading, error, refetch } = useDoorsData();
-  const errorText = mapApiErrorToUiMessage(error, t);
 
-  const fetchJournalStat = useCallback((signal) => getJournalStat(signal), []);
-  const {
-    data: journalStat,
-    loading: journalLoading,
-    error: journalError,
-    refetch: refetchJournal,
-  } = useApi(fetchJournalStat, []);
+  useEffect(() => {
+    if (actionBanner == null) return undefined;
+    const id = setTimeout(() => setActionBanner(null), 5000);
+    return () => clearTimeout(id);
+  }, [actionBanner]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setActionBanner(null);
+    const ok = await refetch(false, true);
+    if (ok) {
+      setActionBanner({ text: t('common.refreshDataSuccess'), variant: 'success' });
+    } else {
+      setActionBanner({ text: t('common.refreshDataFailed'), variant: 'error' });
+    }
+  }, [refetch, t]);
+  const errorText = mapApiErrorToUiMessage(error, t);
 
   useAutoRefresh(() => {
     refetch(true);
   }, 2500);
 
-  /* Журнал: реже, чем двери — на МК подсчёт totalRecords тяжёлый */
-  useAutoRefresh(() => refetchJournal(true), 8000);
+  const doorList = doors?.doors;
+  const countForTitle = Array.isArray(doorList) ? doorList.length : null;
 
-  const totalDoors = doors?.doors?.length ?? 0;
-  const alarmingCount = doors?.doors?.filter((d) => d.alarming)?.length ?? 0;
+  const doorsWordForTitle = (n) => {
+    if (language === 'en') {
+      return n === 1 ? t('pages.doors.titleDoorsWordOne') : t('pages.doors.titleDoorsWordOther');
+    }
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 14) return t('pages.doors.titleDoorsWordMany');
+    if (mod10 === 1) return t('pages.doors.titleDoorsWordOne');
+    if (mod10 >= 2 && mod10 <= 4) return t('pages.doors.titleDoorsWordFew');
+    return t('pages.doors.titleDoorsWordMany');
+  };
+
+  const pageTitle =
+    countForTitle !== null
+      ? t('pages.doors.titleWithCount', { count: countForTitle, doorsWord: doorsWordForTitle(countForTitle) })
+      : t('pages.doors.title');
 
   return (
     <div className="monitoring-doors dashboard-page">
       <div className="page-header">
-        <h1>{t('pages.doors.title')}</h1>
-        <p>{t('pages.doors.subtitleMonitoring')}</p>
+        <h1>{pageTitle}</h1>
       </div>
 
-      {(journalStat || journalLoading || journalError) && (
-        <div className="stats-grid" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
-          <div className="stats-card">
-            <h2>{t('pages.statistics.journal')}</h2>
-            {journalLoading && !journalStat ? (
-              <p className="stats-muted">{t('common.loading')}</p>
-            ) : journalStat ? (
-              <>
-                <p className="stats-value">{journalStat.recordsWritten ?? 0}</p>
-                <p className="stats-label">{t('pages.statistics.recordsWritten')}</p>
-                <ul className="stats-list">
-                  <li>
-                    {t('pages.statistics.bufferSize')}: {(journalStat.size ?? 0).toLocaleString()} {t('pages.statistics.bytes')}
-                  </li>
-                  <li>
-                    {t('pages.statistics.sector')}: {journalStat.currentSector ?? 0} {t('pages.statistics.of')} {journalStat.sectors ?? 0}
-                  </li>
-                  <li>
-                    {t('pages.statistics.currentSequence')}: {journalStat.currentSeq ?? 0}
-                  </li>
-                  {journalStat.droppedQueue !== undefined && journalStat.droppedQueue > 0 && (
-                    <li className="stats-warning">
-                      {t('pages.statistics.droppedQueue')}: {journalStat.droppedQueue}
-                    </li>
-                  )}
-                  {journalStat.ioErrors !== undefined && journalStat.ioErrors > 0 && (
-                    <li className="stats-warning">
-                      {t('pages.statistics.ioErrors')}: {journalStat.ioErrors}
-                    </li>
-                  )}
-                </ul>
-              </>
-            ) : (
-              <p className="stats-muted">{mapApiErrorToUiMessage(journalError, t) || t('pages.statistics.errorLoad')}</p>
-            )}
+      <div className="doors-page-messages">
+        {error && !doors && (
+          <div className="error-state">
+            <h3>{t('pages.doors.errorLoad')}</h3>
+            <p>{errorText}</p>
+            <p>{t('pages.doors.errorCheckController')}</p>
+            <Button variant="primary" onClick={() => refetch(false, true)}>
+              {t('common.retryAgain')}
+            </Button>
           </div>
-          <div className="stats-card">
-            <h2>{t('pages.statistics.doors')}</h2>
-            {!loading && doors?.doors ? (
-              <>
-                <p className="stats-value">{totalDoors}</p>
-                <p className="stats-label">{t('pages.statistics.totalDoors')}</p>
-                <ul className="stats-list">
-                  <li>
-                    {t('pages.statistics.withAlarm')}: <strong>{alarmingCount}</strong>
-                  </li>
-                  <li>
-                    {t('pages.statistics.normal')}: <strong>{totalDoors - alarmingCount}</strong>
-                  </li>
-                </ul>
-              </>
-            ) : (
-              <p className="stats-muted">{loading ? t('common.loading') : t('pages.doors.noData')}</p>
-            )}
+        )}
+        {error && doors && (
+          <div
+            className="warning-state doors-page-warning"
+            role="alert"
+          >
+            <p style={{ margin: 0, fontSize: '0.875rem' }}>
+              ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(errorText))}
+            </p>
           </div>
-        </div>
-      )}
-
-      {!loading && !error && doors && doors.doors && doors.doors.length > 0 && (
-        <section className="doors-overview-section" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
-          <DoorsOverview doors={doors} />
-        </section>
-      )}
+        )}
+      </div>
 
       <div className="filters-section">
         <div className="filters-row">
           <FilterBar filters={filters} onFilterChange={setFilters} />
-          {!loading && !error && doors && doors.doors && (
+          {doors && Array.isArray(doors.doors) && (
             <div className="doors-info-inline">
-              <span className="doors-info-text">
-                {t('pages.dashboard.totalDoors')}: <strong>{doors.doors.length}</strong>
-              </span>
-              <Button variant="secondary" size="small" onClick={() => refetch(false)}>
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={handleManualRefresh}
+                disabled={loading}
+              >
                 {t('pages.doors.refresh')}
               </Button>
             </div>
           )}
         </div>
+        {actionBanner && (
+          <div
+            className={`events-action-banner events-action-banner--${actionBanner.variant}`}
+            role="status"
+          >
+            {actionBanner.variant === 'success' ? (
+              <>✅ {actionBanner.text}</>
+            ) : (
+              actionBanner.text
+            )}
+          </div>
+        )}
       </div>
 
       {loading && !doors && (
@@ -161,27 +154,15 @@ const Doors = () => {
         </div>
       )}
 
-      {error && !doors && (
-        <div className="error-state">
-          <h3>{t('pages.doors.errorLoad')}</h3>
-          <p>{errorText}</p>
-          <p>{t('pages.doors.errorCheckController')}</p>
-          <Button variant="primary" onClick={() => refetch(false)}>
-            {t('common.retryAgain')}
-          </Button>
-        </div>
+      {!loading && !error && doors && doors.doors && doors.doors.length > 0 && (
+        <section className="doors-overview-section" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
+          <DoorsOverview doors={doors} />
+        </section>
       )}
 
-      {doors && (
+      {doors && doors.doors && doors.doors.length > 0 && (
         <div className="doors-table-section">
           <DoorTable doors={doors} filters={filters} />
-          {error && doors && (
-            <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
-              <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(errorText))}
-              </p>
-            </div>
-          )}
         </div>
       )}
 

@@ -12,7 +12,7 @@
  */
 
 #ifndef APP_NODE_ID
-#define APP_NODE_ID 5 /*Оставить для платы MASTER*/
+#define APP_NODE_ID 1 /*Оставить для платы MASTER*/
 //#define APP_NODE_ID 2 /*Оставить для платы SLAVE*/
 #endif
 

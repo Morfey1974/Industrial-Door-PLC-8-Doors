@@ -108,7 +108,7 @@ typedef struct {
     uint8_t  door_id;
     uint8_t  flags;
     uint32_t arg;
-    char     username[JOURNAL_RECORD_USERNAME_MAX];  /* для событий из UI (логин, логаут, сохранение конфига) */
+    char     username[JOURNAL_RECORD_USERNAME_MAX];  /* только EVT1: логин/конфиг из UI; EVT0 в ответе пусто */
 } journal_record_t;
 
 journal_status_t EventJournal_ReadRecords(uint32_t offset, uint32_t limit,
