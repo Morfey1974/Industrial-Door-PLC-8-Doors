@@ -10,8 +10,6 @@ export const PERMISSION_LEVELS = ['none', 'view', 'change_password', 'edit', 'ma
 export const PERMISSION_SECTIONS = [
   { id: 'monitoring_doors', titleKey: 'pages.permissions.sections.monitoring_doors' },
   { id: 'monitoring_events', titleKey: 'pages.permissions.sections.monitoring_events' },
-  { id: 'monitoring_alarms', titleKey: 'pages.permissions.sections.monitoring_alarms' },
-  { id: 'monitoring_statistics', titleKey: 'pages.permissions.sections.monitoring_statistics' },
   { id: 'config_doors', titleKey: 'pages.permissions.sections.config_doors' },
   { id: 'settings_system', titleKey: 'pages.permissions.sections.settings_system' },
   { id: 'settings_users', titleKey: 'pages.permissions.sections.settings_users' },
@@ -37,8 +35,6 @@ export const ROLES = ['super_admin', 'admin', 'operator'];
 export const DEFAULT_PERMISSIONS = {
   monitoring_doors: { super_admin: 'view', admin: 'view', operator: 'view' },
   monitoring_events: { super_admin: 'view', admin: 'view', operator: 'view' },
-  monitoring_alarms: { super_admin: 'view', admin: 'view', operator: 'view' },
-  monitoring_statistics: { super_admin: 'view', admin: 'view', operator: 'view' },
   config_doors: { super_admin: 'edit', admin: 'edit', operator: 'none' },
   settings_system: { super_admin: 'edit', admin: 'none', operator: 'none' }, // Полный удалённый доступ — только Супер-администратор
   settings_users: { super_admin: 'manage', admin: 'none', operator: 'none' },
@@ -54,8 +50,6 @@ export const PATH_TO_PERMISSION = {
   '/dashboard': { sectionId: 'monitoring_doors', minLevel: 'view' },
   '/monitoring/doors': { sectionId: 'monitoring_doors', minLevel: 'view' },
   '/monitoring/events': { sectionId: 'monitoring_events', minLevel: 'view' },
-  '/monitoring/alarms': { sectionId: 'monitoring_alarms', minLevel: 'view' },
-  '/monitoring/statistics': { sectionId: 'monitoring_statistics', minLevel: 'view' },
   '/configuration/doors': { sectionId: 'config_doors', minLevel: 'edit' },
   '/configuration/mapping': { sectionId: 'config_doors', minLevel: 'edit' },
   '/settings/system': { sectionId: 'settings_system', minLevel: 'edit' }, // Только super_admin (admin: none по умолчанию)

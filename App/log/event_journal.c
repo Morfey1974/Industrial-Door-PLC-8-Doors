@@ -415,9 +415,29 @@ void EventJournal_Init(void)
     AppQspiLock_Unlock();
 }
 
+/* Дверные «служебные» события не пишем в кольцевой журнал — только OPEN/CLOSE и прочие типы. */
+static int event_journal_should_record(const app_event_t *evt)
+{
+    switch (evt->type)
+    {
+        case EVT_DOOR_OPEN_TIMEOUT:
+        case EVT_DOOR_POST_CLOSE_READY:
+        case EVT_DOOR_SIGNAL_ON:
+        case EVT_DOOR_SIGNAL_OFF:
+            return 0;
+        default:
+            return 1;
+    }
+}
+
 journal_status_t EventJournal_EnqueueEvent(const app_event_t *evt)
 {
     if (!s_q || !evt) return JOURNAL_NOT_INIT;
+
+    if (!event_journal_should_record(evt))
+    {
+        return JOURNAL_OK;
+    }
 
     /* Non-blocking: logging must never stall real-time tasks */
     if (xQueueSendToBack(s_q, evt, 0) != pdTRUE)
@@ -521,7 +541,7 @@ void EventJournal_WriteEventToFlash(const app_event_t *evt)
     r.pad = 0;
     r.crc32 = crc32_buf(&r, sizeof(r));
 
-    /* Space check */
+    /* EVT0 = 32 байта (имя пользователя только в EVT1 / LogUserAction) */
     if ((s_cur_write_ofs + sizeof(elog_record_t)) > QSPI_SECTOR_SIZE)
     {
         advance_sector();
@@ -529,7 +549,6 @@ void EventJournal_WriteEventToFlash(const app_event_t *evt)
 
     if ((s_cur_write_ofs + sizeof(elog_record_t)) > QSPI_SECTOR_SIZE)
     {
-        /* still no space */
         s_stats.io_errors++;
         return;
     }

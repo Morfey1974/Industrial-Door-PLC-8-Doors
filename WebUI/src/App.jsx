@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { PermissionsProvider, PermissionsContext } from './context/PermissionsContext';
 import { useLanguage } from './context/LanguageContext';
@@ -12,11 +12,8 @@ import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
 import Tabs from './components/layout/Tabs';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
 import Doors from './pages/Monitoring/Doors';
 import Events from './pages/Monitoring/Events';
-import Alarms from './pages/Monitoring/Alarms';
-import Statistics from './pages/Monitoring/Statistics';
 import DoorsConfig from './pages/Configuration/DoorsConfig';
 import Mapping from './pages/Mapping';
 import Profile from './pages/Settings/Profile';
@@ -50,7 +47,7 @@ function AppContent() {
       if (location.pathname.startsWith('/monitoring')) return 'monitoring';
       if (location.pathname.startsWith('/configuration')) return 'configuration';
       if (location.pathname.startsWith('/settings')) return 'settings';
-      if (location.pathname === '/' || location.pathname === '/dashboard') return 'monitoring';
+      if (location.pathname === '/dashboard') return 'monitoring';
       return 'monitoring'; // По умолчанию
     };
 
@@ -58,8 +55,6 @@ function AppContent() {
     const getActiveSidebarItem = () => {
       if (location.pathname === '/monitoring/doors' || location.pathname === '/') return 'doors';
       if (location.pathname === '/monitoring/events') return 'events';
-      if (location.pathname === '/monitoring/alarms') return 'alarms';
-      if (location.pathname === '/monitoring/statistics') return 'statistics';
       if (location.pathname === '/configuration/doors') return 'doors-config';
       if (location.pathname === '/configuration/mapping') return 'doors-config';
       if (location.pathname === '/settings/system') return 'system-params';
@@ -120,8 +115,6 @@ function AppContent() {
     const monitoringItems = [
       { id: 'doors', label: t('nav.doors'), path: '/monitoring/doors' },
       { id: 'events', label: t('nav.events'), path: '/monitoring/events' },
-      { id: 'alarms', label: t('nav.alarms'), path: '/monitoring/alarms' },
-      { id: 'statistics', label: t('nav.statistics'), path: '/monitoring/statistics' },
     ];
     const configurationItems = [
       { id: 'doors-config', label: t('nav.doorsConfig'), path: '/configuration/doors' },
@@ -168,7 +161,7 @@ function AppContent() {
       if (items && items.length > 0) {
         doNavigate(items[0].path);
       } else {
-        doNavigate('/');
+        doNavigate('/monitoring/doors');
       }
     };
 
@@ -195,14 +188,16 @@ function AppContent() {
             <div className="layout-content">
               <div className="layout-content-inner">
                 <DoorsDataProvider>
+                <ErrorBoundary>
                 <Routes>
                 {/* Доступ по таблице прав (path передаётся в ProtectedRoute) */}
-                <Route path="/" element={<ProtectedRoute path="/"><Dashboard /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute path="/dashboard"><Dashboard /></ProtectedRoute>} />
+                <Route path="/" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/dashboard" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/login" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/monitoring/statistics" element={<Navigate to="/monitoring/doors" replace />} />
+                <Route path="/monitoring/alarms" element={<Navigate to="/monitoring/doors" replace />} />
                 <Route path="/monitoring/doors" element={<ProtectedRoute path="/monitoring/doors"><Doors /></ProtectedRoute>} />
                 <Route path="/monitoring/events" element={<ProtectedRoute path="/monitoring/events"><Events /></ProtectedRoute>} />
-                <Route path="/monitoring/alarms" element={<ProtectedRoute path="/monitoring/alarms"><Alarms /></ProtectedRoute>} />
-                <Route path="/monitoring/statistics" element={<ProtectedRoute path="/monitoring/statistics"><Statistics /></ProtectedRoute>} />
                 <Route path="/configuration/doors" element={<ProtectedRoute path="/configuration/doors"><DoorsConfig /></ProtectedRoute>} />
                 <Route path="/configuration/mapping" element={<ProtectedRoute path="/configuration/mapping"><ErrorBoundary><Mapping /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/settings/system" element={<ProtectedRoute path="/settings/system"><SystemParams /></ProtectedRoute>} />
@@ -213,6 +208,7 @@ function AppContent() {
                 <Route path="/settings/help" element={<ProtectedRoute path="/settings/help"><Help /></ProtectedRoute>} />
                 <Route path="/settings/help/:sectionId" element={<ProtectedRoute path="/settings/help"><HelpSectionPage /></ProtectedRoute>} />
                 </Routes>
+                </ErrorBoundary>
                 </DoorsDataProvider>
               </div>
             </div>

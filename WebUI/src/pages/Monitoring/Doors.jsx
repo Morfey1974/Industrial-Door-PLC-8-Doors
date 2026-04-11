@@ -1,59 +1,128 @@
 /**
- * Doors страница - мониторинг дверей
+ * Мониторинг дверей — обзор по платам и таблица с фильтрами.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useAutoRefresh from '../../hooks/useAutoRefresh';
 import { useDoorsData } from '../../context/DoorsDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
+import DoorsOverview from '../../components/ui/DoorsOverview';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
 import './Monitoring.css';
 
 const Doors = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [filters, setFilters] = useState({
     status: 'all',
     doorId: '',
   });
+  const [actionBanner, setActionBanner] = useState(null);
 
-  // Состояние дверей — общий кэш с Дашбордом (при переходе с Дашборда данные уже есть)
   const { data: doors, loading, error, refetch } = useDoorsData();
+
+  useEffect(() => {
+    if (actionBanner == null) return undefined;
+    const id = setTimeout(() => setActionBanner(null), 5000);
+    return () => clearTimeout(id);
+  }, [actionBanner]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setActionBanner(null);
+    const ok = await refetch(false, true);
+    if (ok) {
+      setActionBanner({ text: t('common.refreshDataSuccess'), variant: 'success' });
+    } else {
+      setActionBanner({ text: t('common.refreshDataFailed'), variant: 'error' });
+    }
+  }, [refetch, t]);
   const errorText = mapApiErrorToUiMessage(error, t);
 
-  // Автообновление каждые 2.5 с (тихое обновление без показа loading)
   useAutoRefresh(() => {
-    // Используем тихое обновление, чтобы не показывать состояние загрузки
     refetch(true);
   }, 2500);
 
+  const doorList = doors?.doors;
+  const countForTitle = Array.isArray(doorList) ? doorList.length : null;
+
+  const doorsWordForTitle = (n) => {
+    if (language === 'en') {
+      return n === 1 ? t('pages.doors.titleDoorsWordOne') : t('pages.doors.titleDoorsWordOther');
+    }
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 14) return t('pages.doors.titleDoorsWordMany');
+    if (mod10 === 1) return t('pages.doors.titleDoorsWordOne');
+    if (mod10 >= 2 && mod10 <= 4) return t('pages.doors.titleDoorsWordFew');
+    return t('pages.doors.titleDoorsWordMany');
+  };
+
+  const pageTitle =
+    countForTitle !== null
+      ? t('pages.doors.titleWithCount', { count: countForTitle, doorsWord: doorsWordForTitle(countForTitle) })
+      : t('pages.doors.title');
+
   return (
-    <div className="monitoring-doors">
+    <div className="monitoring-doors dashboard-page">
       <div className="page-header">
-        <h1>{t('pages.doors.title')}</h1>
-        <p>{t('pages.doors.subtitle')}</p>
+        <h1>{pageTitle}</h1>
       </div>
 
-      {/* Панель фильтров и строка: статус, ID двери, всего дверей, Обновить */}
+      <div className="doors-page-messages">
+        {error && !doors && (
+          <div className="error-state">
+            <h3>{t('pages.doors.errorLoad')}</h3>
+            <p>{errorText}</p>
+            <p>{t('pages.doors.errorCheckController')}</p>
+            <Button variant="primary" onClick={() => refetch(false, true)}>
+              {t('common.retryAgain')}
+            </Button>
+          </div>
+        )}
+        {error && doors && (
+          <div
+            className="warning-state doors-page-warning"
+            role="alert"
+          >
+            <p style={{ margin: 0, fontSize: '0.875rem' }}>
+              ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(errorText))}
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="filters-section">
         <div className="filters-row">
           <FilterBar filters={filters} onFilterChange={setFilters} />
-          {!loading && !error && doors && doors.doors && (
+          {doors && Array.isArray(doors.doors) && (
             <div className="doors-info-inline">
-              <span className="doors-info-text">
-                {t('pages.dashboard.totalDoors')}: <strong>{doors.doors.length}</strong>
-              </span>
-              <Button variant="secondary" size="small" onClick={() => refetch(false)}>
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={handleManualRefresh}
+                disabled={loading}
+              >
                 {t('pages.doors.refresh')}
               </Button>
             </div>
           )}
         </div>
+        {actionBanner && (
+          <div
+            className={`events-action-banner events-action-banner--${actionBanner.variant}`}
+            role="status"
+          >
+            {actionBanner.variant === 'success' ? (
+              <>✅ {actionBanner.text}</>
+            ) : (
+              actionBanner.text
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Скелетон таблицы при первой загрузке — страница сразу имеет структуру */}
       {loading && !doors && (
         <div className="doors-table-section door-table-skeleton" aria-busy="true">
           <div className="door-table" style={{ padding: '1rem' }}>
@@ -85,34 +154,18 @@ const Doors = () => {
         </div>
       )}
 
-      {/* Обработка ошибок - показываем только если нет данных */}
-      {error && !doors && (
-        <div className="error-state">
-          <h3>{t('pages.doors.errorLoad')}</h3>
-          <p>{errorText}</p>
-          <p>{t('pages.doors.errorCheckController')}</p>
-          <Button variant="primary" onClick={() => refetch(false)}>
-            {t('common.retryAgain')}
-          </Button>
-        </div>
+      {!loading && !error && doors && doors.doors && doors.doors.length > 0 && (
+        <section className="doors-overview-section" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
+          <DoorsOverview doors={doors} />
+        </section>
       )}
 
-      {/* Таблица дверей - показываем если есть данные, даже при ошибке автообновления */}
-      {doors && (
+      {doors && doors.doors && doors.doors.length > 0 && (
         <div className="doors-table-section">
           <DoorTable doors={doors} filters={filters} />
-          {/* Показываем предупреждение об ошибке автообновления, но не скрываем таблицу */}
-          {error && doors && (
-            <div className="warning-state" style={{ marginTop: '1rem', padding: '0.5rem', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
-              <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                ⚠️ {t('pages.doors.autoRefreshError').replace('{error}', String(errorText))}
-              </p>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Нет данных - показываем только если нет данных и нет ошибки */}
       {!loading && !error && (!doors || !doors.doors || doors.doors.length === 0) && (
         <div className="no-data-state">
           <p>{t('pages.doors.noData')}</p>

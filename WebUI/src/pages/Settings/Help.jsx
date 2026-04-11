@@ -14,8 +14,6 @@ export const HELP_SECTION_IDS = [
   'overview',
   'monitoring-doors',
   'monitoring-events',
-  'monitoring-alarms',
-  'monitoring-statistics',
   'config-doors',
   'config-mapping',
   'settings-system',

@@ -41,7 +41,7 @@ const Login = () => {
     try {
       const result = await login(username, password);
       if (result.success) {
-        navigate('/');
+        navigate('/monitoring/doors');
       } else {
         let msg = result.error || t('login.errorLogin');
         if (msg.includes('429')) {

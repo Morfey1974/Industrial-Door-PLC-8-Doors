@@ -33,11 +33,17 @@
 #endif
 
 #ifndef HTTP_BODY_MAX
-/* Max JSON body size for PUT /api/config (draft merge upload).
- * 40 дверей в текущем формате обычно укладываются до ~5-6 КБ.
- */
+/* Обычные PUT (merge и т.д.) — буфер на стеке httpTask. */
 #define HTTP_BODY_MAX 8192
 #endif
+
+/* PUT /api/config/full: JSON 40 дверей + рёбра + таймауты > 8 КБ — отдельный статический буфер
+ * (не на стеке: стек httpTask 16 КБ, целиком 32 КБ туда не положить). */
+#ifndef HTTP_CONFIG_PUT_MAX
+#define HTTP_CONFIG_PUT_MAX 32768
+#endif
+
+static char s_put_config_full_body[HTTP_CONFIG_PUT_MAX];
 
 /* Буфер тела ответа для GET (в т.ч. /api/config/full). */
 #ifndef HTTP_GET_RESPONSE_MAX
@@ -604,14 +610,31 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             (void)lwip_close(cfd);
             return;
         }
-        if ((uint32_t)content_len > (HTTP_BODY_MAX - 1U)) {
-            http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
-            (void)lwip_close(cfd);
-            return;
+        const uint8_t is_put_cfg_full = (strcmp(path, "/api/config/full") == 0) ? 1U : 0U;
+
+        char stack_put_body[HTTP_BODY_MAX];
+        char *req_body;
+        int body_buf_sz;
+
+        if (is_put_cfg_full) {
+            if (content_len >= HTTP_CONFIG_PUT_MAX) {
+                http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
+                (void)lwip_close(cfd);
+                return;
+            }
+            req_body = s_put_config_full_body;
+            body_buf_sz = HTTP_CONFIG_PUT_MAX;
+        } else {
+            if ((uint32_t)content_len > (HTTP_BODY_MAX - 1U)) {
+                http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
+                (void)lwip_close(cfd);
+                return;
+            }
+            req_body = stack_put_body;
+            body_buf_sz = HTTP_BODY_MAX;
         }
 
-        char req_body[HTTP_BODY_MAX];
-        memset(req_body, 0, sizeof(req_body));
+        memset(req_body, 0, (size_t)body_buf_sz);
 
         const char *body_start = hdr_end + hdr_end_len;
         const int already = (int)((rx + r) - body_start);
@@ -673,8 +696,9 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             /* Сокет готов - читаем данные */
             recv_attempts = 0; /* Сбрасываем счетчик при успешной готовности */
             const int need = content_len - copied;
-            const int chunk = (need > 512) ? 512 : need; /* Увеличен размер чанка до 512 байт */
-            int rr = (int)lwip_recv(cfd, &req_body[copied], (size_t)chunk, 0);
+            const int chunk_max = is_put_cfg_full ? 2048 : 512;
+            const int chunk = (need > chunk_max) ? chunk_max : need;
+            int rr = (int)lwip_recv(cfd, req_body + copied, (size_t)chunk, 0);
             
             if (rr > 0) {
                 copied += rr;
@@ -714,6 +738,8 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
         AppLog("HTTP: body received OK (%d bytes)", copied);
 #endif
+
+        req_body[content_len] = '\0';
 
         const int hdr_len = (int)(hdr_end - hdr_start);
         char resp[1024];

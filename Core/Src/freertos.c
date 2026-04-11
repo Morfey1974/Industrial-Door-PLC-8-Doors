@@ -114,7 +114,7 @@ const osThreadAttr_t supervisorTask_attributes = {
 osThreadId_t httpTaskHandle;
 const osThreadAttr_t httpTask_attributes = {
   .name = "httpTask",
-  /* http_server.c: rx[768] + body/req_body до ~8 КБ + вызовы API/хеш пароля */
+  /* http_server.c: rx[768] + stack body до 8 КБ; PUT /api/config/full — статический буфер 32 КБ */
   .stack_size = 16 * 1024,
   .priority = (osPriority_t) osPriorityNormal,
 };
