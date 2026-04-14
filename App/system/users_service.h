@@ -1,7 +1,8 @@
 #pragma once
 
 #include <stdint.h>
-#include "config/users_format.h"
+/* Относительно App/system — см. комментарий в config_service.h */
+#include "../config/users_format.h"
 
 /* =========================================================
  * Сервис управления пользователями

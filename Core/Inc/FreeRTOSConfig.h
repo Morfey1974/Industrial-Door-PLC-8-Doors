@@ -68,7 +68,8 @@
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
 #define configMAX_PRIORITIES                     ( 56 )
 #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
-#define configTOTAL_HEAP_SIZE                    ((size_t)65536)
+/* Увеличено: стек httpTask 32 КБ (буферы GET в http_server); иначе heap_4 не выделит задачи. */
+#define configTOTAL_HEAP_SIZE                    ((size_t)98304)
 #define configMAX_TASK_NAME_LEN                  ( 16 )
 #define configUSE_TRACE_FACILITY                 1
 #define configUSE_16_BIT_TICKS                   0
@@ -91,7 +92,7 @@
 #define configUSE_TIMERS                         1
 #define configTIMER_TASK_PRIORITY                ( 2 )
 #define configTIMER_QUEUE_LENGTH                 10
-#define configTIMER_TASK_STACK_DEPTH             512   /* callback: snprintf + I2C + UART, 256 было мало */
+#define configTIMER_TASK_STACK_DEPTH             256
 
 /* The following flag must be enabled only when using newlib */
 #define configUSE_NEWLIB_REENTRANT          1
@@ -163,8 +164,8 @@ standard names. */
 #define xPortPendSVHandler PendSV_Handler
 
 /* IMPORTANT: After 10.3.1 update, Systick_Handler comes from NVIC (if SYS timebase = systick), otherwise from cmsis_os2.c */
-/* 1 = обработчик SysTick в stm32h7xx_it.c (USER CODE), иначе — из cmsis_os2.c */
-#define USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 1
+
+#define USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 0
 
 /* USER CODE BEGIN Defines */
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */

@@ -1,21 +1,31 @@
 /**
- * Состояние системы (сеть, Link, IP) для шапки на всех страницах.
+ * Состояние системы (сеть, Link, IP) для шапки; на страницах мониторинга — тот же ответ включает doors[].
+ * Один HTTP-запрос вместо двух снижает нагрузку на однопоточный HTTP на МК и убирает рассинхрон «Нет связи» при живой таблице.
  */
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import useApi from '../hooks/useApi';
 import { getState } from '../services/api';
+import { MONITOR_PATHS_WITH_DOORS } from '../utils/constants';
 
 const StateDataContext = createContext(null);
 
 export function StateDataProvider({ children }) {
-  /* Порог последовательных ошибок /state перед показом «Нет связи».
-   * Держим небольшим, чтобы индикаторы в шапке реагировали на обрыв Ethernet
-   * без долгой задержки, но при единичном кратком сбое не мигали.
-   */
-  const stateData = useApi(getState, [], {
-    consecutiveFailuresForError: 2,
+  const location = useLocation();
+  const includeDoors = MONITOR_PATHS_WITH_DOORS.includes(location.pathname);
+
+  const fetcher = useCallback(
+    (signal) => getState(signal, includeDoors),
+    [includeDoors],
+  );
+
+  const stateData = useApi(fetcher, [includeDoors], {
+    consecutiveFailuresForError: 4,
+    /* Дольше таймаута axios на state+doors, иначе обрываем запрос раньше сервера и ловим ложные сбои. */
+    silentStuckAbortMs: includeDoors ? 62000 : 12000,
   });
+
   return (
     <StateDataContext.Provider value={stateData}>
       {children}

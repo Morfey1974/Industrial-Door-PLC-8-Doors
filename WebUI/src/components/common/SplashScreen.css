@@ -206,6 +206,59 @@
   text-transform: uppercase;
 }
 
+/* Надпись продукта: появление с логотипом, уход вместе с logo-fade-out */
+.splash-plc-title {
+  margin-top: 0.25rem;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  color: #2c4a58;
+  text-align: center;
+  text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.splash-screen.logo-appear .splash-plc-title,
+.splash-screen.logo-hold .splash-plc-title,
+.splash-screen.logo-fade .splash-plc-title {
+  animation: plc-title-in 1.2s ease-out forwards;
+}
+
+.splash-screen.logo-hold .splash-plc-title {
+  opacity: 1;
+  transform: translateY(0);
+  animation: none;
+}
+
+.splash-screen.logo-fade .splash-plc-title {
+  animation: plc-title-out 2s ease-in forwards;
+}
+
+@keyframes plc-title-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+    letter-spacing: 0.5em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.35em;
+  }
+}
+
+@keyframes plc-title-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-28px) scale(0.92);
+  }
+}
+
 /* Этап 1: Вихрь закручивается */
 .splash-screen.whirlwind .splash-whirlwind {
   opacity: 1;

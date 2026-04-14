@@ -24,7 +24,6 @@ typedef enum
     USERS_ST_IO_ERROR = 2,
     USERS_ST_BAD_FORMAT = 3,
     USERS_ST_ARG = 4,
-    USERS_ST_NOT_MASTER = 5,
 } users_storage_status_t;
 
 /* Структура для хранения информации о базе пользователей */

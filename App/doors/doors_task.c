@@ -87,6 +87,9 @@ extern project_config_t g_project_cfg;
 
 static uint8_t  s_prevAlarmRaw[APP_DOOR_MAX];
 static uint32_t s_lastAlarmEdgeMs[APP_DOOR_MAX];
+/* NC: момент непрерывного «Alarm=отпущен» — нужен для антидребезга фронта нажатия (иначе шум/дребезг
+ * даёт ложные импульсы → краткие окна разблокировки и моргание зелёного LED при фактически заблокированной двери). */
+static uint32_t s_ncAlarmLowStartMs[APP_DOOR_MAX];
 
 static uint32_t s_lastBlinkMs[APP_DOOR_MAX];
 static uint8_t  s_blinkPhase[APP_DOOR_MAX]; /* 0=GREEN, 1=RED */
@@ -278,21 +281,8 @@ uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uin
     if (alarming)
         return 0U;
 
-    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ для предотвращения "дергания" дверей на SLAVE:
-     * 
-     * Проблема: MASTER отправляет команды каждые 100ms, а STATUS приходит каждые 200ms.
-     * Это создает рассинхронизацию: MASTER может отправлять LOCK для открытой двери,
-     * затем UNLOCK, затем снова LOCK, создавая цикл переключений.
-     * 
-     * Также MASTER отправляет UNLOCK для всех дверей, которые не в lockRequired,
-     * даже если они уже разблокированы, что создает постоянные переключения.
-     * 
-     * Решение:
-     * 1. Если дверь открыта и приходит команда LOCK, а уже есть pending LOCK
-     *    (того же типа), не перезаписываем команду - просто обновляем TTL.
-     * 2. Если дверь уже разблокирована и приходит команда UNLOCK, не перезаписываем
-     *    pending команду, только обновляем TTL (если есть pending) или игнорируем.
-     *    Это предотвращает ненужные переключения.
+    /* Сглаживание потока LOCK/UNLOCK от LogicCore: не дёргать замок лишний раз
+     * при повторяющихся командах того же смысла (обновляем TTL, не перезаписываем pending).
      */
     uint8_t newLock = (lock_on != 0U) ? 1U : 0U;
     
@@ -760,41 +750,75 @@ static void updateOneDoor(uint8_t door1based)
     /* --------------------------------------------------------
      * 3) Manual Alarm toggle (локальный приоритет)
      * --------------------------------------------------------
-     * Дребезг ~50ms, срабатывание по фронту нажатия.
+     * NO: дребезг ~50 ms по фронту нажатия.
+     * NC: импульс открывает окно разблокировки — ложные фронты от шума линии дают моргание LED
+     * (applyNormal: в окне wantLock=0 → зелёный). Требуем стабильный «низ» ≥200 ms перед фронтом 0→1
+     * и ≥200 ms между принятыми импульсами.
      *
      * Важно:
      * - EVT_DOOR_ALARM оставляем как “manual alarm state (1/0)”, как было раньше.
      * - Фактическая сигнализация теперь управляется через alarmReasons mask.
      */
-    if (alarm && !s_prevAlarmRaw[idx])
     {
-        if ((now - s_lastAlarmEdgeMs[idx]) >= 50U)
-        {
-            s_lastAlarmEdgeMs[idx] = now;
-
-            if (door_is_nc_type(door1based))
-            {
-                /* NC: импульс = окно разблокировки. Разблокировка только если LogicCore не требует блокировку. */
-                logic_core_t *lc = CommsTask_GetLogicCore();
-                uint8_t nodeId = System_GetNodeId();
-                uint8_t gid = GlobalDoorId_Make(nodeId, door1based);
-                if (lc && gid != 0U && !LogicCore_IsLockRequired(lc, gid))
-                {
-                    s_doors[idx].ncUnlockWindowEndMs = now + s_cfgNcUnlockWindowMs; /* старт или продление окна */
+        const uint8_t is_nc = door_is_nc_type(door1based);
+        if (is_nc != 0U) {
+            if (!alarm) {
+                if (s_ncAlarmLowStartMs[idx] == 0U) {
+                    s_ncAlarmLowStartMs[idx] = now;
                 }
             }
-            else
+        }
+
+        if (alarm != 0U && s_prevAlarmRaw[idx] == 0U)
+        {
+            const uint32_t edge_gap_ms = (is_nc != 0U) ? 200U : 50U;
+            uint8_t accept = 0U;
+
+            if ((now - s_lastAlarmEdgeMs[idx]) >= edge_gap_ms)
             {
-                uint8_t manualOn = (s_doors[idx].alarmReasons & DOOR_ALARM_MANUAL) ? 1U : 0U;
-                manualOn ^= 1U;
-
-                if (manualOn)
-                    alarm_add(door1based, idx, DOOR_ALARM_MANUAL);
-                else
-                    alarm_remove(door1based, idx, DOOR_ALARM_MANUAL);
-
-                publish_event(EVT_DOOR_ALARM, door1based, manualOn ? 1U : 0U);
+                if (is_nc != 0U) {
+                    const uint8_t low_ok = (s_ncAlarmLowStartMs[idx] != 0U) &&
+                                           ((now - s_ncAlarmLowStartMs[idx]) >= 200U);
+                    accept = low_ok ? 1U : 0U;
+                } else {
+                    accept = 1U;
+                }
             }
+
+            if (accept != 0U)
+            {
+                s_lastAlarmEdgeMs[idx] = now;
+
+                if (is_nc != 0U)
+                {
+                    /* NC: импульс = окно разблокировки. Разблокировка только если LogicCore не требует блокировку. */
+                    logic_core_t *lc = CommsTask_GetLogicCore();
+                    uint8_t nodeId = System_GetNodeId();
+                    uint8_t gid = GlobalDoorId_Make(nodeId, door1based);
+                    if (lc && gid != 0U && !LogicCore_IsLockRequired(lc, gid))
+                    {
+                        s_doors[idx].ncUnlockWindowEndMs = now + s_cfgNcUnlockWindowMs; /* старт или продление окна */
+                    }
+                    s_ncAlarmLowStartMs[idx] = 0U; /* после принятого импульса ждём новый стабильный «низ» */
+                }
+                else
+                {
+                    uint8_t manualOn = (s_doors[idx].alarmReasons & DOOR_ALARM_MANUAL) ? 1U : 0U;
+                    manualOn ^= 1U;
+
+                    if (manualOn)
+                        alarm_add(door1based, idx, DOOR_ALARM_MANUAL);
+                    else
+                        alarm_remove(door1based, idx, DOOR_ALARM_MANUAL);
+
+                    publish_event(EVT_DOOR_ALARM, door1based, manualOn ? 1U : 0U);
+                }
+            }
+        }
+
+        /* Удержание Alarm=1: для NC сбрасываем отсчёт «низкого», чтобы после отпускания начать заново. */
+        if (is_nc != 0U && alarm != 0U) {
+            s_ncAlarmLowStartMs[idx] = 0U;
         }
     }
     s_prevAlarmRaw[idx] = (uint8_t)alarm;
@@ -908,15 +932,7 @@ static void updateOneDoor(uint8_t door1based)
             }
             else
             {
-                /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: предотвращение "дергания" дверей
-                 * 
-                 * Проблема: MASTER отправляет UNLOCK для всех дверей, которые не в lockRequired,
-                 * даже если они уже разблокированы. Это создает постоянные переключения,
-                 * так как команда UNLOCK применяется всегда, даже если дверь уже разблокирована.
-                 * 
-                 * Решение: не применяем команду UNLOCK, если дверь уже разблокирована
-                 * и нет pending команды LOCK. Это предотвращает ненужные переключения.
-                 */
+                /* Не применять лишний UNLOCK, если дверь уже разблокирована и нет pending LOCK. */
                 if (!s_lockReq[idx].lock_on)
                 {
                     /* Команда unlock от LogicCore.

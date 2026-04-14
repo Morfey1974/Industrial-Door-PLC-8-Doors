@@ -119,13 +119,7 @@ void LwIP_BringUp_Poll(void)
                (unsigned long)HAL_GetTick(),
                link_up ? "UP" : "DOWN");
 
-        /* Фронты для HttpTask только из tcpip_callback (ethernetif eth_netif_tcpip_sync_fn).
-         * Дублирование отсюда давало по 2× NOTIFY на одно событие → «PHY DOWN (x2)» сразу
-         * после LINK UP, лишний HAL_ETH_Stop/рестарт и «listen OK» при мёртвом приёме. */
-
-        /* Публикуем событие изменения физического линка в общую шину AppEvents,
-         * чтобы событие попало в журнал и отобразилось в WebUI /api/journal/dump.
-         */
+        /* Публикуем событие изменения физического линка в общую шину AppEvents (LogicCore и др.). */
         app_event_t evt;
         memset(&evt, 0, sizeof(evt));
         evt.type = link_up ? EVT_NET_LINK_UP : EVT_NET_LINK_DOWN;

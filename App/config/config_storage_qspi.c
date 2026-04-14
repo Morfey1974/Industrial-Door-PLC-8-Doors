@@ -16,6 +16,9 @@
 
 #include "stm32h7xx_hal.h"  /* HAL_GetTick() для логирования времени операций; HAL_Delay() в CFG_TEST_SAVE */
 
+/* Слабый хук: между секторами Flash httpTask может принять висящие TCP (см. http_api.c). */
+__attribute__((weak)) void CfgStorage_NetworkYieldHook(void) { }
+
 #ifdef CFG_TEST_SAVE
 /*
  * Слабый хук для печати диагностических сообщений теста 7.3.
@@ -183,6 +186,8 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
             if (i == 0U) AppLog("[CFG] SaveNew: sec0 ok %lu ms", (unsigned long)dt);
             if (i > 0U && (i % 4U == 0U || i == n_sectors - 1U))
                 AppLog("[CFG] SaveNew: sec %lu %lu ms", (unsigned long)i, (unsigned long)dt);
+            /* Иначе во время долгого erase не вызывается accept() — параллельные GET висят в backlog → RST. */
+            CfgStorage_NetworkYieldHook();
         }
         AppLog("[CFG] SaveNew: erase done %lu ms", (unsigned long)erase_sum_ms);
     }
@@ -204,6 +209,10 @@ cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_stor
         p += chunk;
         left -= chunk;
         total_written += chunk;
+        /* Периодически «кормим» сеть во время длинной записи payload. */
+        if ((total_written & ((8U * (uint32_t)QSPI_PAGE_SIZE) - 1U)) == 0U) {
+            CfgStorage_NetworkYieldHook();
+        }
     }
     const uint32_t payload_ms = HAL_GetTick() - t_payload_start;
     AppLog("[CFG] SaveNew: payload %lu B %lu ms", (unsigned long)total_written, (unsigned long)payload_ms);

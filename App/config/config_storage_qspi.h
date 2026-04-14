@@ -2,16 +2,16 @@
 
 #include <stdint.h>
 
-#include "config/config_format.h"
+/* Тот же каталог App/config — без префикса config/, иначе нужен -I../App в каждом subdir.mk */
+#include "config_format.h"
 
 /* =========================================================
- * ЭТАП 7 (MASTER-only)
- * Хранение конфигурации в QSPI Flash.
+ * ЭТАП 7 — хранение конфигурации в QSPI Flash (один контроллер).
  *
  * Реализует:
  *  - LoadActive: загрузка активной конфигурации (выбор валидного слота по seq)
  *  - SaveNew: атомарная запись нового конфига в неактивный слот (write payload, write header last)
- *  - InitOrDefault: при старте MASTER загружает конфиг или создает default и записывает
+ *  - InitOrDefault: при старте загрузка конфига или default и запись
  * ========================================================= */
 
 #ifdef __cplusplus
@@ -26,7 +26,6 @@ typedef enum
     CFGST_BAD_FORMAT = 3,
     /* service-layer statuses */
     CFGST_ARG = 4,
-    CFGST_NOT_MASTER = 5,
 } cfg_storage_status_t;
 
 typedef struct
@@ -40,7 +39,7 @@ cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_sto
 
 cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_storage_info_t *inout_info);
 
-/* На MASTER: загрузить конфиг. Если валидного нет - создать default и сохранить атомарно. */
+/* Загрузить конфиг; если валидного нет — default и атомарная запись. */
 cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_storage_info_t *out_info);
 
 #ifdef __cplusplus

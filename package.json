@@ -1,0 +1,10 @@
+{
+  "name": "plc-8-doors-repo",
+  "private": true,
+  "description": "Корневые npm-скрипты: UI живёт в папке WebUI",
+  "scripts": {
+    "dev": "npm run dev --prefix WebUI",
+    "build:web": "npm run build --prefix WebUI",
+    "preview:web": "npm run preview --prefix WebUI"
+  }
+}

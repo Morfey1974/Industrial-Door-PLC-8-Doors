@@ -7,6 +7,7 @@
 #include "stm32h7xx_hal.h"
 #include "cmsis_os.h"
 
+/* Повышение приоритета httpTask при долгих QSPI-операциях в обработчиках API (см. вызовы ниже). */
 extern osThreadId_t httpTaskHandle;
 
 #include "app_log.h"
@@ -16,7 +17,6 @@ extern osThreadId_t httpTaskHandle;
 #include "log/event_journal.h"
 #include "system_node.h"
 #include "net_service.h"
-#include "can_task.h"
 
 #include "config/config_format.h"
 #include "config/config_layout.h"
@@ -30,6 +30,13 @@ extern osThreadId_t httpTaskHandle;
 
 /* Draft JSON merge parser (Stage 9): */
 #include "json_simple.h"
+
+extern volatile uint32_t g_eth_irq;
+extern volatile uint32_t g_eth_rx_cb;
+extern volatile uint32_t g_eth_tx_cb;
+extern volatile uint32_t g_eth_tcpip_cb_fail;
+extern volatile uint32_t g_http_listen_sel_fail;
+extern volatile uint32_t g_http_accept_fail;
 
 /* Экранирование строки для JSON: копирует src в dst, экранирует " и \, ограничивает длину. */
 static void json_escape_error(const char *src, char *dst, size_t dst_sz)
@@ -63,11 +70,8 @@ static uint8_t parse_ipv4(const char *str, uint8_t *out)
     return 1U;
 }
 
-/* Stage 7 service: atomic A/B persist to QSPI + journal event */
+/* Stage 7 service: atomic A/B persist to QSPI */
 #include "config_service.h"
-
-/* Stage 9: journal dump endpoint */
-#include "log/event_journal.h"
 
 /* Для доступа к LogicCore (состояние удаленных дверей) */
 #include "comms_task.h"
@@ -75,11 +79,19 @@ static uint8_t parse_ipv4(const char *str, uint8_t *out)
 /* Сервис управления пользователями */
 #include "users_service.h"
 #include "config/users_format.h"
-/* RTC: чтение/установка времени для /api/time и журнала событий */
-#include "rtc_service.h"
+/* Нет внешней RTC: заглушка для /api/time (см. app_wall_time). */
+#include "app_wall_time.h"
 
 /* Active configuration stored by ConfigService (Этап 7) */
 extern project_config_t g_project_cfg;
+
+/*
+ * Лабораторная одноплатная сборка: HTTP API без проверки Bearer-токена.
+ * Для сетевой модели с паролями задать в препроцессоре проекта HTTP_OPEN_ACCESS=0.
+ */
+#ifndef HTTP_OPEN_ACCESS
+#define HTTP_OPEN_ACCESS 1
+#endif
 
 /* =========================================================
  * Маленький helper для безопасного append в JSON buffer.
@@ -167,41 +179,62 @@ static uint32_t safe_uptime_s(void)
     return HAL_GetTick() / 1000U;
 }
 
-static uint8_t build_state(jsonw_t *w)
+/* Поля /api/state без обрамляющих «{ }» — чтобы добавить «,doors»:… в одном ответе. */
+static uint8_t append_state_fields(jsonw_t *w)
 {
     char ip[16];
     Net_GetIp4Str(ip, sizeof(ip));
 
-    /* На этом шаге state — минимальный.
-     * Позже сюда добавим CAN state/mask, degraded flags, и т.д.
-     */
+    /* netDiag: только счётчики, которые ещё есть в прошивке (без старого «recovery»). */
     return jw_appendf(w,
-        "{"
           "\"nodeId\":%u,"
-          "\"role\":%u,"
           "\"linkUp\":%u,"
           "\"netReady\":%u,"
+          "\"httpListen\":%u,"
           "\"ip\":\"%s\","
-          "\"uptimeSeconds\":%lu"
-        "}",
+          "\"uptimeSeconds\":%lu,"
+          "\"netDiag\":{"
+            "\"ethIrq\":%lu,\"ethRxCb\":%lu,\"ethTxCb\":%lu,\"ethTcpipCbFail\":%lu,"
+            "\"httpSelFail\":%lu,\"httpAccFail\":%lu"
+          "}",
         (unsigned)System_GetNodeId(),
-        (unsigned)System_GetRole(),
         (unsigned)Net_IsLinkUp(),
         (unsigned)Net_IsReady(),
+        (unsigned)HttpServer_IsReady(),
         ip,
-        (unsigned long)safe_uptime_s()
+        (unsigned long)safe_uptime_s(),
+        (unsigned long)g_eth_irq,
+        (unsigned long)g_eth_rx_cb,
+        (unsigned long)g_eth_tx_cb,
+        (unsigned long)g_eth_tcpip_cb_fail,
+        (unsigned long)g_http_listen_sel_fail,
+        (unsigned long)g_http_accept_fail
     );
 }
 
-static uint8_t build_doors(jsonw_t *w)
+/* Определение ниже по файлу; build_state_response вызывает раньше — нужен прототип для C99. */
+static uint8_t append_doors_array(jsonw_t *w);
+
+/* Один JSON: поля состояния платы; при include_doors=1 добавляем массив doors (как у /api/doors).
+ * WebUI на странице мониторинга делает один GET вместо двух — меньше TCP и быстрее согласованность
+ * шапки (сеть/линк) с таблицей дверей. */
+static uint8_t build_state_response(jsonw_t *w, uint8_t include_doors)
+{
+    if (!jw_appendf(w, "{")) return 0U;
+    if (!append_state_fields(w)) return 0U;
+    if (include_doors) {
+        if (!jw_appendf(w, ",\"doors\":")) return 0U;
+        if (!append_doors_array(w)) return 0U;
+    }
+    return jw_appendf(w, "}");
+}
+
+/* Только массив дверей "[{...},...]" — для встраивания в /api/state?includeDoors=1 */
+static uint8_t append_doors_array(jsonw_t *w)
 {
     const uint32_t now = HAL_GetTick();
 
-#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
-    AppLog("HTTP: build_doors start");
-#endif
-
-    if (!jw_appendf(w, "{\"doors\":[")) return 0U;
+    if (!jw_appendf(w, "[")) return 0U;
 
     /* Копируем состояние локальных дверей под мьютексом и сразу отпускаем мьютекс,
      * чтобы не блокировать doors_task на время сборки JSON (иначе логика дверей
@@ -212,9 +245,9 @@ static uint8_t build_doors(jsonw_t *w)
         AppDoorState_t *doors_array = Doors_GetStateArrayLocked();
         if (!doors_array) {
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-            AppLog("HTTP: build_doors mutex timeout!");
+            AppLog("HTTP: append_doors_array mutex timeout!");
 #endif
-            if (!jw_appendf(w, "]}")) return 0U;
+            if (!jw_appendf(w, "]")) return 0U;
             return 1U;
         }
         memcpy(local_doors, doors_array, sizeof(local_doors));
@@ -288,7 +321,7 @@ static uint8_t build_doors(jsonw_t *w)
                 physClosed = open ? 0U : 1U;
                 /* Состояние блокировки по зависимостям — чтобы на карте в режиме просмотра отображалась анимация */
                 locked = DoorBitset_Test(&lc->lockRequired, globalDoorId) ? 1U : 0U;
-                /* Сигнализация SLAVE приходит масками в STATUS; MASTER сохраняет remoteAlarmReasons в LogicCore */
+                /* Удалённые узлы не используются; alarming/alarmReasons — из локальной модели двери. */
                 alarmReasons = lc->remoteAlarmReasons[idx];
                 alarming = (alarmReasons != 0U) ? 1U : 0U;
                 if (open) open_s = 0U;
@@ -328,13 +361,24 @@ static uint8_t build_doors(jsonw_t *w)
         }
     }
 
-    uint8_t result = jw_appendf(w, "]}");
-    
+    uint8_t result = jw_appendf(w, "]");
+
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
-    AppLog("HTTP: build_doors done len=%u result=%u", (unsigned)w->len, (unsigned)result);
+    AppLog("HTTP: append_doors_array done len=%u result=%u", (unsigned)w->len, (unsigned)result);
 #endif
 
     return result;
+}
+
+/* Ответ как /api/doors — обёртка вокруг append_doors_array. */
+static uint8_t build_doors(jsonw_t *w)
+{
+#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
+    AppLog("HTTP: build_doors start");
+#endif
+    if (!jw_appendf(w, "{\"doors\":")) return 0U;
+    if (!append_doors_array(w)) return 0U;
+    return jw_appendf(w, "}");
 }
 
 static uint8_t build_config(jsonw_t *w)
@@ -494,235 +538,13 @@ static uint8_t build_config_full(jsonw_t *w)
     return 1U;
 }
 
-/* Ответ GET /api/time: текущее время контроллера (RTC). unix — секунды с 1970-01-01 для UI. */
+/* Ответ GET /api/time: на контроллере нет часов — unix=0; в UI используется время браузера. */
 static uint8_t build_time_response(jsonw_t *w)
 {
     uint32_t unix_sec = 0U;
-    if (RTC_GetUnixTime(&unix_sec))
-        return jw_appendf(w, "{\"ok\":1,\"unix\":%lu,\"source\":\"rtc\"}", (unsigned long)unix_sec);
-    (void)jw_appendf(w, "{\"ok\":0,\"unix\":0,\"source\":\"unavailable\"}");
-    return 1U;
-}
-
-static uint8_t build_journal_stat(jsonw_t *w)
-{
-    journal_stats_t st;
-    (void)memset(&st, 0, sizeof(st));
-    EventJournal_GetStats(&st);
-
-    return jw_appendf(w,
-        "{"
-          "\"base\":%lu,"
-          "\"size\":%lu,"
-          "\"sectorSize\":%lu,"
-          "\"sectors\":%lu,"
-          "\"currentSector\":%lu,"
-          "\"currentSeq\":%lu,"
-          "\"recordsWritten\":%lu,"
-          "\"totalRecords\":%lu,"
-          "\"droppedQueue\":%lu,"
-          "\"ioErrors\":%lu"
-        "}",
-        (unsigned long)st.base,
-        (unsigned long)st.size,
-        (unsigned long)st.sector_size,
-        (unsigned long)st.sectors,
-        (unsigned long)st.current_sector,
-        (unsigned long)st.current_seq,
-        (unsigned long)st.records_written,
-        (unsigned long)st.total_records,
-        (unsigned long)st.dropped_queue,
-        (unsigned long)st.io_errors
-    );
-}
-
-/* Простой парсер query параметров: извлекает значение параметра из строки вида "?key=value&key2=value2" */
-static uint32_t parse_query_uint32(const char *path, const char *key, uint32_t default_val)
-{
-    if (!path || !key) return default_val;
-
-    /* Ищем начало query string */
-    const char *qmark = strchr(path, '?');
-    if (!qmark) return default_val;
-
-    /* Ищем ключ */
-    char key_pattern[32];
-    snprintf(key_pattern, sizeof(key_pattern), "%s=", key);
-    const char *key_pos = strstr(qmark, key_pattern);
-    if (!key_pos) return default_val;
-
-    /* Пропускаем "key=" */
-    const char *val_start = key_pos + strlen(key_pattern);
-    
-    /* Читаем число до '&' или конца строки */
-    uint32_t val = 0;
-    while (*val_start >= '0' && *val_start <= '9')
-    {
-        val = val * 10U + (uint32_t)(*val_start - '0');
-        val_start++;
-        if (*val_start == '&' || *val_start == 0) break;
-    }
-
-    return val;
-}
-
-/* Парсер query параметра для строки (оставлен для возможного использования) */
-static uint8_t __attribute__((unused)) parse_query_string(const char *path, const char *key, char *out, size_t out_cap)
-{
-    if (!path || !key || !out || out_cap == 0) return 0U;
-
-    /* Ищем начало query string */
-    const char *qmark = strchr(path, '?');
-    if (!qmark) return 0U;
-
-    /* Ищем ключ */
-    char key_pattern[32];
-    snprintf(key_pattern, sizeof(key_pattern), "%s=", key);
-    const char *key_pos = strstr(qmark, key_pattern);
-    if (!key_pos) return 0U;
-
-    /* Пропускаем "key=" */
-    const char *val_start = key_pos + strlen(key_pattern);
-    
-    /* Читаем строку до '&' или конца строки */
-    size_t len = 0;
-    while (*val_start && *val_start != '&' && len < out_cap - 1)
-    {
-        out[len++] = *val_start++;
-    }
-    out[len] = 0;
-    
-    return (len > 0) ? 1U : 0U;
-}
-
-static uint8_t build_journal_dump(jsonw_t *w, const char *path)
-{
-    /* Парсим query параметры */
-    uint32_t offset = parse_query_uint32(path, "offset", 0U);
-    uint32_t limit = parse_query_uint32(path, "limit", 20U);
-
-    /* Ограничиваем limit разумными значениями.
-     * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: увеличен limit до 100 для улучшения скорости загрузки.
-     * 
-     * Проблема: при большом offset нужно пропустить много записей, читая их по одной из Flash,
-     * что занимает много времени. Увеличение limit позволяет получать больше записей за один запрос,
-     * уменьшая количество запросов и общее время загрузки.
-     * 
-     * С учетом размера буфера ответа (8KB) и размера одной записи в JSON (~200 байт),
-     * максимальное количество записей за один запрос = ~40. Но мы увеличиваем до 100,
-     * так как буфер ответа может быть увеличен при необходимости.
-     */
-    if (limit == 0 || limit > 100) limit = 50U; /* Увеличено с 20 до 50 по умолчанию */
-
-    /* Выделяем буфер для записей (на стеке, т.к. limit ограничен до 100) */
-    journal_record_t records[100];
-    uint32_t count = 0;
-
-    journal_status_t status = EventJournal_ReadRecords(offset, limit, records, &count);
-    
-    if (status != JOURNAL_OK)
-    {
-        /* В случае ошибки возвращаем пустой массив с информацией об ошибке */
-        return jw_appendf(w, "{\"records\":[],\"count\":0,\"offset\":%lu,\"limit\":%lu,\"error\":%u,\"errorMsg\":\"%s\"}",
-                         (unsigned long)offset, (unsigned long)limit, (unsigned)status,
-                         (status == JOURNAL_NOT_INIT) ? "Journal not initialized" :
-                         (status == JOURNAL_IO_ERROR) ? "IO error reading from QSPI" : "Unknown error");
-    }
-    
-    /* Если журнал пустой (count == 0), это нормально, не ошибка */
-
-    if (!jw_appendf(w, "{\"records\":[")) return 0U;
-
-    for (uint32_t i = 0; i < count; i++)
-    {
-        if (i != 0)
-        {
-            if (!jw_appendf(w, ",")) return 0U;
-        }
-
-        const journal_record_t *r = &records[i];
-        
-        /* Преобразуем type и source в строки для читаемости; для type 12 (HTTP) arg = действие */
-        const char *type_str = "UNKNOWN";
-        switch (r->type)
-        {
-            case 1: type_str = "DOOR_OPEN"; break;
-            case 2: type_str = "DOOR_CLOSE"; break;
-            case 3: type_str = "DOOR_ALARM"; break;
-            case 4: type_str = "DOOR_OPEN_TIMEOUT"; break;
-            case 5: type_str = "DOOR_POST_CLOSE_READY"; break;
-            case 6: type_str = "DOOR_SIGNAL_ON"; break;
-            case 7: type_str = "DOOR_SIGNAL_OFF"; break;
-            case 8: type_str = "CMD_LOCK"; break;
-            case 9: type_str = "CMD_UNLOCK"; break;
-            case 10: type_str = "NET_LINK_UP"; break;
-            case 11: type_str = "NET_LINK_DOWN"; break;
-            case 12:
-                if (r->source == 6) { /* APP_SRC_HTTP: действия пользователя */
-                    if (r->arg == 2) type_str = "CONFIG_SAVE";
-                    else if (r->arg == 3) type_str = "USER_LOGIN";
-                    else if (r->arg == 4) type_str = "USER_LOGOUT";
-                    else type_str = "SYSTEM_FAULT";
-                } else type_str = "SYSTEM_FAULT";
-                break;
-        }
-
-        const char *source_str = "UNKNOWN";
-        switch (r->source)
-        {
-            case 0: source_str = "NONE"; break;
-            case 1: source_str = "DOOR_LOCAL"; break;
-            case 2: source_str = "SUPERVISOR"; break;
-            case 3: source_str = "WATCHDOG"; break;
-            case 4: source_str = "CAN"; break;
-            case 5: source_str = "RS485"; break;
-            case 6: source_str = "HTTP"; break;
-        }
-
-        if (!jw_appendf(w,
-            "{"
-              "\"recSeq\":%lu,"
-              "\"timestamp\":%lu,"
-              "\"type\":\"%s\","
-              "\"typeCode\":%u,"
-              "\"source\":\"%s\","
-              "\"sourceCode\":%u,"
-              "\"doorId\":%u,"
-              "\"flags\":%u,"
-              "\"arg\":%lu",
-            (unsigned long)r->recSeq,
-            (unsigned long)r->timestamp,
-            type_str,
-            (unsigned)r->type,
-            source_str,
-            (unsigned)r->source,
-            (unsigned)r->door_id,
-            (unsigned)r->flags,
-            (unsigned long)r->arg
-        )) return 0U;
-        /* Добавляем привязку к двери в формате node/local/global, чтобы UI корректно
-         * показывал события удалённых плат (например ID-2-1), а не только локальные. */
-        if (r->door_id >= 1U && r->door_id <= APP_MAX_DOORS) {
-            uint8_t node_id = GlobalDoorId_Node(r->door_id);
-            uint8_t local_door = GlobalDoorId_Local(r->door_id);
-            if (node_id != 0U && local_door != 0U) {
-                if (!jw_appendf(w, ",\"globalDoorId\":%u,\"nodeId\":%u,\"localDoor\":%u",
-                                (unsigned)r->door_id,
-                                (unsigned)node_id,
-                                (unsigned)local_door)) return 0U;
-            }
-        }
-        if (r->username[0] != '\0') {
-            char uname_esc[JOURNAL_RECORD_USERNAME_MAX * 2];
-            json_escape_error(r->username, uname_esc, sizeof(uname_esc));
-            if (!jw_appendf(w, ",\"username\":\"%s\"", uname_esc)) return 0U;
-        }
-        if (!jw_appendf(w, "}")) return 0U;
-    }
-
-    if (!jw_appendf(w, "],\"count\":%lu,\"offset\":%lu,\"limit\":%lu}",
-                   (unsigned long)count, (unsigned long)offset, (unsigned long)limit)) return 0U;
-
+    if (AppWallTime_GetUnix(&unix_sec))
+        return jw_appendf(w, "{\"ok\":1,\"unix\":%lu,\"source\":\"hw\"}", (unsigned long)unix_sec);
+    (void)jw_appendf(w, "{\"ok\":0,\"unix\":0,\"source\":\"none\"}");
     return 1U;
 }
 
@@ -731,11 +553,17 @@ static uint8_t build_journal_dump(jsonw_t *w, const char *path)
  * ========================================================= */
 static uint8_t check_super_admin_access(const char *username)
 {
+#if HTTP_OPEN_ACCESS
+    /* Открытый доступ: разграничение по ролям на уровне API отключено. */
+    (void)username;
+    return 1U;
+#else
     if (!username)
         return 0U;
-    
+
     user_role_t role = UsersService_GetUserRole(username);
     return (role == USER_ROLE_SUPER_ADMIN) ? 1U : 0U;
+#endif
 }
 
 /* Стереть диапазон QSPI по 4K-секторам.
@@ -766,11 +594,10 @@ static uint8_t erase_qspi_region_4k(uint32_t base, uint32_t size)
  * Биты маски:
  *  - b0: config (slot A/B),
  *  - b1: mapping,
- *  - b2: journal/statistics,
  *  - b3: users db.
  *
  * Важно: users db считаем служебным разделом. Для признака "пользовательские данные"
- * в UI используем только config+mapping+journal. */
+ * в UI используем только config+mapping. */
 static uint8_t local_flash_data_mask_http(void)
 {
     uint8_t mask = 0U;
@@ -810,14 +637,6 @@ static uint8_t local_flash_data_mask_http(void)
         if ((rca == HAL_OK && a == cfg_magic) || (rcb == HAL_OK && b == cfg_magic))
             mask |= (1U << 0); /* config */
     }
-    /* journal */
-    {
-        journal_stats_t st;
-        memset(&st, 0, sizeof(st));
-        EventJournal_GetStats(&st);
-        if (st.total_records > 0U)
-            mask |= (1U << 2); /* journal */
-    }
     return mask;
 }
 
@@ -828,48 +647,27 @@ static int post_flash_scan(const char *current_user, char *out_body, size_t out_
         (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
         return 403;
     }
-    if (System_GetRole() != APP_ROLE_MASTER)
-    {
-        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Flash scan allowed only on MASTER\"}");
-        return 409;
-    }
-
     jsonw_t w;
     jw_init(&w, out_body, out_sz);
     if (!jw_appendf(&w, "{\"ok\":1,\"boards\":["))
         return 500;
 
-    uint8_t first = 1U;
-    for (uint8_t nodeId = 1U; nodeId <= APP_MAX_NODES; nodeId++)
+    /* Один контроллер: сканируем только локальный flash. */
     {
-        uint8_t online = (nodeId == 1U) ? 1U : CanTask_MasterIsNodeOnline(nodeId);
-        if (!online) continue;
+        const uint8_t nodeId = 1U;
+        uint8_t data_mask = local_flash_data_mask_http();
+        const uint8_t scan_ok = 1U;
+        const uint8_t has_user_data =
+            ((data_mask & ((1U << 0) | (1U << 1))) != 0U) ? 1U : 0U;
 
-        uint8_t data_mask = 0U;
-        uint8_t scan_ok = 1U;
-        if (nodeId == 1U)
-        {
-            data_mask = local_flash_data_mask_http();
-        }
-        else
-        {
-            scan_ok = CanTask_MasterFlashScanNode(nodeId, &data_mask);
-            if (!scan_ok) data_mask = (uint8_t)((1U << 0) | (1U << 1) | (1U << 2)); /* fail-safe */
-        }
-
-        const uint8_t has_user_data = ((data_mask & ((1U << 0) | (1U << 1) | (1U << 2))) != 0U) ? 1U : 0U;
-
-        if (!first && !jw_appendf(&w, ",")) return 500;
-        first = 0U;
         if (!jw_appendf(&w,
             "{\"nodeId\":%u,\"online\":1,\"scanOk\":%u,\"hasData\":%u,"
-            "\"config\":%u,\"mapping\":%u,\"journal\":%u,\"users\":%u}",
+            "\"config\":%u,\"mapping\":%u,\"users\":%u}",
             (unsigned)nodeId,
             (unsigned)(scan_ok ? 1U : 0U),
             (unsigned)has_user_data,
             (unsigned)((data_mask & (1U << 0)) ? 1U : 0U),
             (unsigned)((data_mask & (1U << 1)) ? 1U : 0U),
-            (unsigned)((data_mask & (1U << 2)) ? 1U : 0U),
             (unsigned)((data_mask & (1U << 3)) ? 1U : 0U)))
             return 500;
     }
@@ -884,80 +682,72 @@ static int post_flash_clear_all(const char *body, size_t body_len, const char *c
         (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
         return 403;
     }
-    if (System_GetRole() != APP_ROLE_MASTER)
-    {
-        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Flash clear allowed only on MASTER\"}");
-        return 409;
-    }
-
     if (!body) body = "";
     uint32_t nodesMask = 0U;
     uint32_t clearService = 0U;
     (void)body_len;
     if (!Json_GetUint32(body, "nodesMask", &nodesMask))
-        nodesMask = 1U; /* обратная совместимость: очищаем только MASTER */
+        nodesMask = 1U; /* по умолчанию — локальный контроллер (бит 0) */
     (void)Json_GetUint32(body, "clearService", &clearService);
     if (nodesMask == 0U) {
         (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"nodesMask is empty\"}");
         return 400;
     }
+    /* Поддерживается только локальный контроллер (бит 0). */
+    if ((nodesMask & ~1U) != 0U) {
+        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Only local controller (bit0) is supported\"}");
+        return 400;
+    }
 
-    uint8_t master_ok = 1U;
-    uint16_t slave_ok_mask = 0U;
-    uint16_t slave_fail_mask = 0U;
+    uint8_t local_ok = 1U;
+    const uint16_t remote_ok_mask = 0U;
+    const uint16_t remote_fail_mask = 0U;
 
     if ((nodesMask & 1U) != 0U)
     {
         journal_status_t jst = EventJournal_EraseAll();
-        if (jst != JOURNAL_OK) master_ok = 0U;
-        if (master_ok && !erase_qspi_region_4k(QSPI_MAPPING_BASE, QSPI_MAPPING_SIZE)) master_ok = 0U;
-        if (master_ok) MappingStorage_SetData(NULL, 0U);
+        if (jst != JOURNAL_OK) local_ok = 0U;
+        if (local_ok && !erase_qspi_region_4k(QSPI_MAPPING_BASE, QSPI_MAPPING_SIZE)) local_ok = 0U;
+        if (local_ok) MappingStorage_SetData(NULL, 0U);
         /* Служебный users db по умолчанию не стираем; отдельный опасный режим — clearService=1. */
-        if (master_ok && (clearService != 0U) && !erase_qspi_region_4k(QSPI_USERS_DB_BASE, QSPI_USERS_DB_SIZE)) master_ok = 0U;
-        if (master_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_A_BASE, QSPI_CFG_SLOT_SIZE)) master_ok = 0U;
-        if (master_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_B_BASE, QSPI_CFG_SLOT_SIZE)) master_ok = 0U;
-        if (master_ok) {
+        if (local_ok && (clearService != 0U) && !erase_qspi_region_4k(QSPI_USERS_DB_BASE, QSPI_USERS_DB_SIZE)) local_ok = 0U;
+        if (local_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_A_BASE, QSPI_CFG_SLOT_SIZE)) local_ok = 0U;
+        if (local_ok && !erase_qspi_region_4k(QSPI_CFG_SLOT_B_BASE, QSPI_CFG_SLOT_SIZE)) local_ok = 0U;
+        if (local_ok) {
             Config_Default(&g_project_cfg);
             Config_Finalize(&g_project_cfg);
             ConfigService_ApplyRuntime(&g_project_cfg);
         }
     }
 
-    for (uint8_t nodeId = 2U; nodeId <= APP_MAX_NODES; nodeId++)
-    {
-        if ((nodesMask & (1UL << (nodeId - 1U))) == 0U) continue;
-        if (CanTask_MasterFlashClearNode(nodeId, (clearService != 0U) ? 1U : 0U))
-            slave_ok_mask |= (uint16_t)(1U << (nodeId - 1U));
-        else
-            slave_fail_mask |= (uint16_t)(1U << (nodeId - 1U));
-    }
-
-    if (((nodesMask & 1U) && !master_ok) || slave_fail_mask != 0U)
+    if (((nodesMask & 1U) && !local_ok) || remote_fail_mask != 0U)
     {
         (void)snprintf(out_body, out_sz,
-                       "{\"ok\":0,\"masterOk\":%u,\"slaveOkMask\":%u,\"slaveFailMask\":%u}",
-                       (unsigned)(master_ok ? 1U : 0U),
-                       (unsigned)slave_ok_mask,
-                       (unsigned)slave_fail_mask);
+                       "{\"ok\":0,\"localOk\":%u,\"remoteOkMask\":%u,\"remoteFailMask\":%u}",
+                       (unsigned)(local_ok ? 1U : 0U),
+                       (unsigned)remote_ok_mask,
+                       (unsigned)remote_fail_mask);
         return 500;
     }
 
-    /* Если очищали мастер — делаем reboot локально. Для удалённых узлов reboot делает сам SLAVE. */
+    /* После очистки локального flash — перезагрузка контроллера. */
     if ((nodesMask & 1U) != 0U)
         s_reboot_requested = 1U;
 
     (void)snprintf(out_body, out_sz,
-                   "{\"ok\":1,\"reboot\":%u,\"masterOk\":%u,\"slaveOkMask\":%u}",
+                   "{\"ok\":1,\"reboot\":%u,\"localOk\":%u,\"remoteOkMask\":%u}",
                    (unsigned)((nodesMask & 1U) ? 1U : 0U),
-                   (unsigned)(master_ok ? 1U : 0U),
-                   (unsigned)slave_ok_mask);
+                   (unsigned)(local_ok ? 1U : 0U),
+                   (unsigned)remote_ok_mask);
     return 200;
 }
 
 /* =========================================================
  * Извлечение Bearer-токена из заголовков запроса
  * Ищет "Authorization: Bearer <token>" (без учёта регистра)
+ * При HTTP_OPEN_ACCESS не используется — не компилируем, чтобы не было -Wunused-function.
  * ========================================================= */
+#if !HTTP_OPEN_ACCESS
 static uint8_t get_bearer_token_from_headers(const char *req_buf, int req_len,
                                              char *out_token, size_t token_sz)
 {
@@ -1018,6 +808,7 @@ static uint8_t get_bearer_token_from_headers(const char *req_buf, int req_len,
     }
     return 0U;
 }
+#endif /* !HTTP_OPEN_ACCESS */
 
 /* Извлечь X-Client-Time (Unix секунды с ПК) из заголовков. Возвращает 1 при успехе. */
 static uint8_t get_client_time_from_headers(const char *headers, int headers_len, uint32_t *out_unix_sec)
@@ -1061,6 +852,18 @@ static int require_auth(const char *req_buf, int req_len,
                         char *out_body, size_t out_sz,
                         char *out_username, size_t username_sz)
 {
+#if HTTP_OPEN_ACCESS
+    (void)req_buf;
+    (void)req_len;
+    (void)out_body;
+    (void)out_sz;
+    if (out_username && username_sz > 0U)
+    {
+        (void)strncpy(out_username, "local", username_sz - 1U);
+        out_username[username_sz - 1U] = '\0';
+    }
+    return 200;
+#else
     char token[64];
     if (!get_bearer_token_from_headers(req_buf, req_len, token, sizeof(token)))
     {
@@ -1081,6 +884,7 @@ static int require_auth(const char *req_buf, int req_len,
         return 401;
     }
     return 200;
+#endif
 }
 
 /* Forward declaration для put_users_update */
@@ -1192,6 +996,21 @@ static int put_mapping(const char *body, size_t body_len, char *out_body, size_t
     return 200;
 }
 
+/* Обрезка ?query и #fragment для маршрутизации. */
+static void http_api_path_without_query(const char *path, char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0U) return;
+    size_t i = 0U;
+    while (path[i] != '\0' && (i + 1U) < out_sz) {
+        if (path[i] == '?' || path[i] == '#') {
+            break;
+        }
+        out[i] = path[i];
+        i++;
+    }
+    out[i] = '\0';
+}
+
 int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len,
                       char *out_body, size_t out_sz)
 {
@@ -1210,6 +1029,11 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
     /* GET /api/auth/session — проверка сессии по токену, возврат данных пользователя */
     if (strcmp(path, "/api/auth/session") == 0)
     {
+#if HTTP_OPEN_ACCESS
+        (void)request_buf;
+        (void)request_len;
+        return jw_appendf(&w, "{\"ok\":1,\"user\":{\"username\":\"local\",\"role\":\"super_admin\"}}") ? 200 : 500;
+#else
         char username[32];
         int auth_code = require_auth(request_buf, request_len, out_body, out_sz, username, sizeof(username));
         if (auth_code != 200)
@@ -1219,6 +1043,7 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
                                (role == USER_ROLE_ADMIN) ? "admin" : "operator";
         (void)jw_appendf(&w, "{\"ok\":1,\"user\":{\"username\":\"%s\",\"role\":\"%s\"}}", username, role_str);
         return 200;
+#endif
     }
 
     /* Все остальные GET к маршрутам /api требуют валидный токен */
@@ -1227,42 +1052,39 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
     if (auth_code != 200)
         return 401;
 
-    if (strcmp(path, "/api/state") == 0)
+    /* Маршрут без ?query и #fragment. */
+    char pth[128];
+    http_api_path_without_query(path, pth, sizeof(pth));
+
+    if (strcmp(pth, "/api/state") == 0)
     {
-        return build_state(&w) ? 200 : 500;
+        /* Полный path с query: /api/state?includeDoors=1 */
+        const uint8_t want_doors = (strstr(path, "includeDoors=1") != NULL) ? 1U : 0U;
+        return build_state_response(&w, want_doors) ? 200 : 500;
     }
-    if (strcmp(path, "/api/doors") == 0)
+    if (strcmp(pth, "/api/doors") == 0)
     {
         return build_doors(&w) ? 200 : 500;
     }
-    if (strcmp(path, "/api/config") == 0)
+    if (strcmp(pth, "/api/config") == 0)
     {
         return build_config(&w) ? 200 : 500;
     }
-    if (strcmp(path, "/api/config/full") == 0)
+    if (strcmp(pth, "/api/config/full") == 0)
     {
         return build_config_full(&w) ? 200 : 500;
     }
-    if (strcmp(path, "/api/config/mapping") == 0)
+    if (strcmp(pth, "/api/config/mapping") == 0)
     {
         return build_mapping(&w) ? 200 : 500;
     }
-    if (strcmp(path, "/api/journal/stat") == 0)
-    {
-        return build_journal_stat(&w) ? 200 : 500;
-    }
-    if (strcmp(path, "/api/time") == 0)
+    if (strcmp(pth, "/api/time") == 0)
     {
         return build_time_response(&w) ? 200 : 500;
     }
 
-    if (strncmp(path, "/api/journal/dump", 16) == 0)
-    {
-        return build_journal_dump(&w, path) ? 200 : 500;
-    }
-
     /* GET /api/users — только Super Admin (current_user уже из токена) */
-    if (strcmp(path, "/api/users") == 0 || strncmp(path, "/api/users?", 11) == 0)
+    if (strcmp(pth, "/api/users") == 0)
     {
         if (!check_super_admin_access(current_user))
         {
@@ -1280,7 +1102,7 @@ int HttpApi_HandleGet(const char *path, const char *request_buf, int request_len
  *
  * We deliberately implement a SMALL "merge" JSON payload first.
  * This is enough to debug Ethernet/HTTP + QSPI persist pipeline:
- *   JSON -> merge -> validate -> ConfigService_Persist(A/B) -> journal
+ *   JSON -> merge -> validate -> ConfigService_Persist(A/B)
  *
  * Supported keys (optional):
  *   - projectName: string
@@ -1790,11 +1612,9 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
         return 401;
     }
 
-    if (!Json_GetString(body, "password", password, sizeof(password))) {
-        (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Неверные учётные данные\",\"remainingAttempts\":%lu}",
-                         (unsigned long)LOGIN_RATE_MAX_ATTEMPTS);
-        return 401;
-    }
+    /* Пароль опционален в JSON (WebUI может не слать поле) — пустая строка допустима. */
+    password[0] = '\0';
+    (void)Json_GetString(body, "password", password, sizeof(password));
 
     /* Ограничение перебора: 5 неудачных попыток по username за 15 минут */
     if (login_fail_count_recent(username) >= LOGIN_RATE_MAX_ATTEMPTS) {
@@ -1803,8 +1623,15 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
         return 429;
     }
 
-    /* Проверяем учетные данные через UsersService */
-    if (UsersService_VerifyPassword(username, password))
+    /* ВРЕМЕННО для отладки: пользователь admin без пароля. Убрать перед продакшеном. */
+    uint8_t creds_ok = 0U;
+    if (strcmp(username, "admin") == 0 && password[0] == '\0') {
+        creds_ok = 1U;
+    } else if (UsersService_VerifyPassword(username, password)) {
+        creds_ok = 1U;
+    }
+
+    if (creds_ok)
     {
         user_role_t role = UsersService_GetUserRole(username);
         const char *role_str = "operator";
@@ -1834,12 +1661,6 @@ static int post_auth_login(const char *body, size_t body_len, char *out_body, si
 #if HTTP_DEBUG_ENABLED
         AppLog("AUTH: login success for %s (role=%s)", username, role_str);
 #endif
-        /* Журнал: вход пользователя с временем с ПК */
-        {
-            uint32_t client_ts = 0U;
-            if (get_client_time_from_headers(headers, headers_len, &client_ts))
-                EventJournal_LogUserAction(3 /*USER_LOGIN*/, username, client_ts, 1);
-        }
         return 200;
     }
     
@@ -2247,11 +2068,7 @@ int HttpApi_HandlePost(const char *path,
     if (strcmp(path, "/api/auth/change-password") == 0 || strcmp(path, "/auth/change-password") == 0) {
         return post_auth_change_password(body, body_len, current_user, out_body, out_sz);
     }
-    /* POST /api/auth/logout — выход с фиксацией в журнале (имя пользователя и время с ПК) */
     if (strcmp(path, "/api/auth/logout") == 0 || strcmp(path, "/auth/logout") == 0) {
-        uint32_t client_ts = 0U;
-        (void)get_client_time_from_headers(headers, headers_len, &client_ts);
-        EventJournal_LogUserAction(4 /*USER_LOGOUT*/, current_user, client_ts, 1);
         (void)snprintf(out_body, out_sz, "{\"ok\":1}");
         return 200;
     }
@@ -2263,37 +2080,15 @@ int HttpApi_HandlePost(const char *path,
     if (strcmp(path, "/api/users") == 0 || strcmp(path, "/users") == 0) {
         return post_users_create(body, body_len, current_user, out_body, out_sz);
     }
-    /* POST /api/journal/clear — очистка журнала событий на контроллере.
-     * Сделано как POST (а не DELETE), чтобы избежать ограничений некоторых HTTP-клиентов
-     * и оставить единый путь обработки в существующем обработчике POST.
-     * Доступ оставляем только для Super Admin из соображений безопасности:
-     * очистка журнала — потенциально критичное действие аудита. */
-    if (strcmp(path, "/api/journal/clear") == 0) {
-        if (!check_super_admin_access(current_user)) {
-            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Access denied. Super Admin only\"}");
-            return 403;
-        }
-        journal_status_t st = EventJournal_EraseAll();
-        if (st == JOURNAL_OK) {
-            (void)snprintf(out_body, out_sz, "{\"ok\":1}");
-            return 200;
-        }
-        (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Journal clear failed\",\"status\":%u}", (unsigned)st);
-        return 500;
-    }
-    /* POST /api/time — установка времени RTC из UI (тело: {"unix": <секунды с 1970-01-01>}) */
+    /* POST /api/time — раньше писали во внешнюю RTC; железа нет, отвечаем успехом (время в UI — локальное). */
     if (strcmp(path, "/api/time") == 0) {
         uint32_t unix_sec = 0U;
         if (!Json_GetUint32(body, "unix", &unix_sec)) {
             (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"Missing or invalid unix\"}");
             return 400;
         }
-        if (RTC_SetFromUnix(unix_sec))
-            (void)snprintf(out_body, out_sz, "{\"ok\":1}");
-        else {
-            (void)snprintf(out_body, out_sz, "{\"ok\":0,\"error\":\"RTC write failed\"}");
-            return 500;
-        }
+        (void)AppWallTime_SetUnix(unix_sec);
+        (void)snprintf(out_body, out_sz, "{\"ok\":1,\"note\":\"no_hw_rtc\"}");
         return 200;
     }
     if (strcmp(path, "/api/flash/scan") == 0) {
@@ -2326,4 +2121,12 @@ int HttpApi_HandlePost(const char *path,
         (void)jw_appendf(&w, "{\"ok\":0,\"error\":\"Path not found\"}");
     }
     return 404;
+}
+
+/* Сильная реализация слабого хука в config_storage_qspi.c: пока httpTask внутри PUT
+ * и пишет Flash, параллельные запросы (/api/state) должны приниматься иначе backlog → RST. */
+void CfgStorage_NetworkYieldHook(void)
+{
+    HttpServer_DrainPendingClientsBrief();
+    (void)osDelay(1);
 }

@@ -8,13 +8,7 @@ extern "C" {
 
 void CommsTask_Run(void const *argument);
 
-/* =========================================================
- * ЭТАП 6.4–6.5: CAN-task должен иметь доступ к LogicCore на MASTER,
- * чтобы обновлять глобальный snapshot из STATUS кадров.
- *
- * Getter возвращает адрес статического экземпляра LogicCore,
- * который живёт в comms_task.c.
- * ========================================================= */
+/* Адрес статического LogicCore в comms_task.c (для конфигурации и HTTP). */
 logic_core_t* CommsTask_GetLogicCore(void);
 
 #ifdef __cplusplus

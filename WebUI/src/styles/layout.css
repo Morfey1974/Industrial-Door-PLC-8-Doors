@@ -215,7 +215,7 @@
 
 .header-status-error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-sm);
 }
 
@@ -401,7 +401,6 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: 80px; /* Отступ для закрепленных вкладок */
 }
 
 .layout-content {

@@ -1,6 +1,5 @@
 /**
- * useAuth хук - для работы с аутентификацией
- * Будет реализован после этапа 9.5
+ * useAuth — доступ к AuthContext (user, isAuthenticated, loading). Отдельной формы входа в приложении нет.
  */
 
 import { useContext } from 'react';

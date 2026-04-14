@@ -4,36 +4,25 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { API_SILENT_REFETCH_STUCK_MS } from '../utils/constants';
 
 const useApi = (apiFunction, dependencies = [], options = {}) => {
-  const { enabled = true, consecutiveFailuresForError } = options;
+  const { enabled = true, consecutiveFailuresForError, silentStuckAbortMs } = options;
+  /* undefined → порог из constants; null → не рвать тихий опрос по времени (нужно для /api/doors и тяжёлых GET с timeout 30+ с). */
+  const effectiveSilentStuckMs =
+    silentStuckAbortMs === undefined ? API_SILENT_REFETCH_STUCK_MS : silentStuckAbortMs;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
+  const [lastSuccessAt, setLastSuccessAt] = useState(null);
+  /* Тихий refetch не включает loading — для шапки (monitorStale) нужно знать, что опрос ещё идёт. */
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef(null);
   const consecutiveFailuresRef = useRef(0);
   /* Тихий refetch при занятости (автоопрос): не терять тик — один догон после завершения запроса. */
   const pendingSilentRefetchRef = useRef(false);
-
-  // Функция для сравнения данных (глубокое сравнение для объектов)
-  const isDataEqual = (oldData, newData) => {
-    if (oldData === newData) return true;
-    if (!oldData || !newData) return false;
-    
-    // Для массивов объектов (например, doors)
-    if (Array.isArray(oldData) && Array.isArray(newData)) {
-      if (oldData.length !== newData.length) return false;
-      return JSON.stringify(oldData) === JSON.stringify(newData);
-    }
-    
-    // Для объектов
-    if (typeof oldData === 'object' && typeof newData === 'object') {
-      return JSON.stringify(oldData) === JSON.stringify(newData);
-    }
-    
-    return oldData === newData;
-  };
+  const silentFetchStartedAtRef = useRef(0);
 
   useEffect(() => {
     if (enabled === false) {
@@ -89,13 +78,10 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
         
         if (isMounted && !ctrl.signal.aborted) {
           consecutiveFailuresRef.current = 0;
-          // Обновляем данные только если они изменились
-          setData((prevData) => {
-            if (isDataEqual(prevData, result)) {
-              return prevData; // Не обновляем, если данные не изменились
-            }
-            return result;
-          });
+          setLastSuccessAt(Date.now());
+          /* Всегда новая ссылка: JSON.stringify-сравнение давало ложные «без изменений» и таблица дверей
+           * не перерисовывалась при смене статусов (мониторинг). */
+          setData(result);
         }
       } catch (err) {
         // Очищаем таймаут при ошибке
@@ -171,9 +157,22 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
      */
     if (isFetchingRef.current && !force) {
       if (silent) {
+        const age = Date.now() - silentFetchStartedAtRef.current;
+        if (
+          effectiveSilentStuckMs != null &&
+          age >= effectiveSilentStuckMs &&
+          abortControllerRef.current
+        ) {
+          abortControllerRef.current.abort();
+          isFetchingRef.current = false;
+        } else {
+          pendingSilentRefetchRef.current = true;
+          return false;
+        }
+      } else {
         pendingSilentRefetchRef.current = true;
+        return false;
       }
-      return false;
     }
 
     // Отменяем предыдущий запрос перед новым запуском
@@ -184,6 +183,13 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
     const ctrl = new AbortController();
     abortControllerRef.current = ctrl;
     isFetchingRef.current = true;
+    silentFetchStartedAtRef.current = Date.now();
+    if (silent) {
+      setBackgroundBusy(true);
+    } else {
+      /* Явный (не тихий) запрос сбрасывает флаг: иначе после abort тихого finally может не выполниться для старого ctrl. */
+      setBackgroundBusy(false);
+    }
     let timeoutId = null;
 
     // Устанавливаем таймаут для тихого обновления тоже
@@ -211,12 +217,8 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
       
       if (!ctrl.signal.aborted) {
         consecutiveFailuresRef.current = 0;
-        setData((prevData) => {
-          if (isDataEqual(prevData, result)) {
-            return prevData;
-          }
-          return result;
-        });
+        setLastSuccessAt(Date.now());
+        setData(result);
         setError(null); // Успех — сбрасываем ошибку
         return true;
       }
@@ -251,6 +253,9 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
       }
       return false;
     } finally {
+      if (silent && abortControllerRef.current === ctrl) {
+        setBackgroundBusy(false);
+      }
       if (abortControllerRef.current === ctrl) {
         if (!silent) {
           setLoading(false);
@@ -267,7 +272,7 @@ const useApi = (apiFunction, dependencies = [], options = {}) => {
     }
   };
 
-  return { data, loading, error, refetch };
+  return { data, loading, error, refetch, lastSuccessAt, backgroundBusy };
 };
 
 export default useApi;

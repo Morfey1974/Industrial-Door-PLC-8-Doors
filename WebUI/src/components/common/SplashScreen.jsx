@@ -78,6 +78,10 @@ const SplashScreen = ({ onComplete }) => {
             }} 
           />
         )}
+        {/* Требование ТЗ: крупная надпись появляется и исчезает вместе с заставкой (стадии logo-appear … logo-fade). */}
+        <div className="splash-plc-title" aria-hidden="true">
+          PLC 8 DOORS
+        </div>
       </div>
     </div>
   );

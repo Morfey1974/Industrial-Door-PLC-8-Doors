@@ -56,7 +56,7 @@ void AppLog_Output(const char *line)
     if (huart3.gState == HAL_UART_STATE_RESET)
         return;
 
-    /* Передаём строку как есть (can_task уже добавляет \r\n). */
+    /* Передаём строку как есть (вызывающий код сам задаёт перевод строки при необходимости). */
     const size_t len = strnlen(line, APP_LOG_MSG_MAX);
     if (len == 0U)
         return;
@@ -310,7 +310,6 @@ static void prv_cli_execute(char *cmd)
     /* Поддерживаемые команды:
      *   log help
      *   log stat
-     *   log dump [N]
      *   log clear
      *   mem stat
      */
@@ -330,7 +329,7 @@ static void prv_cli_execute(char *cmd)
     
     if (strncmp(cmd, "log", 3) != 0)
     {
-        AppLog("CLI: unknown cmd (try: log help or mem stat)");
+        AppLog("CLI: неизвестная команда (log help или mem stat)");
         return;
     }
 
@@ -348,64 +347,28 @@ static void prv_cli_execute(char *cmd)
         EventJournal_PrintStats();
         return;
     }
+    /* Стирание выделенной области под бывший журнал на QSPI (долго, QSPI erase). */
     if (strncmp(p, "clear", 5) == 0)
     {
-    	/* Косметика для UX:
-    	     * очистка может занять время (QSPI erase),
-    	     * поэтому сначала явно сообщаем, что процесс начался.
-    	     */
-    	    AppLog("JOURNAL: clearing...");
+        AppLog("JOURNAL: стирание области QSPI...");
         const journal_status_t st = EventJournal_Clear();
         if (st == JOURNAL_OK)
-            AppLog("JOURNAL: cleared");
+            AppLog("JOURNAL: область очищена");
         else
-            AppLog("JOURNAL: clear failed (%lu)", (unsigned long)st);
-        return;
-    }
-    if (strncmp(p, "dump", 4) == 0)
-    {
-        uint32_t n = 20u;
-        p += 4;
-        while (*p == ' ') p++;
-        if (*p != '\0')
-        {
-            /* Парсим N (без atoi, чтобы не тащить лишнее) */
-            uint32_t acc = 0u;
-            while (*p >= '0' && *p <= '9')
-            {
-                acc = (acc * 10u) + (uint32_t)(*p - '0');
-                p++;
-            }
-            if (acc > 0u)
-                n = acc;
-        }
-        EventJournal_DumpLast(n);
-        return;
-    }
-    if (strncmp(p, "info", 4) == 0)
-    {
-        EventJournal_PrintDetailedInfo();
-        return;
-    }
-    if (strncmp(p, "recinfo", 7) == 0)
-    {
-        EventJournal_PrintRecordInfo();
+            AppLog("JOURNAL: ошибка очистки (%lu)", (unsigned long)st);
         return;
     }
 
-    AppLog("CLI: unknown log subcmd (try: log help)");
+    AppLog("CLI: неизвестная подкоманда log (см. log help)");
 }
 
 static void prv_cli_print_help(void)
 {
-    AppLog("CLI commands:");
-    AppLog("  log help            - this help");
-    AppLog("  log stat            - journal statistics (short)");
-    AppLog("  log info            - journal detailed information");
-    AppLog("  log recinfo         - record size and capacity info");
-    AppLog("  log dump [N]        - dump last N records (default 20, max 200)");
-    AppLog("  log clear           - erase journal");
-    AppLog("  mem stat            - memory usage statistics");
+    AppLog("CLI: команды");
+    AppLog("  log help   - эта справка");
+    AppLog("  log stat   - сведения об области QSPI (журнал отключён)");
+    AppLog("  log clear  - стереть область бывшего журнала на QSPI");
+    AppLog("  mem stat   - статистика памяти FreeRTOS");
 }
 
 static void prv_cli_print_mem_stat(void)
@@ -440,12 +403,8 @@ static void prv_cli_print_mem_stat(void)
     extern osThreadId_t doorsTaskHandle;
     extern osThreadId_t supervisorTaskHandle;
     extern osThreadId_t httpTaskHandle;
-    extern osThreadId_t canTaskHandle;
-    extern osThreadId_t rs485TaskHandle;
     extern osThreadId_t loggerTaskHandle;
     extern osThreadId_t watchdogTaskHandle;
-    extern osThreadId_t journalTaskHandle;
-    
     struct {
         const char *name;
         osThreadId_t handle;
@@ -455,12 +414,9 @@ static void prv_cli_print_mem_stat(void)
         {"commsTask", commsTaskHandle, 512 * 4},
         {"doorsTask", doorsTaskHandle, 512 * 4},
         {"supervisorTask", supervisorTaskHandle, 512 * 4},
-        {"httpTask", httpTaskHandle, 3072 * 4},  /* Обновлено: было 2048*4, стало 3072*4 (12288 байт) */
-        {"canTask", canTaskHandle, 512 * 4},
-        {"rs485Task", rs485TaskHandle, 512 * 4},
+        {"httpTask", httpTaskHandle, 32 * 1024},
         {"loggerTask", loggerTaskHandle, 512 * 4},
         {"watchdogTask", watchdogTaskHandle, 512 * 4},
-        {"journalTask", journalTaskHandle, 512 * 4},
     };
     
     for (size_t i = 0; i < sizeof(tasks)/sizeof(tasks[0]); i++)

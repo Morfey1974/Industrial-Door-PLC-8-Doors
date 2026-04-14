@@ -1,9 +1,8 @@
 /**
- * DoorTable компонент - полная таблица состояния дверей
- * Оптимизирован с React.memo для предотвращения лишних перерисовок
+ * DoorTable — таблица состояния дверей.
+ * Без React.memo с кастомным сравнением: оно по JSON могло пропускать перерисовку при смене ссылок/полей с тем же текстом.
  */
 
-import { memo } from 'react';
 import Table from '../common/Table';
 import StatusBadge from './StatusBadge';
 import { formatDoorId, parseDoorIdFilter } from '../../utils/formatters';
@@ -55,7 +54,7 @@ const getDoorStatusTextLocalized = (door, t) => {
   return t('pages.doors.statusClosed');
 };
 
-const DoorTable = memo(({ doors, filters = {} }) => {
+const DoorTable = ({ doors, filters = {} }) => {
   const { t } = useLanguage();
   if (!doors || !doors.doors || doors.doors.length === 0) {
     return <p>Нет данных о дверях</p>;
@@ -115,8 +114,12 @@ const DoorTable = memo(({ doors, filters = {} }) => {
     ),
     physClosed: door.physClosed ? t('pages.doors.yes') : t('pages.doors.no'),
     locked: door.locked ? t('pages.doors.lockedValue') : t('pages.doors.unlockedValue'),
+    /* «Норма» зелёным рядом с заблокированной NC-дверью выглядит как противоречие и «мигает» при дребезге API.
+     * Для закрытой+замок без тревоги — нейтральный бейдж, не success-зелёный. */
     alarming: door.alarming ? (
       <StatusBadge status="alarm" label="Alarm" />
+    ) : door.locked && door.physClosed ? (
+      <StatusBadge status="idle" label={t('pages.doors.alarmColumnIdle')} />
     ) : (
       <StatusBadge status="normal" label={t('pages.doors.normal')} />
     ),
@@ -148,23 +151,7 @@ const DoorTable = memo(({ doors, filters = {} }) => {
       })}
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Кастомная функция сравнения для оптимизации
-  // Перерисовываем только если изменились данные или фильтры
-  if (prevProps.doors !== nextProps.doors) {
-    // Сравниваем содержимое массивов дверей
-    const prevDoors = prevProps.doors?.doors || [];
-    const nextDoors = nextProps.doors?.doors || [];
-    if (prevDoors.length !== nextDoors.length) return false;
-    if (JSON.stringify(prevDoors) !== JSON.stringify(nextDoors)) return false;
-  }
-  
-  if (JSON.stringify(prevProps.filters) !== JSON.stringify(nextProps.filters)) {
-    return false;
-  }
-  
-  return true; // Пропсы не изменились, не перерисовываем
-});
+};
 
 DoorTable.displayName = 'DoorTable';
 

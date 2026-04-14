@@ -10,7 +10,6 @@
 
 #include "system/app_qspi_lock.h"
 #include "system/app_log.h"
-#include "system_node.h"
 
 /* Фасад драйвера QSPI */
 #include "qspi_bringup.h"
@@ -83,10 +82,7 @@ users_storage_status_t UsersStorage_Load(users_db_header_t *out_header,
 {
     if (!out_header || !out_users || !out_info || max_users == 0)
         return USERS_ST_ARG;
-    
-    if (System_GetRole() != APP_ROLE_MASTER)
-        return USERS_ST_NOT_MASTER;
-    
+
     memset(out_header, 0, sizeof(*out_header));
     memset(out_info, 0, sizeof(*out_info));
     out_info->status = USERS_ST_NO_VALID;
@@ -145,10 +141,7 @@ users_storage_status_t UsersStorage_Save(const users_db_header_t *header,
 {
     if (!header || !users || user_count == 0 || !inout_info)
         return USERS_ST_ARG;
-    
-    if (System_GetRole() != APP_ROLE_MASTER)
-        return USERS_ST_NOT_MASTER;
-    
+
     if (user_count > USERS_MAX_COUNT)
     {
         AppLog("[USERS] Save: Too many users %lu", (unsigned long)user_count);
@@ -254,10 +247,7 @@ users_storage_status_t UsersStorage_InitOrDefault(users_db_header_t *out_header,
 {
     if (!out_header || !out_users || !out_info || max_users == 0)
         return USERS_ST_ARG;
-    
-    if (System_GetRole() != APP_ROLE_MASTER)
-        return USERS_ST_NOT_MASTER;
-    
+
     /* Пытаемся загрузить существующую базу */
     users_storage_status_t status = UsersStorage_Load(out_header, out_users, max_users, out_info);
     

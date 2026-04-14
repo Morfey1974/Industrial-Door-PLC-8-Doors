@@ -41,15 +41,11 @@ import DependenciesTab from './DoorsConfigTabs/DependenciesTab';
 import TimeoutsTab from './DoorsConfigTabs/TimeoutsTab';
 
 const DoorsConfig = () => {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   /**
-   * Число + локализованное существительное (RU с падежом для 2–4/5+, EN: 1 vs мн. ч.).
+   * Число + существительное с падежом для 2–4 / 5+ (русский).
    */
   const countLabel = useCallback((n, keyOne, keyFew, keyMany) => {
-    if (language === 'en') {
-      const word = n === 1 ? t(keyOne) : t(keyMany);
-      return `${n} ${word}`;
-    }
     const nn = n % 100;
     let wordKey = keyMany;
     if (nn < 11 || nn > 14) {
@@ -58,7 +54,7 @@ const DoorsConfig = () => {
       else if (u >= 2 && u <= 4) wordKey = keyFew;
     }
     return `${n} ${t(wordKey)}`;
-  }, [language, t]);
+  }, [t]);
   const navigate = useNavigate();
   const location = useLocation();
   // Режим отображения: 'list' - список конфигураций, 'edit' - редактирование
@@ -93,18 +89,18 @@ const DoorsConfig = () => {
   const [openedConfigFilePath, setOpenedConfigFilePath] = useState(null); // путь/имя файла при открытии с компьютера
   
   // Состояние модального окна
-  const [modal, setModal] = useState({
+  const [modal, setModal] = useState(() => ({
     isOpen: false,
     type: 'confirm', // 'confirm' | 'prompt'
     title: '',
     message: '',
     defaultValue: '',
     placeholder: '',
-    confirmText: 'OK',
-    cancelText: 'Отмена',
+    confirmText: t('common.ok'),
+    cancelText: t('common.cancel'),
     onConfirm: null,
     onCancel: null,
-  });
+  }));
   
 
   // Ref для хранения resolve функции Promise
@@ -345,7 +341,7 @@ const DoorsConfig = () => {
       setViewMode('edit');
       setActiveTab('general');
     }
-    navigate('/configuration/doors', { replace: true, state: {} });
+    navigate('/configurator', { replace: true, state: {} });
   }, [location.state?.openConfigName, navigate]);
   
   // Автосохранение при изменении конфигурации (только в режиме редактирования)
@@ -918,7 +914,7 @@ const DoorsConfig = () => {
       // Перенаправляем на страницу входа с пояснением, чтобы пользователь не оставался
       // на странице с «мёртвой» сессией и не получал 401 при следующем действии.
       setTimeout(() => {
-        window.location.href = '/login?reason=config_applied';
+        window.location.href = '/monitoring/doors?reason=config_applied';
       }, 2500);
     } catch (err) {
       console.error('Ошибка применения конфигурации:', err);
@@ -1031,7 +1027,6 @@ const DoorsConfig = () => {
   if (viewMode === 'list') {
     const formatDoorsCount = (count) => {
       const n = Number(count) || 0;
-      if (language === 'en') return `${n} doors`;
       return `${n} дверей`;
     };
 
@@ -1082,7 +1077,7 @@ const DoorsConfig = () => {
                   <strong>{t('pages.config.unsavedConfig')}</strong>
                   <span className="saved-config-date">
                     {lastSaved
-                      ? `${t('pages.config.modified')}: ${lastSaved.toLocaleString(language === 'en' ? 'en-US' : 'ru-RU')}`
+                      ? `${t('pages.config.modified')}: ${lastSaved.toLocaleString('ru-RU')}`
                       : t('pages.config.draft')}
                   </span>
                 </div>
@@ -1122,7 +1117,7 @@ const DoorsConfig = () => {
                     <strong>{item.name}</strong>
                     <span>{formatDoorsCount(item.doorCount)}</span>
                     <span className="saved-config-date">
-                      {new Date(item.timestamp).toLocaleDateString(language === 'en' ? 'en-US' : 'ru-RU')}
+                      {new Date(item.timestamp).toLocaleDateString('ru-RU')}
                     </span>
                   </div>
                   <div className="saved-config-actions">
@@ -1236,7 +1231,7 @@ const DoorsConfig = () => {
           {hasUnsavedChanges && lastSaved && (
             <span className="auto-save-indicator">
               💾 {t('pages.config.statusDraftSaved', {
-                time: lastSaved.toLocaleTimeString(language === 'en' ? 'en-US' : 'ru-RU'),
+                time: lastSaved.toLocaleTimeString('ru-RU'),
               })}
             </span>
           )}
@@ -1291,7 +1286,7 @@ const DoorsConfig = () => {
             {t('pages.config.toolbarCancel')}
           </Button>
           <Button
-            onClick={() => navigate('/configuration/mapping', { state: { configBaseName: currentConfigName || config.projectName || '' } })}
+            onClick={() => navigate('/configurator/mapping', { state: { configBaseName: currentConfigName || config.projectName || '' } })}
             title={t('pages.config.toolbarMappingTitle')}
           >
             {t('pages.config.toolbarMapping')}

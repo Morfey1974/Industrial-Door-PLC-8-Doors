@@ -8,18 +8,10 @@
 #include "config/config_storage_qspi.h"
 #include "system_node.h"
 
-#include "log/event_journal.h"
 #include "doors/doors_task.h"  /* For Doors_RequestLock, Doors_GetState */
 #include "system/app_events.h" /* For APP_SRC_SUPERVISOR */
 #include "comms_task.h"        /* For CommsTask_GetLogicCore */
 #include "logic/logic_core.h"  /* For LogicCore_RecomputeAndApply */
-
-/* Примечание: приостановка JournalTask на время persist отключена.
- * При suspend JournalTask может удерживать AppQspiLock (в WriteEventToFlash).
- * SaveNew затем блокируется на Lock → дедлок. Лог обрывается на "[CFG] SaveNew: eras".
- * Оставляем конкуренцию за QSPI; при необходимости — отдельный механизм
- * (например, флаг "persist in progress", который JournalTask учитывает).
- */
 
 /* Примечание по диагностике загрузки конфигурации (этап 7.1/7.2):
  * - В раннем буте LoggerTask может ещё не работать, поэтому AppLog() может быть не виден.
@@ -141,23 +133,7 @@ static void apply_cfg_runtime(const project_config_t *cfg)
 void ConfigService_ApplyRuntime(const project_config_t *cfg)
 {
     apply_cfg_runtime(cfg);
-    
-    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: передача openTimeoutMs на SLAVE через CAN
-     * 
-     * Проблема: на SLAVE при загрузке используется Config_Default, который
-     * устанавливает openTimeoutMs = 30 секунд. Когда конфигурация загружается
-     * на MASTER, SLAVE не получает обновленный openTimeoutMs, потому что
-     * конфигурация хранится только на MASTER.
-     * 
-     * Решение: на MASTER после применения конфигурации отправляем openTimeoutMs
-     * всем онлайн SLAVE узлам через CAN SERVICE кадр.
-     */
-    if (System_GetRole() == APP_ROLE_MASTER && cfg)
-    {
-        extern void CanTask_SendConfigParams(void);
-        CanTask_SendConfigParams();
-    }
-    
+
     /* После применения конфигурации пересчитываем логику,
      * чтобы NC двери были добавлены в lockRequired
      */
@@ -173,15 +149,6 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
 {
     if (!out_cfg) out_cfg = &g_project_cfg;
 
-    /* Per plan, only MASTER owns config persistence. Slaves use compiled defaults for now. */
-    if (System_GetRole() != APP_ROLE_MASTER) {
-        Config_Default(out_cfg);
-        Config_Finalize(out_cfg);
-        apply_cfg_runtime(out_cfg);
-        log_msg("[CFG] slave: using defaults\r\n");
-        return;
-    }
-
     cfg_storage_info_t info;
     const cfg_storage_status_t st = ConfigStorage_InitOrDefault(out_cfg, &info);
     (void)st;
@@ -192,9 +159,6 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
             (int)info.used_slot,
             (unsigned long)info.seq);
 
-    /* Журнал: фиксируем факт загрузки/инициализации конфигурации */
-    EventJournal_LogConfigAction(1 /*BOOT_LOAD*/, info.seq, 0, (uint32_t)info.status);
-
     apply_cfg_runtime(out_cfg);
 }
 
@@ -203,7 +167,6 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg,
                                            uint32_t client_unix_sec)
 {
     if (!cfg) return CFGST_ARG;
-    if (System_GetRole() != APP_ROLE_MASTER) return CFGST_NOT_MASTER;
 
     cfg_storage_info_t info;
     cfg_storage_status_t st = ConfigStorage_LoadActive(&g_project_cfg, &info);
@@ -219,10 +182,5 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg,
             (int)info.used_slot,
             (unsigned long)info.seq);
 
-    /* Журнал: из UI — имя пользователя и время с ПК; иначе — RTC (как раньше) */
-    if (username != NULL && client_unix_sec != 0U)
-        EventJournal_LogUserAction(2 /*CONFIG_SAVE*/, username, client_unix_sec, (uint32_t)st);
-    else
-        EventJournal_LogConfigAction(2 /*PERSIST*/, info.seq, 0, (uint32_t)st);
     return st;
 }

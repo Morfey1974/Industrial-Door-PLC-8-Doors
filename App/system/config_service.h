@@ -2,8 +2,9 @@
 
 #include <stdint.h>
 
-#include "config/config_format.h"          /* project_config_t */
-#include "config/config_storage_qspi.h"   /* cfg_storage_status_t, cfg_storage_info_t */
+/* Пути от каталога App/system: не зависят от -I../App в makefile CubeIDE. */
+#include "../config/config_format.h"          /* project_config_t */
+#include "../config/config_storage_qspi.h"   /* cfg_storage_status_t, cfg_storage_info_t */
 
 #ifdef __cplusplus
 extern "C" {

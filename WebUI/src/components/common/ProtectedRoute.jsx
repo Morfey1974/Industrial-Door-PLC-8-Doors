@@ -1,23 +1,21 @@
 /**
- * ProtectedRoute - защита маршрутов по таблице прав (path) или по ролям (allowedRoles)
+ * ProtectedRoute — проверка сессии (токен в localStorage для API). Отдельных «профилей» в UI нет.
  */
 
 import { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
-import { PermissionsContext } from '../../context/PermissionsContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 /**
  * @param {Object} props
  * @param {React.ReactNode} props.children - Компонент для отображения
- * @param {string} [props.path] - Путь маршрута; при наличии доступ проверяется по таблице прав
- * @param {string[]} [props.allowedRoles] - Массив разрешённых ролей (если path не передан)
+ * @param {string} [props.path] - Зарезервировано (доступ не ограничивается по пути)
+ * @param {string[]} [props.allowedRoles] - Если задано, проверяется user.role из контекста
  */
-const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
+const ProtectedRoute = ({ children, path: _path, allowedRoles = [] }) => {
   const { t } = useLanguage();
   const { user, isAuthenticated, loading } = useContext(AuthContext);
-  const permissionsContext = useContext(PermissionsContext);
 
   if (loading) {
     return (
@@ -33,13 +31,11 @@ const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
   }
 
   if (!isAuthenticated || !user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/monitoring/doors" replace />;
   }
 
   let hasAccess = true;
-  if (path && permissionsContext?.canAccess) {
-    hasAccess = permissionsContext.canAccess(path, user.role);
-  } else if (allowedRoles.length > 0) {
+  if (allowedRoles.length > 0) {
     hasAccess = allowedRoles.includes(user.role);
   }
 
@@ -49,27 +45,12 @@ const ProtectedRoute = ({ children, path, allowedRoles = [] }) => {
         padding: '40px',
         textAlign: 'center',
         fontFamily: 'Arial',
-      }}>
+      }}
+      >
         <h1 style={{ color: '#d32f2f', marginBottom: '20px' }}>{t('errors.accessDenied')}</h1>
         <p style={{ color: '#666', marginBottom: '30px' }}>
-          У вас нет прав доступа к этой странице.
+          Страница недоступна в текущей конфигурации интерфейса.
         </p>
-        <p style={{ color: '#999', fontSize: '14px' }}>
-          Ваша роль: <strong>
-            {user.role === 'super_admin' ? 'Супер-администратор' :
-              user.role === 'admin' ? 'Администратор' :
-                user.role === 'operator' ? 'Оператор' : user.role}
-          </strong>
-        </p>
-        {allowedRoles.length > 0 && (
-          <p style={{ color: '#999', fontSize: '14px', marginTop: '10px' }}>
-            Требуемые роли: {allowedRoles.map(r =>
-              r === 'super_admin' ? 'Супер-администратор' :
-                r === 'admin' ? 'Администратор' :
-                  r === 'operator' ? 'Оператор' : r
-            ).join(', ')}
-          </p>
-        )}
       </div>
     );
   }

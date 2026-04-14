@@ -328,12 +328,12 @@ const Mapping = () => {
   // Сохранить карту в файл и вернуться в редактор конфигурации. Если карта уже сохранена — без диалога; если изменений нет — просто выход.
   const handleSaveAndExit = useCallback(async () => {
     if (savedFileHandleRef.current && !isDirty) {
-      navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
+      navigate('/configurator', { state: { openConfigName: configBaseName } });
       return;
     }
     const saved = await handleSaveToFile();
     if (saved) {
-      navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
+      navigate('/configurator', { state: { openConfigName: configBaseName } });
     }
   }, [handleSaveToFile, navigate, configBaseName, isDirty]);
 
@@ -346,7 +346,7 @@ const Mapping = () => {
       );
       if (!confirmed) return;
     }
-    navigate('/configuration/doors', { state: { openConfigName: configBaseName } });
+    navigate('/configurator', { state: { openConfigName: configBaseName } });
   }, [isDirty, showConfirm, navigate, configBaseName]);
 
   // Загрузка карты из файла с компьютера
@@ -406,7 +406,7 @@ const Mapping = () => {
   }, [canEdit]);
 
   // Регистрация проверки несохранённых изменений при уходе со страницы (другая вкладка/страница)
-  const MAPPING_PATH = '/configuration/mapping';
+  const MAPPING_PATH = '/configurator/mapping';
   useEffect(() => {
     register(MAPPING_PATH, () => isDirty);
     return () => unregister(MAPPING_PATH);

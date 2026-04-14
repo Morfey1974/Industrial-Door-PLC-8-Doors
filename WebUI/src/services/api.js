@@ -14,7 +14,7 @@ const apiClient = axios.create({
   },
 });
 
-// Перед каждым запросом: актуальный URL, Authorization и время с ПК (для журнала действий пользователя)
+// Перед каждым запросом: актуальный URL, Authorization и время с ПК (совместимость с прошивкой)
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getEffectiveApiUrl();
   const token = localStorage.getItem('auth_token');
@@ -48,17 +48,19 @@ apiClient.interceptors.response.use(
       const data = error.response.data;
       
       if (status === 401) {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
-        if (typeof window !== 'undefined' && !url.includes('/auth/login')) {
-          // После применения конфигурации контроллер перезагружается — сессии теряются.
-          // Редирект с параметром, чтобы на странице входа показать пояснение.
-          const appliedAt = sessionStorage.getItem('config_just_applied');
-          if (appliedAt && (Date.now() - parseInt(appliedAt, 10)) < 60000) {
-            sessionStorage.removeItem('config_just_applied');
-            window.location.href = '/login?reason=config_applied';
-          } else {
-            window.location.href = '/login';
+        /* Лабораторный режим: токен «open» и прошивка без обязательной авторизации — не сбрасываем сессию. */
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        if (token !== 'open') {
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_user');
+          if (typeof window !== 'undefined' && !url.includes('/auth/login')) {
+            const appliedAt = sessionStorage.getItem('config_just_applied');
+            if (appliedAt && (Date.now() - parseInt(appliedAt, 10)) < 60000) {
+              sessionStorage.removeItem('config_just_applied');
+              window.location.href = '/monitoring/doors?reason=config_applied';
+            } else {
+              window.location.href = '/monitoring/doors';
+            }
           }
         }
       }
@@ -119,14 +121,18 @@ apiClient.interceptors.response.use(
  * API функции для работы с контроллером
  */
 
-// Таймаут /state держим умеренным:
-// - достаточно большим для кратковременной перегрузки контроллера;
-// - достаточно коротким, чтобы UI быстро увидел потерю связи и так же быстро
-//   восстановился после возврата Ethernet без ручной перезагрузки страницы.
-export const STATE_REQUEST_TIMEOUT = 8000; // 8 с
-export const getState = async (signal = null) => {
-  const config = { timeout: STATE_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
-  const response = await apiClient.get('/state', config);
+// Лёгкий /state — короткий таймаут; снимок мониторинга (state + doors) на МК с мелкими TCP-чанками часто >15 с.
+export const STATE_REQUEST_TIMEOUT = 8000;
+export const STATE_WITH_DOORS_TIMEOUT = 55000;
+/**
+ * @param {AbortSignal|null} signal
+ * @param {boolean} includeDoors — один запрос вместо отдельного GET /doors на странице мониторинга
+ */
+export const getState = async (signal = null, includeDoors = false) => {
+  const timeout = includeDoors ? STATE_WITH_DOORS_TIMEOUT : STATE_REQUEST_TIMEOUT;
+  const config = { timeout, ...(signal ? { signal } : {}) };
+  const url = includeDoors ? '/state?includeDoors=1' : '/state';
+  const response = await apiClient.get(url, config);
   return response.data;
 };
 
@@ -157,33 +163,6 @@ export const putConfig = async (configData, signal = null) => {
   return response.data;
 };
 
-// Таймаут для журнала: при первой загрузке контроллер может отвечать долго (до 35 с)
-const JOURNAL_REQUEST_TIMEOUT = 35000;
-
-// Получить статистику журнала
-export const getJournalStat = async (signal = null) => {
-  const config = { timeout: JOURNAL_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
-  const response = await apiClient.get('/journal/stat', config);
-  return response.data;
-};
-
-// Получить записи журнала с пагинацией
-export const getJournalDump = async (offset = 0, limit = 20, signal = null) => {
-  const config = {
-    timeout: JOURNAL_REQUEST_TIMEOUT,
-    ...(signal ? { signal, params: { offset, limit } } : { params: { offset, limit } }),
-  };
-  const response = await apiClient.get('/journal/dump', config);
-  return response.data;
-};
-
-// Очистить журнал событий на контроллере (требует права Super Admin)
-export const clearJournal = async (signal = null) => {
-  const config = { timeout: JOURNAL_REQUEST_TIMEOUT, ...(signal ? { signal } : {}) };
-  const response = await apiClient.post('/journal/clear', {}, config);
-  return response.data;
-};
-
 // Полная очистка пользовательских областей Flash на контроллере.
 // Операция длительная (erase нескольких регионов QSPI), после успеха контроллер перезагружается.
 export const clearFlash = async (signal = null) => {
@@ -192,14 +171,14 @@ export const clearFlash = async (signal = null) => {
   return response.data;
 };
 
-// Сканирование плат (MASTER + online SLAVE) на наличие данных во flash.
+// Сканирование локального flash контроллера (список boards в ответе — одна плата).
 export const scanFlashBoards = async (signal = null) => {
   const config = { timeout: 15000, ...(signal ? { signal } : {}) };
   const response = await apiClient.post('/flash/scan', {}, config);
   return response.data;
 };
 
-// Очистка flash на выбранных платах (bitmask: bit0=Node1/master, bit1=Node2, ...).
+// Очистка flash (bitmask: бит0 = этот контроллер; остальные биты зарезервированы).
 // clearService=true включает опасный режим: также стирается служебный раздел users.
 export const clearFlashSelected = async (nodesMask, clearService = false, signal = null) => {
   const config = { timeout: 120000, ...(signal ? { signal } : {}) };

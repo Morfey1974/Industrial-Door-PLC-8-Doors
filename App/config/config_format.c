@@ -53,7 +53,7 @@ void Config_Default(project_config_t *cfg)
     cfg->ncUnlockWindowMs = 5000U;
     cfg->ncLockDelayAfterCloseMs = 1000U;
 
-    /* Двери по умолчанию: 8 дверей на MASTER (node=1) */
+    /* Двери по умолчанию: 8 шт., nodeId=1 */
     cfg->doorCount = 8U;
     for (uint8_t i = 0; i < cfg->doorCount; i++)
     {

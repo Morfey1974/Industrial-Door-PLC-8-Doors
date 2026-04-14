@@ -1,43 +1,20 @@
 /**
- * Контекст языка приложения: русский (по умолчанию) и английский.
- * Сохранение выбора в localStorage (ключ dcm-lang).
+ * Локализация: только русский язык (единый интерфейс без переключения).
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useCallback } from 'react';
 import ru from '../locales/ru.json';
-import en from '../locales/en.json';
-
-const STORAGE_KEY = 'dcm-lang';
-const translations = { ru, en };
 
 export const LanguageContext = createContext(null);
 
 export function LanguageProvider({ children }) {
-  const [language, setLanguageState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'en' || saved === 'ru') return saved;
-    } catch (_) {}
-    return 'ru';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, language);
-    } catch (_) {}
-  }, [language]);
-
-  const setLanguage = useCallback((lang) => {
-    if (lang === 'ru' || lang === 'en') setLanguageState(lang);
-  }, []);
-
   /**
    * Перевод по ключу вида «pages.config.saveConfig».
    * Второй аргумент — объект подстановок: {name}, {count} и т.д. в строке перевода.
    */
   const t = useCallback((key, params) => {
     const keys = key.split('.');
-    let value = translations[language];
+    let value = ru;
     for (const k of keys) {
       value = value?.[k];
     }
@@ -48,10 +25,10 @@ export function LanguageProvider({ children }) {
       }
     }
     return out;
-  }, [language]);
+  }, []);
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language: 'ru', setLanguage: () => {}, t }}>
       {children}
     </LanguageContext.Provider>
   );

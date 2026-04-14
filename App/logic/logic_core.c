@@ -4,13 +4,10 @@
 /* ЭТАП 7: формат активного конфига (таблица зависимостей) */
 #include "config/config_format.h"
 
-/* Доступ к локальной “модели двери” (только Master node=1) */
+/* Локальная модель двери (DoorTask). */
 #include "doors/doors_task.h"
 
-/* ЭТАП 5.4/6.5: выдача команд на удалённые двери через CAN-task (MASTER) */
-#include "system/can_task.h"
-
-/* Для проверки роли системы (MASTER/SLAVE) */
+/* Текущий nodeId контроллера (в этой прошивке всегда 1). */
 #include "system/system_node.h"
 
 #include <stdio.h>
@@ -29,14 +26,9 @@ extern project_config_t g_project_cfg;
 
 static void recompute_lock_required(logic_core_t *lc)
 {
-    /* Пересчитываем lockRequired как OR по deps[src] для всех src с depActive=1
-     * ВАЖНО: НЕ добавляем физически открытые двери в lockRequired.
-     * Это предотвращает конфликт между командой LOCK от MASTER и Safety Layer на SLAVE,
-     * который принудительно разблокирует открытые двери.
-     * 
-     * Для локальных дверей MASTER это уже обрабатывается в apply_to_master_local_doors,
-     * но для удаленных дверей (SLAVE) нужно исключить их здесь, чтобы не отправлять
-     * команду LOCK через CAN для открытых дверей.
+    /* Пересчитываем lockRequired как OR по deps[src] для всех src с depActive=1.
+     * НЕ добавляем физически открытые двери в lockRequired (Safety Layer и DoorTask
+     * сами не блокируют открытые двери).
      */
     DoorBitset_Clear(&lc->lockRequired);
 
@@ -87,7 +79,7 @@ static void recompute_lock_required(logic_core_t *lc)
      */
 }
 
-/* Применить решения на локальные двери Master (nodeId=1, localDoor=1..8)
+/* Применить решения на локальные двери (localDoor 1..8 на этом контроллере).
  *
  * ВАЖНО:
  * - DoorTask уже держит инварианты: “нельзя lock при открытой двери”, “alarm выше всего”.
@@ -95,13 +87,13 @@ static void recompute_lock_required(logic_core_t *lc)
  *    * если дверь OPEN -> цель unlock (DoorTask всё равно принудит unlock)
  *    * если дверь в сигнализации -> цель unlock (DoorTask отвергнет lock-команды)
  */
-static void apply_to_master_local_doors(logic_core_t *lc)
+static void apply_to_local_doors(logic_core_t *lc)
 {
     (void)lc;
 
     for (uint8_t localDoor = 1; localDoor <= APP_DOORS_PER_NODE; localDoor++)
     {
-        uint8_t gid = GlobalDoorId_Make(1, localDoor); /* nodeId=1 всегда Master */
+        uint8_t gid = GlobalDoorId_Make(System_GetNodeId(), localDoor);
         if (!gid) continue;
 
         /* Нужно ли блокировать эту дверь по зависимостям? */
@@ -238,7 +230,7 @@ static void check_target_unlock_timeouts(logic_core_t *lc)
     if (anyChanged)
     {
         recompute_lock_required(lc);
-        apply_to_master_local_doors(lc);
+        apply_to_local_doors(lc);
     }
 }
 
@@ -251,28 +243,8 @@ void LogicCore_RecomputeAndApply(logic_core_t *lc)
 
     recompute_lock_required(lc);
 
-    /* ЭТАП 5.4: выдача команд
-     * Сейчас — только локальные двери Master (nodeId=1).
-     * Удалённые двери будут раздаваться по CAN на этапе 6.
-     * 
-     * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: apply_to_master_local_doors должна вызываться
-     * ТОЛЬКО на MASTER, а не на SLAVE. На SLAVE все команды должны приходить
-     * от MASTER через CAN, а не от локальной логики. Это предотвращает конфликт
-     * между локальными командами LOCK на SLAVE и командами UNLOCK от MASTER.
-     */
-    if (System_GetRole() == APP_ROLE_MASTER)
-    {
-        apply_to_master_local_doors(lc);
-    }
-
-    /* ============================================================
-     * ЭТАП 5.4: локальные и удалённые двери
-     *
-     * Локальные (nodeId=1) применены напрямую в DoorTask.
-     * Удалённые (nodeId!=1) раздаём в CAN-task как "целевую" маску.
-     * CAN-task на MASTER формирует COMMAND кадры по узлам.
-     * ============================================================ */
-    CanTask_MasterSetLockRequired(&lc->lockRequired);
+    /* Только локальные двери (одна плата, без CAN): замки выставляет apply_to_local_doors. */
+    apply_to_local_doors(lc);
 }
 
 void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
@@ -311,9 +283,8 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
 
         lc->physOpen[gid - 1U] = open;
 
-        /* Восстановление alarming/alarmReasons для WebUI (полная маска с SLAVE по CAN не едет).
-         * can_task: alarmActive = alarmPressed, signalingActive = d->alarming (любая активная причина).
-         * Эвристика: нажата кнопка Alarm → MANUAL; сигнализация без нажатой кнопки → типично OPEN_TIMEOUT.
+        /* Восстановление alarming/alarmReasons для WebUI (если когда-либо подавать снимок с шины).
+         * Эвристика: alarmActive → MANUAL; signaling без alarm → OPEN_TIMEOUT.
          */
         {
             uint32_t r = 0U;
@@ -324,10 +295,7 @@ void LogicCore_OnCanStatus(logic_core_t *lc, uint8_t nodeId,
             lc->remoteAlarmReasons[gid - 1U] = r;
         }
 
-        /* В Этапе 6 мы синхронизируем базовую физику.
-         * Post-close delay для удалённых дверей можно добавить позже,
-         * когда у MASTER появится конфиг таймеров на все двери.
-         */
+        /* Post-close для «удалённых» в этой прошивке не моделируем. */
         lc->depActive[gid - 1U] = open;
         lc->closePending[gid - 1U] = 0U;
     }
@@ -341,13 +309,13 @@ void LogicCore_OnEvent(logic_core_t *lc, const app_event_t *evt)
     if (!lc || !evt) return;
 
     /* Сейчас мы обрабатываем только “дверные” события.
-     * Позже сюда добавится деградация по CAN / состояние сети (этап 6.7, 2.4.9).
+     * При необходимости сюда можно добавить реакцию на сеть/шину.
      */
     uint8_t door_id = evt->door_id; /* локальный номер двери на текущей плате */
     if (door_id == 0U)
         return;
 
-    /* globalDoorId по текущей плате (на MASTER 1..8, на SLAVE 9..16 и т.д.), чтобы на SLAVE при открытии ID-2-1 корректно ставился depActive для двери 9 и lockRequired для ID-1-1 в API/маппинге */
+    /* globalDoorId для событий с этой платы (nodeId из System_GetNodeId()). */
     uint8_t nodeId = System_GetNodeId();
     uint8_t gid = GlobalDoorId_Make(nodeId, door_id);
     if (!gid)
@@ -485,8 +453,8 @@ uint8_t LogicCore_SubmitManualLockCmd(logic_core_t *lc,
     if (!lc)
         return 0U;
 
-    /* В текущей версии manual команды поддерживаются только для локальных дверей MASTER (1..8).
-     * Для удалённых дверей в ЭТАП 6 команды будут преобразованы в CAN COMMAND.
+    /* Ручные команды — только для локальных дверей этой платы (1..8).
+     * Только локальные двери; глобальные ID >8 в этой прошивке не коммутируются.
      */
     if (localDoorId < 1U || localDoorId > APP_DOORS_PER_NODE)
         return 0U;

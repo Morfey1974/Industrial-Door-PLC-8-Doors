@@ -4,14 +4,22 @@
 #include <string.h>
 #include <stdio.h>
 
+/* newlib: ECONNABORTED=103 — accept после RST/abort клиента; не фатально, нужно «осушить» очередь. */
+#ifndef ECONNABORTED
+#define ECONNABORTED 103
+#endif
+
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 
 #include "cmsis_os.h"
 
 #include "app_log.h"
+#include "app_health.h"
+#include "eth_listen_quiesce.h"
 
 #include "http_api.h"
+#include "net_service.h"
 #include "stm32h7xx_hal.h"
 
 /* =========================================================
@@ -47,7 +55,8 @@ static char s_put_config_full_body[HTTP_CONFIG_PUT_MAX];
 
 /* Буфер тела ответа для GET (в т.ч. /api/config/full). */
 #ifndef HTTP_GET_RESPONSE_MAX
-#define HTTP_GET_RESPONSE_MAX 8192
+/* /api/state?includeDoors=1: состояние + до 40 дверей в JSON;8 КБ не хватает. Стек httpTask 32 КБ. */
+#define HTTP_GET_RESPONSE_MAX 12288
 #endif
 
 static int s_listen_fd = -1;
@@ -72,6 +81,19 @@ void HttpServer_Deinit(void)
 uint8_t HttpServer_IsReady(void)
 {
     return (s_listen_fd >= 0) ? 1U : 0U;
+}
+
+/* Пока httpTask «застрял» в отправке большого ответа, цикл верхнего уровня не крутится и heartbeat
+ * TASK_HTTP не обновляется — Supervisor через ~2 с считает HTTP мёртвым и раньше дёргал LED на дверях 1–2.
+ * Достаточно слать heartbeat не чаще чем раз в 400 ms из этого контекста. */
+static void http_send_keepalive_http_task(void)
+{
+    static uint32_t s_last_ms;
+    const uint32_t t = HAL_GetTick();
+    if ((uint32_t)(t - s_last_ms) >= 400U) {
+        AppHealth_Heartbeat(TASK_HTTP);
+        s_last_ms = t;
+    }
 }
 
 static void http_send_simple(int fd, int code, const char *ctype, const char *body)
@@ -109,6 +131,8 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
         const int max_attempts = 100;
         
         while (sent < n && attempts < max_attempts) {
+            http_send_keepalive_http_task();
+            EthListen_QuiescePollFromHttpTask();
             /* Проверяем готовность сокета к записи перед отправкой заголовка */
             fd_set wfds_hdr;
             FD_ZERO(&wfds_hdr);
@@ -156,13 +180,7 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
 #endif
     }
     
-    /* Увеличиваем задержку после отправки заголовка, чтобы дать время TCP стеку
-     * обработать заголовок, отправить его клиенту и получить ACK.
-     * Это критично для больших ответов, чтобы буфер отправки освободился.
-     */
-    if (body_len > 0) {
-        osDelay(50); /* 50мс после заголовка: дать TCP отправить его и освободить буфер */
-    }
+    /* Искусственные задержки убраны для максимальной быстроты загрузки UI */
     
     if (body_len > 0) {
         /* Отправляем тело с обработкой частичной отправки и non-blocking режима.
@@ -170,7 +188,7 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
          * иначе Content-Length не совпадет с фактически отправленными данными.
          * 
          * Оптимизация для больших ответов:
-         * - Уменьшенный размер чанка (128 байт) для лучшей совместимости с TCP буфером
+         * - Умеренный размер чанка (256 B): 4 KiB давали ERR_MEM в lwip_send; 128 — очень долгий ответ и риск таймаута в браузере.
          * - Задержка между чанками для освобождения буфера TCP стека
          * - Увеличенный таймаут select для более терпеливого ожидания
          */
@@ -182,8 +200,10 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
 #endif
         const int max_attempts = 400; /* больше попыток (≈6 с при 15 ms) для устойчивости */
         const int max_consecutive_errors = 50;
-        
+
         while (sent < body_len && attempts < max_attempts) {
+            http_send_keepalive_http_task();
+            EthListen_QuiescePollFromHttpTask();
             /* Проверяем готовность сокета к записи через select */
             fd_set wfds;
             FD_ZERO(&wfds);
@@ -212,55 +232,45 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                 continue;
             }
             
-            /* Отправляем небольшими блоками (128 байт) для надежности.
-             * Меньший размер чанка снижает риск переполнения буфера TCP.
-             */
+            /* Оптимизация: используем MSS (1460) для заполнения полных пакетов Ethernet.
+             * Благодаря увеличению MEM_SIZE до 8Кб это безопасно. */
             size_t chunk_size = (size_t)(body_len - sent);
-            if (chunk_size > 128) chunk_size = 128;
+            if (chunk_size > 1460) {
+                chunk_size = 1460;
+            }
             
             int r = lwip_send(fd, body + sent, chunk_size, 0);
             if (r > 0) {
                 sent += r;
-                attempts = 0; /* Сброс счетчика при успешной отправке */
-                consecutive_errors = 0; /* Сброс счетчика ошибок */
+                attempts = 0;
+                consecutive_errors = 0;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
-                if (sent % 500 == 0 || sent == body_len) {
+                if (sent % 1460 == 0 || sent == body_len) {
                     AppLog("HTTP: body progress sent=%d/%d", sent, body_len);
                 }
 #endif
-                /* Небольшая задержка после успешной отправки чанка, чтобы дать время
-                 * TCP стеку обработать данные и освободить место в буфере.
-                 * Это особенно важно для больших ответов.
-                 */
-                if (sent < body_len) {
-                    osDelay(2); /* 2мс задержка между чанками */
-                }
             } else if (r == 0) {
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
                 AppLog("HTTP: body send closed (sent=%d/%d)", sent, body_len);
 #endif
-                /* Соединение закрыто */
                 break;
             } else {
-                /* Ошибка: lwip_send возвращает -1, errno указывает причину
-                 * (например EAGAIN/EWOULDBLOCK, ECONNRESET, ENOTCONN).
-                 */
+                int err = errno;
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_SEND
-                last_body_errno = errno;
+                last_body_errno = err;
 #endif
                 attempts++;
                 consecutive_errors++;
-#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-                if (attempts <= 5 || attempts % 20 == 0) {
-                    AppLog("HTTP: body send error r=%d errno=%d (sent=%d/%d attempt=%d)", r, last_body_errno, sent, body_len, attempts);
+                
+                if (err == EAGAIN || err == EWOULDBLOCK) {
+                    /* Буфер полон, ждем совсем немного */
+                    osDelay(1);
+                    continue;
                 }
-#endif
-                /* Если много последовательных ошибок - делаем паузу */
+
                 if (consecutive_errors >= max_consecutive_errors) {
-                    osDelay(50); /* Пауза 50мс для освобождения буфера TCP */
+                    osDelay(10);
                     consecutive_errors = 0;
-                } else if (attempts < max_attempts) {
-                    osDelay(15); /* Увеличиваем задержку до 15мс при ошибке */
                 }
             }
         }
@@ -302,6 +312,7 @@ static void http_send_no_body(int fd, int code)
         /* Отправляем заголовок с обработкой частичной отправки */
         int sent = 0;
         while (sent < n) {
+            EthListen_QuiescePollFromHttpTask();
             int r = lwip_send(fd, hdr + sent, (size_t)(n - sent), 0);
             if (r <= 0) break;
             sent += r;
@@ -401,19 +412,77 @@ void HttpServer_Init(uint16_t port)
         return;
     }
 
-    if (lwip_listen(s_listen_fd, 2) < 0) {
+    /* Backlog: опрос шапки + двери + длительный PUT (Flash) без accept — очередь растёт;
+     * при малом backlog lwIP сбрасывает лишние SYN (ECONNRESET у Vite). */
+    if (lwip_listen(s_listen_fd, 24) < 0) {
         AppLog("HTTP: listen() failed errno=%d", errno);
         (void)lwip_close(s_listen_fd);
         s_listen_fd = -1;
         return;
     }
 
-    AppLog("HTTP: listen OK port=%u fd=%d", (unsigned)port, s_listen_fd);
+    {
+        char ipdbg[16];
+        Net_GetIp4Str(ipdbg, sizeof(ipdbg));
+        AppLog("HTTP: listen OK port=%u fd=%d netRdy=%u link=%u ip=%s",
+               (unsigned)port, s_listen_fd,
+               (unsigned)Net_IsReady(), (unsigned)Net_IsLinkUp(), ipdbg);
+    }
 }
 
-void HttpServer_PollOnce(uint32_t timeout_ms)
+void HttpServer_DrainPendingClientsBrief(void)
 {
-    if (s_listen_fd < 0) return;
+    EthListen_QuiescePollFromHttpTask();
+    if (s_listen_fd < 0) {
+        return;
+    }
+
+    static const char k_busy_json[] =
+        "{\"ok\":0,\"error\":\"controller busy\",\"code\":\"FLASH_WRITE\"}";
+    const int body_len = (int)(sizeof(k_busy_json) - 1U);
+
+    enum { MAX_ACCEPT_PER_CALL = 8U };
+    for (unsigned n = 0U; n < MAX_ACCEPT_PER_CALL; n++) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s_listen_fd, &rfds);
+        struct timeval tv0;
+        tv0.tv_sec = 0;
+        tv0.tv_usec = 0;
+        if (lwip_select(s_listen_fd + 1, &rfds, NULL, NULL, &tv0) <= 0) {
+            break;
+        }
+
+        struct sockaddr_in cli;
+        socklen_t clilen = sizeof(cli);
+        int cfd = lwip_accept(s_listen_fd, (struct sockaddr *)&cli, &clilen);
+        if (cfd < 0) {
+            break;
+        }
+
+        char hdr[280];
+        const int hn = snprintf(hdr, sizeof(hdr),
+                                "HTTP/1.1 503 Service Unavailable\r\n"
+                                "Connection: close\r\n"
+                                "Content-Type: application/json\r\n"
+                                "Access-Control-Allow-Origin: *\r\n"
+                                "Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+                                "Access-Control-Allow-Headers: Content-Type,Authorization,X-Client-Time\r\n"
+                                "Content-Length: %d\r\n"
+                                "\r\n",
+                                body_len);
+        if (hn > 0) {
+            (void)lwip_send(cfd, hdr, (size_t)hn, 0);
+        }
+        (void)lwip_send(cfd, k_busy_json, (size_t)body_len, 0);
+        (void)lwip_close(cfd);
+    }
+}
+
+uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
+{
+    EthListen_QuiescePollFromHttpTask();
+    if (s_listen_fd < 0) return 0U;
 
     /* Ждём accept через select, чтобы не блокировать задачу. */
     fd_set rfds;
@@ -431,42 +500,66 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
          */
         if (sel < 0) {
             g_http_listen_sel_fail++;
-#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-            AppLog("HTTP: select(listen) error errno=%d -> deinit", errno);
-#endif
+            AppLog("HTTP: select(listen) errno=%d -> deinit", (int)errno);
             HttpServer_Deinit();
         }
-        return; /* timeout или ошибка */
+        return 0U; /* timeout или ошибка */
     }
 
     struct sockaddr_in cli;
-    socklen_t clilen = sizeof(cli);
-    int cfd = lwip_accept(s_listen_fd, (struct sockaddr *)&cli, &clilen);
-    if (cfd < 0) {
+    int cfd = -1;
+    unsigned aborted_drain = 0U;
+    enum { ACCEPT_ECONNABORTED_DRAIN_MAX = 32U };
+
+    for (;;) {
+        socklen_t clilen = sizeof(cli);
+        cfd = lwip_accept(s_listen_fd, (struct sockaddr *)&cli, &clilen);
+        if (cfd >= 0) {
+            break;
+        }
+        const int acc_err = errno;
+        /* После link flap / AbortController в браузере accept часто даёт ECONNABORTED:
+         * select сказал «есть соединение», но к моменту accept клиент уже сбросил — это норма.
+         * Без повторного accept() очередь не очищается, следующие живые SYN не обрабатываются. */
+        if (acc_err == ECONNABORTED) {
+            if (aborted_drain < ACCEPT_ECONNABORTED_DRAIN_MAX) {
+                aborted_drain++;
+                continue;
+            }
+            /* Защита от бесконечного цикла: один раз в серию логируем и выходим. */
+            g_http_accept_fail++;
+            AppLog("HTTP: accept() ECONNABORTED drain limit fd=%d", s_listen_fd);
+            return 0U;
+        }
+        if (acc_err == EAGAIN || acc_err == EWOULDBLOCK) {
+            return 0U;
+        }
+        /* После жёсткого PHY/MAC lwIP иногда даёт 107 (ENOTCONN) — закрываем listen, HttpTask поднимет снова. */
+        if (acc_err == 107) {
+            g_http_accept_fail++;
+            AppLog("HTTP: accept() errno=107 -> deinit listen_fd=%d", s_listen_fd);
+            HttpServer_Deinit();
+            return 0U;
+        }
         g_http_accept_fail++;
-#if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
-        AppLog("HTTP: accept() failed errno=%d", errno);
-#endif
-        return;
+        AppLog("HTTP: accept() errno=%d listen_fd=%d", acc_err, s_listen_fd);
+        HttpServer_Deinit();
+        return 0U;
     }
 
     /* Настраиваем сокет как non-blocking и устанавливаем таймауты */
     int flags = 1;
     (void)lwip_ioctl(cfd, FIONBIO, &flags); /* non-blocking mode */
 
+    /* SO_LINGER {1,0} убран: он отправлял RST до доставки данных клиенту → ECONNRESET.
+     * Вместо этого TCP_MSL=1000 в lwipopts.h: TIME_WAIT = 2 с (было 120 с). */
+
     struct timeval tv_timeout;
-    /* КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: увеличен таймаут сокета для поддержки больших конфигураций
-     * 
-     * Проблема: при конфигурации на 12+ дверей JSON может быть >3000 байт.
-     * Таймаут 200ms может быть слишком коротким для чтения больших запросов,
-     * особенно при медленной сети или задержках.
-     * 
-     * Решение: увеличен таймаут до 2 секунд для поддержки больших запросов.
-     * Это не блокирует задачу, так как мы используем select с меньшими таймаутами
-     * для проверки готовности сокета.
-     */
-    tv_timeout.tv_sec = 2;
-    tv_timeout.tv_usec = 0; /* 2 секунды таймаут для больших запросов */
+    /* Раньше стояло 2 с: на исходящей отправке большого JSON (/api/state?includeDoors=1)
+     * мелкими lwip_send lwIP мог обрывать TCP по таймауту — на ПК Vite давал read ECONNRESET,
+     * в UI шапка оставалась зелёной по кэшу, а таблица дверей не обновлялась. */
+    tv_timeout.tv_sec = 45;
+    tv_timeout.tv_usec = 0;
     (void)lwip_setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv_timeout, sizeof(tv_timeout));
     (void)lwip_setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv_timeout, sizeof(tv_timeout));
 
@@ -480,7 +573,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     int sel_client = lwip_select(cfd + 1, &rfds_client, NULL, NULL, &tv_client);
     if (sel_client <= 0) {
         (void)lwip_close(cfd);
-        return; /* timeout или ошибка */
+        return 1U; /* Мы приняли клиента, но он отвалился - считаем за работу */
     }
 
     /* Читаем начало запроса (request-line + headers + возможно часть body).
@@ -490,7 +583,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     int r = (int)lwip_recv(cfd, rx, sizeof(rx) - 1U, 0);
     if (r <= 0) {
         (void)lwip_close(cfd);
-        return;
+        return 1U;
     }
     rx[r] = 0;
 
@@ -522,7 +615,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
         http_send_simple(cfd, 400, "text/plain", "Bad Request\n");
         (void)lwip_close(cfd);
-        return;
+        return 1U;
     }
     
     /* Восстанавливаем символы для поиска заголовков в PUT запросах */
@@ -537,7 +630,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
     if (strcmp(method, "OPTIONS") == 0) {
         http_send_no_body(cfd, 204);
         (void)lwip_close(cfd);
-        return;
+        return 1U;
     }
 
     if (strcmp(method, "GET") == 0) {
@@ -572,7 +665,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             }
         }
         (void)lwip_close(cfd);
-        return;
+        return 1U;
     }
 
     if (strcmp(method, "PUT") == 0) {
@@ -587,7 +680,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U; /* клиент принят, ответ отправлен */
         }
         
         const char *hdr_start = hdr_start_orig;
@@ -606,14 +699,14 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U; /* клиент принят, ответ отправлен */
         }
 
         const int content_len = header_find_content_length(hdr_start);
         if (content_len < 0) {
             http_send_simple(cfd, 411, "text/plain", "Length Required\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U;
         }
         const uint8_t is_put_cfg_full = (strcmp(path, "/api/config/full") == 0) ? 1U : 0U;
 
@@ -625,7 +718,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             if (content_len >= HTTP_CONFIG_PUT_MAX) {
                 http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
                 (void)lwip_close(cfd);
-                return;
+                return 1U;
             }
             req_body = s_put_config_full_body;
             body_buf_sz = HTTP_CONFIG_PUT_MAX;
@@ -633,7 +726,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             if ((uint32_t)content_len > (HTTP_BODY_MAX - 1U)) {
                 http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
                 (void)lwip_close(cfd);
-                return;
+                return 1U;
             }
             req_body = stack_put_body;
             body_buf_sz = HTTP_BODY_MAX;
@@ -668,6 +761,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
         const uint32_t recv_timeout_ms = 30000U; /* 30 секунд общий таймаут */
         
         while (copied < content_len) {
+            EthListen_QuiescePollFromHttpTask();
             /* Проверяем общий таймаут */
             if ((HAL_GetTick() - recv_start_ms) > recv_timeout_ms) {
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_ERRORS
@@ -737,7 +831,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Body\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U;
         }
         
 #if HTTP_DEBUG_ENABLED && HTTP_DEBUG_RESPONSES
@@ -774,7 +868,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             osDelay(200);
             HAL_NVIC_SystemReset();
         }
-        return;
+        return 1U; /* успешный PUT без сброса (или сброс не запрошен) */
     }
 
     if (strcmp(method, "POST") == 0) {
@@ -788,7 +882,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U;
         }
         
         const char *hdr_start = hdr_start_orig;
@@ -804,14 +898,14 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U;
         }
 
         const int content_len = header_find_content_length(hdr_start);
         if (content_len < 0 || content_len > HTTP_BODY_MAX) {
             http_send_simple(cfd, 411, "text/plain", "Length Required\n");
             (void)lwip_close(cfd);
-            return;
+            return 1U;
         }
 
         /* Читаем body (аналогично PUT) */
@@ -831,6 +925,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
                 const int max_recv_attempts = 200;
                 
                 while (copied < content_len && recv_attempts < max_recv_attempts) {
+                    EthListen_QuiescePollFromHttpTask();
                     fd_set rfds_post;
                     FD_ZERO(&rfds_post);
                     FD_SET(cfd, &rfds_post);
@@ -863,6 +958,7 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             const int max_recv_attempts = 200;
             
             while (copied < content_len && recv_attempts < max_recv_attempts) {
+                EthListen_QuiescePollFromHttpTask();
                 fd_set rfds_post;
                 FD_ZERO(&rfds_post);
                 FD_SET(cfd, &rfds_post);
@@ -918,10 +1014,11 @@ void HttpServer_PollOnce(uint32_t timeout_ms)
             osDelay(200);
             HAL_NVIC_SystemReset();
         }
-        return;
+        return 1U;
     }
 
     http_send_simple(cfd, 405, "text/plain", "Method Not Allowed\n");
 
     (void)lwip_close(cfd);
+    return 1U;
 }

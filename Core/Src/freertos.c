@@ -6,14 +6,13 @@
   *
   * ЭТАП 2 по плану:
   * 2.1 FreeRTOS + CMSIS-OS
-  * 2.2 Декомпозиция задач:
-  *   - DOOR TASK
-  *   - LOGIC CORE TASK
-  *   - CAN TASK
-  *   - RS-485 TASK
-  *   - ETHERNET/HTTP TASK
-  *   - LOGGER TASK
-  *   - WATCHDOG/SUPERVISOR TASK
+ * 2.2 Декомпозиция задач (упрощённая одноплатная сборка):
+ *   - DOOR TASK
+ *   - LOGIC CORE TASK (commsTask)
+ *   - ETHERNET/HTTP TASK
+ *   - LOGGER
+ *   - WATCHDOG/SUPERVISOR TASK
+ *   Задач CAN и RS-485 в RTOS нет (одноплатная прошивка, только локальные двери и Ethernet).
   * 2.3 Межзадачное взаимодействие: очередь событий + очередь логов
   * 2.4 Базовый watchdog + контроль зависаний: Health/Heartbeat + Supervisor/Watchdog
   *
@@ -38,20 +37,18 @@
 #include "app_log.h"
 
 
-/* App/doors */
-#include "doors_task.h"
+/* App/doors — относительно Core/Src (см. комментарий в main.c про subdir.mk / -I../App). */
+#include "../../App/doors/doors_task.h"
 
 /* App/system */
 #include "comms_task.h"
 #include "net_task.h"
 #include "supervisor_task.h"
-#include "can_task.h"
-#include "rs485_task.h"
 #include "http_task.h"
 #include "http_server.h"
 #include "logger_task.h"
 #include "watchdog_task.h"
-#include "system/journal_task.h"
+#include "log/event_journal.h"
 #include "stdio.h"
 #include <stdint.h>
 extern volatile uint32_t g_eth_irq;
@@ -75,21 +72,14 @@ extern volatile uint32_t g_eth_tcpip_cb_fail;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-osThreadId_t rtcTestTaskHandle;
-const osThreadAttr_t rtcTestTask_attributes = {
-  .name = "rtcTest",
-  .stack_size = 384 * 4,  /* 1.5KB: минимум для snprintf + HAL_UART + I2C */
-  /* В FreeRTOS здесь больший номер = выше приоритет (idle=0). 4 было ниже 24 — задача не бежала.
-   * osPriorityAboveNormal=32 > osPriorityNormal=24 → задача RTC выше остальных. */
-  .priority = (osPriority_t) osPriorityAboveNormal,
-};
 /* USER CODE END Variables */
 /* Definitions for netTask */
 osThreadId_t netTaskHandle;
 const osThreadAttr_t netTask_attributes = {
   .name = "netTask",
   .stack_size = 768 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  /* Выше httpTask: сначала MX_LWIP_Init(), иначе httpTask теоретически может опередить и дергать gnetif до готовности. */
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for commsTask */
 osThreadId_t commsTaskHandle;
@@ -116,22 +106,9 @@ const osThreadAttr_t supervisorTask_attributes = {
 osThreadId_t httpTaskHandle;
 const osThreadAttr_t httpTask_attributes = {
   .name = "httpTask",
-  /* http_server.c: rx[768] + stack body до 8 КБ; PUT /api/config/full — статический буфер 32 КБ */
-  .stack_size = 16 * 1024,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for canTask */
-osThreadId_t canTaskHandle;
-const osThreadAttr_t canTask_attributes = {
-  .name = "canTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for rs485Task */
-osThreadId_t rs485TaskHandle;
-const osThreadAttr_t rs485Task_attributes = {
-  .name = "rs485Task",
-  .stack_size = 512 * 4,
+  /* stack_size в CMSIS-RTOS v2 — байты. На стеке httpTask буфер GET (HTTP_GET_RESPONSE_MAX, до ~12 КБ)
+   * плюс цепочка HttpApi_HandleGet — малый стек даёт переполнение и обрывы TCP. */
+  .stack_size = 32u * 1024u,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for loggerTask */
@@ -148,18 +125,9 @@ const osThreadAttr_t watchdogTask_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for journalTask */
-osThreadId_t journalTaskHandle;
-const osThreadAttr_t journalTask_attributes = {
-  .name = "journalTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 static void TaskShouldNeverReturn(void);
-void StartRtcTestTask(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartNetTask(void *argument);
@@ -167,12 +135,8 @@ void StartCommsTask(void *argument);
 void StartDoorsTask(void *argument);
 void StartSupervisorTask(void *argument);
 void StartHttpTask(void *argument);
-void StartCanTask(void *argument);
-void StartRs485Task(void *argument);
 void StartLoggerTask(void *argument);
 void StartWatchdogTask(void *argument);
-void StartJournalTask(void *argument);
-
 extern void MX_LWIP_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -186,6 +150,8 @@ void MX_FREERTOS_Init(void) {
   AppEvents_Init();
   AppHealth_Init();
   AppLog_Init();
+  /* Журнал событий на QSPI отключён (без задачи и очереди); инициализируем только QSPI-lock и метаданные для EraseAll. */
+  EventJournal_Init();
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -205,13 +171,6 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* USER CODE BEGIN RTOS_THREADS — RTC первой, приоритет 4 */
-  rtcTestTaskHandle = osThreadNew(StartRtcTestTask, NULL, &rtcTestTask_attributes);
-  if (rtcTestTaskHandle == NULL) {
-    static const char msg[] = "RTC task: create FAIL (heap?)\r\n";
-    (void)HAL_UART_Transmit(&huart3, (const uint8_t *)msg, (uint16_t)(sizeof(msg) - 1), 100);
-  }
-  /* USER CODE END RTOS_THREADS */
   /* creation of netTask */
   netTaskHandle = osThreadNew(StartNetTask, NULL, &netTask_attributes);
 
@@ -227,20 +186,15 @@ void MX_FREERTOS_Init(void) {
   /* creation of httpTask */
   httpTaskHandle = osThreadNew(StartHttpTask, NULL, &httpTask_attributes);
 
-  /* creation of canTask */
-  canTaskHandle = osThreadNew(StartCanTask, NULL, &canTask_attributes);
-
-  /* creation of rs485Task */
-  rs485TaskHandle = osThreadNew(StartRs485Task, NULL, &rs485Task_attributes);
-
   /* creation of loggerTask */
   loggerTaskHandle = osThreadNew(StartLoggerTask, NULL, &loggerTask_attributes);
 
   /* creation of watchdogTask */
   watchdogTaskHandle = osThreadNew(StartWatchdogTask, NULL, &watchdogTask_attributes);
 
-  /* creation of journalTask */
-  journalTaskHandle = osThreadNew(StartJournalTask, NULL, &journalTask_attributes);
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
 
@@ -343,40 +297,6 @@ void StartHttpTask(void *argument)
   /* USER CODE END StartHttpTask */
 }
 
-/* USER CODE BEGIN Header_StartCanTask */
-/**
-* @brief Function implementing the canTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartCanTask */
-void StartCanTask(void *argument)
-{
-  /* USER CODE BEGIN StartCanTask */
-  CanTask_Run(argument);
-
-  configASSERT(0);
-  TaskShouldNeverReturn();
-  /* USER CODE END StartCanTask */
-}
-
-/* USER CODE BEGIN Header_StartRs485Task */
-/**
-* @brief Function implementing the rs485Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartRs485Task */
-void StartRs485Task(void *argument)
-{
-  /* USER CODE BEGIN StartRs485Task */
-  Rs485Task_Run(argument);
-
-  configASSERT(0);
-  TaskShouldNeverReturn();
-  /* USER CODE END StartRs485Task */
-}
-
 /* USER CODE BEGIN Header_StartLoggerTask */
 /**
 * @brief Function implementing the loggerTask thread.
@@ -409,24 +329,6 @@ void StartWatchdogTask(void *argument)
   configASSERT(0);
   TaskShouldNeverReturn();
   /* USER CODE END StartWatchdogTask */
-}
-
-/* USER CODE BEGIN Header_StartJournalTask */
-/**
-* @brief Function implementing the journalTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartJournalTask */
-void StartJournalTask(void *argument)
-{
-  /* USER CODE BEGIN StartJournalTask */
-  /* Infinite loop */
-	JournalTask_Run(argument);
-
-	  configASSERT(0);
-	  TaskShouldNeverReturn();
-  /* USER CODE END StartJournalTask */
 }
 
 /* Private application code --------------------------------------------------*/

@@ -136,8 +136,61 @@
 /* По умолчанию в opt.h: MEMP_NUM_TCP_PCB=5, MEMP_NUM_TCP_SEG=16 — мало при link flap,
  * нескольких клиентах браузера и сокетах в TIME_WAIT → accept/bind падают, HTTP «умирает»
  * при живом ping. Пулы memp отдельны от MEM_SIZE (куча pbuf). */
-#define MEMP_NUM_TCP_PCB                24
-#define MEMP_NUM_TCP_SEG                48
+#define MEMP_NUM_TCP_PCB                32
+#define MEMP_NUM_TCP_PCB_LISTEN         8
+#define MEMP_NUM_TCP_SEG                64
+
+/* *** КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: TCP TIME_WAIT исчерпание ***
+ *
+ * Проблема: дефолтный TCP_MSL = 60000 мс → TIME_WAIT = 120 с.
+ * При Connection: close и опросе UI ~1 запрос/сек, все 32 TCP PCB
+ * уходят в TIME_WAIT за ~30 сек → сеть «умирает».
+ *
+ * TCP_MSL = 1000 мс → TIME_WAIT = 2 с — PCB освобождаются быстро.
+ * Для embedded HTTP-сервера с короткими запросами это безопасно:
+ * стандартные 2 минуты нужны для маршрутизации в интернете, не в LAN.
+ */
+#define TCP_MSL                         1000
+
+/* MEM_SIZE: lwIP TX heap по адресу LWIP_RAM_HEAP_POINTER = 0x30004000.
+ * RAM_D2 = 32 КБ (0x30000000–0x30007FFF). Доступно ≤ 16 КБ от 0x30004000.
+ * С учётом overhead lwIP (выравнивание, bookkeeping) ставим 8 КБ — безопасно.
+ * Дефолт 1600 — мало для JSON ответов 12 КБ (ERR_MEM). */
+#define MEM_SIZE                        (8 * 1024)
+
+/* TCP_SND_BUF: буфер отправки на одно соединение.
+ * Дефолт 2*TCP_MSS=1072 — мелкие куски, медленная отдача.
+ * 4 КБ позволяет отправить /api/state за меньшее число итераций. */
+#define TCP_SND_BUF                     (4 * 1460)
+
+/* TCP_WND: окно приёма. Больше окно → меньше задержек при приёме PUT. */
+#define TCP_WND                         (4 * 1460)
+
+/* MEMP_NUM_NETCONN: дефолт = 4. Каждый socket (listen + accept) съедает 1.
+ * С 4-мя: 1 listen + 1 клиент + UDP = 3, запас = 1.
+ * Если браузер открывает > 1 запроса, pool мгновенно полон. */
+#define MEMP_NUM_NETCONN                16
+
+/* LWIP_SO_LINGER: включить поддержку SO_LINGER в setsockopt.
+ * Дефолт = 0 (выключен!). Без этого setsockopt(SO_LINGER) тихо игнорируется,
+ * и http_server.c не может сделать RST при close → TIME_WAIT остаётся. */
+#define LWIP_SO_LINGER                  1
+
+/* Переопределяем TCP_SND_QUEUELEN / TCP_SNDLOWAT / TCP_WND_UPDATE_THRESHOLD:
+ * CubeMX сгенерировал их для дефолтного TCP_SND_BUF=1072 и TCP_WND=2144.
+ * После увеличения TCP_SND_BUF и TCP_WND оригинальные значения неконсистентны.
+ * Формулы из opt.h: */
+#undef TCP_SND_QUEUELEN
+#define TCP_SND_QUEUELEN                ((4 * TCP_SND_BUF + (TCP_MSS - 1)) / TCP_MSS)
+
+#undef TCP_SNDLOWAT
+#define TCP_SNDLOWAT                    (TCP_SND_BUF / 2)
+
+#undef TCP_SNDQUEUELOWAT
+#define TCP_SNDQUEUELOWAT               (TCP_SND_QUEUELEN / 2)
+
+#undef TCP_WND_UPDATE_THRESHOLD
+#define TCP_WND_UPDATE_THRESHOLD        (TCP_WND / 4)
 
 /* USER CODE END 1 */
 

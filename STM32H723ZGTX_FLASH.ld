@@ -155,21 +155,6 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM_D1
 
-
-  /* Ethernet DMA descriptors/buffers.
-     Must be located in a RAM region accessible by ETH DMA, and marked as
-     non-cacheable by MPU (see MPU_Config in main.c). */
-  .eth_dma (NOLOAD) :
-  {
-    . = ALIGN(32);
-    *(.RxDecripSection)
-    . = ALIGN(32);
-    *(.TxDecripSection)
-    . = ALIGN(32);
-    *(.Rx_PoolSection)
-    . = ALIGN(32);
-  } >RAM_D2
-
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
   {

@@ -14,12 +14,9 @@ typedef enum
 {
     TASK_DOOR = 0,
     TASK_LOGIC_CORE,
-    TASK_CAN,
-    TASK_RS485,
     TASK_NET,
     TASK_HTTP,
     TASK_LOGGER,
-    TASK_JOURNAL,
     TASK_SUPERVISOR,
     TASK_WATCHDOG,
 

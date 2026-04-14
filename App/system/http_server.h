@@ -69,11 +69,20 @@ uint8_t HttpServer_IsReady(void);
  * timeout_ms:
  *  - сколько ждать accept (0 = не ждать).
  *
+ * Возвращает:
+ *  - 1U: клиент был успешно принят и обработан;
+ *  - 0U: таймаут или ошибка (клиентов нет).
+ *
  * Важно:
  *  - функция должна вызываться из низкоприоритетной задачи;
  *  - при отсутствии клиентов быстро возвращает управление.
  */
-void HttpServer_PollOnce(uint32_t timeout_ms);
+uint8_t HttpServer_PollOnce(uint32_t timeout_ms);
+
+/* Длительные операции в httpTask (запись QSPI и т.п.): принять до N ожидающих TCP
+ * и ответить 503, чтобы не переполнять listen backlog и не получать RST/ECONNRESET
+ * у прокси на параллельных GET (/api/state) во время PUT /api/config/full. */
+void HttpServer_DrainPendingClientsBrief(void);
 
 /* UART / монитор: счётчики с момента сброса МК (растут при сбоях сокета listen). */
 extern volatile uint32_t g_http_listen_sel_fail;

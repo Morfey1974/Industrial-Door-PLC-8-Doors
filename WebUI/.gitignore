@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Локальный прокси Vite (IP/порт платы) — не коммитить
+.env.development
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

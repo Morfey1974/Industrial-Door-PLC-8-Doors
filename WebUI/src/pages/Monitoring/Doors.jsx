@@ -2,20 +2,22 @@
  * Мониторинг дверей — обзор по платам и таблица с фильтрами.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import useAutoRefresh from '../../hooks/useAutoRefresh';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useDoorsData } from '../../context/DoorsDataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import DoorTable from '../../components/ui/DoorTable';
-import DoorsOverview from '../../components/ui/DoorsOverview';
 import FilterBar from '../../components/ui/FilterBar';
 import Button from '../../components/common/Button';
 import { mapApiErrorToUiMessage } from '../../utils/apiErrorI18n';
-import { DOORS_MONITOR_REFRESH_MS } from '../../utils/constants';
 import './Monitoring.css';
 
 const Doors = () => {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  /** Чтобы баннер «конфиг применён» не сработал дважды при повторном монтировании в StrictMode. */
+  const configAppliedShownRef = useRef(false);
   const [filters, setFilters] = useState({
     status: 'all',
     doorId: '',
@@ -30,6 +32,15 @@ const Doors = () => {
     return () => clearTimeout(id);
   }, [actionBanner]);
 
+  /* После применения конфигурации редирект сюда с ?reason=config_applied (раньше открывалась страница входа). */
+  useEffect(() => {
+    if (configAppliedShownRef.current) return;
+    if (searchParams.get('reason') !== 'config_applied') return;
+    configAppliedShownRef.current = true;
+    setActionBanner({ text: t('pages.doors.configAppliedBanner'), variant: 'success' });
+    navigate('/monitoring/doors', { replace: true });
+  }, [searchParams, navigate, t]);
+
   const handleManualRefresh = useCallback(async () => {
     setActionBanner(null);
     const ok = await refetch(false, true);
@@ -41,17 +52,13 @@ const Doors = () => {
   }, [refetch, t]);
   const errorText = mapApiErrorToUiMessage(error, t);
 
-  useAutoRefresh(() => {
-    refetch(true);
-  }, DOORS_MONITOR_REFRESH_MS);
+  /* Опрос /api/state только из Header (useAutoRefresh) — второй таймер здесь дублировал refetch,
+   * строил очередь к однопоточному HTTP на МК и давал ECONNRESET через десятки секунд. */
 
   const doorList = doors?.doors;
   const countForTitle = Array.isArray(doorList) ? doorList.length : null;
 
   const doorsWordForTitle = (n) => {
-    if (language === 'en') {
-      return n === 1 ? t('pages.doors.titleDoorsWordOne') : t('pages.doors.titleDoorsWordOther');
-    }
     const mod10 = n % 10;
     const mod100 = n % 100;
     if (mod100 >= 11 && mod100 <= 14) return t('pages.doors.titleDoorsWordMany');
@@ -153,12 +160,6 @@ const Doors = () => {
             </p>
           </div>
         </div>
-      )}
-
-      {!loading && !error && doors && doors.doors && doors.doors.length > 0 && (
-        <section className="doors-overview-section" style={{ marginBottom: 'var(--spacing-lg, 24px)' }}>
-          <DoorsOverview doors={doors} />
-        </section>
       )}
 
       {doors && doors.doors && doors.doors.length > 0 && (
