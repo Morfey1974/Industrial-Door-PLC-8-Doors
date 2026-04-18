@@ -28,12 +28,38 @@ apiClient.interceptors.request.use((config) => {
 // Интерцептор для обработки ошибок
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     // Игнорируем ошибки отмены запроса (не логируем их)
     if (error.code === 'ERR_CANCELED' || error.message === 'canceled') {
       return Promise.reject(error);
     }
-    
+
+    const cfg = error.config;
+    /*
+     * Однократный повтор только для GET: прокси Vite → МК часто даёт read ECONNRESET на длинном
+     * /api/state?includeDoors=1 (lwIP закрывает сокет). Повтор через короткую паузу обычно проходит.
+     * Не трогаем запросы с AbortSignal от useApi (повтор с тем же signal допустим).
+     */
+    if (cfg && !cfg.__axiosDevRetry && String(cfg.method || 'get').toLowerCase() === 'get') {
+      const status = error.response?.status;
+      const noResponse = !error.response;
+      const msg = String(error.message || '');
+      const code = String(error.code || '');
+      const netLike =
+        noResponse &&
+        (code === 'ERR_NETWORK' ||
+          code === 'ECONNRESET' ||
+          msg.includes('Network Error') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ERR_CONNECTION_RESET'));
+      const badGateway = status === 502 || status === 503;
+      if (netLike || badGateway) {
+        cfg.__axiosDevRetry = true;
+        await new Promise((r) => setTimeout(r, 450));
+        return apiClient.request(cfg);
+      }
+    }
+
     // Обработка таймаута
     if (error.code === 'ECONNABORTED') {
       const timeoutMsg = 'Превышено время ожидания ответа от сервера';

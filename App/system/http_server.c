@@ -11,6 +11,7 @@
 
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
+#include "lwip/tcp.h"
 
 #include "cmsis_os.h"
 
@@ -64,6 +65,20 @@ static uint16_t s_listen_port = 0;
 
 volatile uint32_t g_http_listen_sel_fail = 0;
 volatile uint32_t g_http_accept_fail = 0;
+
+/* Закрытие принятого клиентского сокета после ответа.
+ * Раньше сразу lwip_close(): при данных ещё в очереди отправки lwIP мог завершить TCP с RST,
+ * пока Node (прокси Vite) читал тело — «read ECONNRESET» на /api/state?includeDoors=1.
+ * shutdown(SHUT_WR) завершает половину передачи по правилам TCP (FIN), затем close — без
+ * блокировки на секунды (в отличие от SO_LINGER с ожиданием в том же потоке httpTask). */
+static void http_close_client_socket(int fd)
+{
+    if (fd < 0) {
+        return;
+    }
+    (void)lwip_shutdown(fd, SHUT_WR);
+    (void)lwip_close(fd);
+}
 
 void HttpServer_Deinit(void)
 {
@@ -232,13 +247,13 @@ static void http_send_simple(int fd, int code, const char *ctype, const char *bo
                 continue;
             }
             
-            /* Оптимизация: используем MSS (1460) для заполнения полных пакетов Ethernet.
-             * Благодаря увеличению MEM_SIZE до 8Кб это безопасно. */
+            /* Чанк до MSS (1460): TCP_SND_BUF в lwipopts.h достаточен; после отправки сокет
+             * закрываем через http_close_client_socket (shutdown WR + close), чтобы не было RST у прокси. */
             size_t chunk_size = (size_t)(body_len - sent);
-            if (chunk_size > 1460) {
-                chunk_size = 1460;
+            if (chunk_size > 1460U) {
+                chunk_size = 1460U;
             }
-            
+
             int r = lwip_send(fd, body + sent, chunk_size, 0);
             if (r > 0) {
                 sent += r;
@@ -475,7 +490,7 @@ void HttpServer_DrainPendingClientsBrief(void)
             (void)lwip_send(cfd, hdr, (size_t)hn, 0);
         }
         (void)lwip_send(cfd, k_busy_json, (size_t)body_len, 0);
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
     }
 }
 
@@ -551,8 +566,13 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
     int flags = 1;
     (void)lwip_ioctl(cfd, FIONBIO, &flags); /* non-blocking mode */
 
-    /* SO_LINGER {1,0} убран: он отправлял RST до доставки данных клиенту → ECONNRESET.
-     * Вместо этого TCP_MSL=1000 в lwipopts.h: TIME_WAIT = 2 с (было 120 с). */
+    /* TCP_NODELAY: отключаем алгоритм Нагла. Данные (JSON статуса) улетают сразу,
+     * не дожидаясь заполнения пакета или ACK от клиента. Существенно снижает латентность. */
+    int nodelay = 1;
+    (void)lwip_setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+
+    /* SO_LINGER {1,0} убран: он отправлял RST до доставки данных клиенту → ECONNRESET. */
+    /* Вместо этого TCP_MSL=1000 в lwipopts.h: TIME_WAIT = 2 с (было 120 с). */
 
     struct timeval tv_timeout;
     /* Раньше стояло 2 с: на исходящей отправке большого JSON (/api/state?includeDoors=1)
@@ -572,7 +592,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
     tv_client.tv_usec = 100000; /* 100ms таймаут вместо 2 секунд */
     int sel_client = lwip_select(cfd + 1, &rfds_client, NULL, NULL, &tv_client);
     if (sel_client <= 0) {
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
         return 1U; /* Мы приняли клиента, но он отвалился - считаем за работу */
     }
 
@@ -582,7 +602,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
     char rx[HTTP_RX_BUF_SZ];
     int r = (int)lwip_recv(cfd, rx, sizeof(rx) - 1U, 0);
     if (r <= 0) {
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
         return 1U;
     }
     rx[r] = 0;
@@ -614,7 +634,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
         AppLog("HTTP: bad request line: %s", rx);
 #endif
         http_send_simple(cfd, 400, "text/plain", "Bad Request\n");
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
         return 1U;
     }
     
@@ -629,7 +649,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
     /* CORS preflight */
     if (strcmp(method, "OPTIONS") == 0) {
         http_send_no_body(cfd, 204);
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
         return 1U;
     }
 
@@ -664,7 +684,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
                 http_send_simple(cfd, 500, "text/plain", "Internal Error\n");
             }
         }
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
         return 1U;
     }
 
@@ -679,7 +699,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             AppLog("HTTP: PUT Bad Headers - no header start found");
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U; /* клиент принят, ответ отправлен */
         }
         
@@ -698,14 +718,14 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             }
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U; /* клиент принят, ответ отправлен */
         }
 
         const int content_len = header_find_content_length(hdr_start);
         if (content_len < 0) {
             http_send_simple(cfd, 411, "text/plain", "Length Required\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U;
         }
         const uint8_t is_put_cfg_full = (strcmp(path, "/api/config/full") == 0) ? 1U : 0U;
@@ -717,7 +737,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
         if (is_put_cfg_full) {
             if (content_len >= HTTP_CONFIG_PUT_MAX) {
                 http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
-                (void)lwip_close(cfd);
+                http_close_client_socket(cfd);
                 return 1U;
             }
             req_body = s_put_config_full_body;
@@ -725,7 +745,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
         } else {
             if ((uint32_t)content_len > (HTTP_BODY_MAX - 1U)) {
                 http_send_simple(cfd, 413, "text/plain", "Payload Too Large\n");
-                (void)lwip_close(cfd);
+                http_close_client_socket(cfd);
                 return 1U;
             }
             req_body = stack_put_body;
@@ -830,7 +850,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             AppLog("HTTP: body incomplete (copied=%d/%d, attempts=%d)", copied, content_len, recv_attempts);
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Body\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U;
         }
         
@@ -855,7 +875,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             http_send_simple(cfd, 500, "application/json", resp);
         }
 
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
 
         /* После критичных операций (apply config / clear flash) — автосброс,
          * чтобы изменения консистентно вступили в силу при загрузке. */
@@ -881,7 +901,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             AppLog("HTTP: POST Bad Headers - no header start found");
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U;
         }
         
@@ -897,14 +917,14 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             AppLog("HTTP: POST Bad Headers - cannot find header end");
 #endif
             http_send_simple(cfd, 400, "text/plain", "Bad Headers\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U;
         }
 
         const int content_len = header_find_content_length(hdr_start);
         if (content_len < 0 || content_len > HTTP_BODY_MAX) {
             http_send_simple(cfd, 411, "text/plain", "Length Required\n");
-            (void)lwip_close(cfd);
+            http_close_client_socket(cfd);
             return 1U;
         }
 
@@ -1004,7 +1024,7 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
         } else {
             http_send_simple(cfd, api_code, "application/json", resp);
         }
-        (void)lwip_close(cfd);
+        http_close_client_socket(cfd);
 
         /* После полной очистки flash — автосброс для консистентного re-init всех сервисов. */
         if (api_code == 200 &&
@@ -1019,6 +1039,6 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
 
     http_send_simple(cfd, 405, "text/plain", "Method Not Allowed\n");
 
-    (void)lwip_close(cfd);
+    http_close_client_socket(cfd);
     return 1U;
 }

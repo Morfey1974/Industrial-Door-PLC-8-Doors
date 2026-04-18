@@ -193,6 +193,7 @@
       "msgSavedToFile": "Конфигурация сохранена в файл",
       "msgOpened": "Конфигурация открыта",
       "msgImportError": "Ошибка импорта: {error}",
+      "msgImportMappingNotConfig": "Выбран файл карты маппинга (*_map.json), а не конфигурации дверей. Откройте его на странице «Маппинг». Для конфигуратора используйте экспорт с суффиксом *_conf.json или сохранённую конфигурацию из списка.",
       "msgPickFileError": "Ошибка: {error}",
       "msgLoadedFromController": "Конфигурация загружена с контроллера",
       "msgLoadedFromControllerVersion": "Версия: {seq}",

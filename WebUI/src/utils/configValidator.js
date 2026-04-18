@@ -226,3 +226,25 @@ export const calculateGlobalDoorId = (nodeId, localDoor) => {
   }
   return (nodeId - 1) * 8 + localDoor;
 };
+
+/**
+ * Проверка: объект — экспорт карты со страницы «Маппинг» (см. Mapping.jsx: version, viewport, objects),
+ * а не полная конфигурация дверей для контроллера.
+ *
+ * Нужна, чтобы при открытии *_map.json через «Открыть конфигурацию» показать понятную подсказку,
+ * а не общие ошибки валидации (нет openTimeoutMs, doors не массив).
+ *
+ * Если в одном JSON когда‑нибудь объединят карту и конфиг, считаем это конфигурацией при наличии
+ * openTimeoutMs и массива doors.
+ */
+export function isMappingCanvasJson(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  const hasCanvasShape =
+    typeof obj.version === 'number' &&
+    obj.viewport != null &&
+    typeof obj.viewport === 'object' &&
+    Array.isArray(obj.objects);
+  if (!hasCanvasShape) return false;
+  const looksLikeDoorPlcConfig = obj.openTimeoutMs != null && Array.isArray(obj.doors);
+  return !looksLikeDoorPlcConfig;
+}

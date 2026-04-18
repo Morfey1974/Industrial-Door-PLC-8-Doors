@@ -75,13 +75,14 @@ export const PUT_CONFIG_FULL_MAX_JSON_BYTES = 31744;
 export const API_TIMEOUT = 60000; /* Должно быть ≥ STATE_WITH_DOORS_TIMEOUT (api.js), иначе axios режет длинный /state?includeDoors=1 */
 /* Тихий опрос (/api/state в шапке): если запрос висит дольше — abort и новый. Для /api/doors в useApi передают silentStuckAbortMs: null (ответ может быть дольше 8 с). */
 export const API_SILENT_REFETCH_STUCK_MS = 8000;
-export const AUTO_REFRESH_INTERVAL = 5000; // 5 секунд для автообновления по умолчанию
+export const AUTO_REFRESH_INTERVAL = 1500; // 1.5 секунды для автообновления по умолчанию
 /* Раньше дублировался с шапкой и перегружал МК; оставлено для совместимости импортов — не используйте второй таймер на странице дверей. */
-export const DOORS_MONITOR_REFRESH_MS = 2500;
+export const DOORS_MONITOR_REFRESH_MS = 1000;
 /* Не считать кэш протухшим слишком рано при медленном опросе или кратковременных паузах стека. */
-export const STATE_HEADER_STALE_MS = 35000;
-/* Реже 1 с: длинный state+doors на lwIP + Connection:close — меньше TIME_WAIT и срывов TCP. */
-export const HEADER_STATE_POLL_MS = 2500;
+export const STATE_HEADER_STALE_MS = 15000;
+/* Интервал автоопроса /api/state (шапка + двери). 800 мс — быстрая таблица; обрывы к прокси лечатся
+ * корректным close() на МК и одним retry GET в api.js. */
+export const HEADER_STATE_POLL_MS = 800;
 
 /** Пути, где запрашивается /api/state?includeDoors=1 (синхронно с StateDataContext). */
 export const MONITOR_PATHS_WITH_DOORS = ['/', '/dashboard', '/monitoring/doors'];

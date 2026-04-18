@@ -1,6 +1,9 @@
 /**
  * useAutoRefresh хук - для автообновления данных
  * Опрос только при видимой вкладке (Page Visibility API).
+ *
+ * setInterval + пропуск тика, если предыдущий callback ещё выполняется — даёт стабильный
+ * интервал по времени и быстрое обновление таблицы мониторинга при коротком ответе МК.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -29,7 +32,7 @@ const useAutoRefresh = (callback, interval = 5000) => {
       intervalIdRef.current = null;
     }
 
-    if (!visible || interval <= 0) return;
+    if (!visible || interval <= 0) return undefined;
 
     const tick = () => {
       if (!getVisible()) return;

@@ -28,7 +28,7 @@ import {
   getCurrentConfigName,
   setCurrentConfigName
 } from '../../utils/configStorage';
-import { validateConfig } from '../../utils/configValidator';
+import { validateConfig, isMappingCanvasJson } from '../../utils/configValidator';
 import { PUT_CONFIG_FULL_MAX_JSON_BYTES } from '../../utils/constants';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -675,6 +675,11 @@ const DoorsConfig = () => {
     const loadFromFile = async (file) => {
       try {
         const importedConfig = await importConfigFromFile(file);
+        // Файл карты маппинга (*_map.json) — другой формат; открывать его нужно на странице «Маппинг».
+        if (isMappingCanvasJson(importedConfig)) {
+          setError(t('pages.config.msgImportMappingNotConfig'));
+          return;
+        }
         const validation = validateConfig(importedConfig, { t });
         if (!validation.valid) {
           setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
