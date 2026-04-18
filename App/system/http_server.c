@@ -38,7 +38,8 @@
  * ========================================================= */
 
 #ifndef HTTP_RX_BUF_SZ
-#define HTTP_RX_BUF_SZ 768
+/* Первый recv + заголовки PUT/POST (прокси добавляет поля); дочитывание см. http_accumulate_until_headers_complete. */
+#define HTTP_RX_BUF_SZ 2048
 #endif
 
 #ifndef HTTP_BODY_MAX
@@ -397,6 +398,53 @@ static uint8_t parse_request_line(const char *line, char *out_method, size_t met
     return 1U;
 }
 
+/**
+ * Дочитывает из сокета байты в rx, пока в блоке заголовков не появится конец (\r\n\r\n или \n\n).
+ *
+ * Проблема: первый lwip_recv часто получает только часть HTTP (TCP фрагментация, Nagle, прокси).
+ * Без дочитывания strstr не находит конец заголовков → 400 «Bad Headers»; повторная попытка
+ * с клиента иногда «проходила», если сегменты склеивались иначе.
+ *
+ * @param hdr_start_orig указатель внутрь rx на начало полей заголовка (после request-line)
+ * @return новая заполненная длина rx (как r для дальнейшего разбора)
+ */
+static int http_accumulate_until_headers_complete(int cfd, char *rx, int r, int rx_cap, const char *hdr_start_orig)
+{
+    int rx_total = r;
+    if (!hdr_start_orig || rx_cap < 32) {
+        return rx_total;
+    }
+
+    for (;;) {
+        if (strstr(hdr_start_orig, "\r\n\r\n") != NULL) {
+            return rx_total;
+        }
+        if (strstr(hdr_start_orig, "\n\n") != NULL) {
+            return rx_total;
+        }
+        if (rx_total >= rx_cap - 1) {
+            return rx_total;
+        }
+
+        fd_set rfds_h;
+        FD_ZERO(&rfds_h);
+        FD_SET(cfd, &rfds_h);
+        struct timeval tv_h;
+        tv_h.tv_sec = 3;
+        tv_h.tv_usec = 0;
+        if (lwip_select(cfd + 1, &rfds_h, NULL, NULL, &tv_h) <= 0) {
+            return rx_total;
+        }
+
+        int more = (int)lwip_recv(cfd, rx + rx_total, (size_t)(rx_cap - 1) - (size_t)rx_total, 0);
+        if (more <= 0) {
+            return rx_total;
+        }
+        rx_total += more;
+        rx[rx_total] = '\0';
+    }
+}
+
 void HttpServer_Init(uint16_t port)
 {
     s_listen_port = port;
@@ -702,8 +750,11 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             http_close_client_socket(cfd);
             return 1U; /* клиент принят, ответ отправлен */
         }
-        
+
         const char *hdr_start = hdr_start_orig;
+        /* Иначе первый recv без полного набора заголовков → ложный Bad Headers. */
+        r = http_accumulate_until_headers_complete(cfd, rx, r, (int)sizeof(rx), hdr_start_orig);
+
         const char *hdr_end = strstr(hdr_start, "\r\n\r\n");
         int hdr_end_len = 4;
         if (!hdr_end) {
@@ -904,8 +955,10 @@ uint8_t HttpServer_PollOnce(uint32_t timeout_ms)
             http_close_client_socket(cfd);
             return 1U;
         }
-        
+
         const char *hdr_start = hdr_start_orig;
+        r = http_accumulate_until_headers_complete(cfd, rx, r, (int)sizeof(rx), hdr_start_orig);
+
         const char *hdr_end = strstr(hdr_start, "\r\n\r\n");
         int hdr_end_len = 4;
         if (!hdr_end) {

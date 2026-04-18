@@ -86,6 +86,21 @@ export const HEADER_STATE_POLL_MS = 800;
 
 /** Пути, где запрашивается /api/state?includeDoors=1 (синхронно с StateDataContext). */
 export const MONITOR_PATHS_WITH_DOORS = ['/', '/dashboard', '/monitoring/doors'];
+
+/**
+ * Убирает завершающие слэши у pathname (кроме корня), чтобы `/monitoring/doors/` совпадал со списком путей.
+ */
+export function normalizePathname(pathname) {
+  if (!pathname) return '/';
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed;
+}
+
+/** Страницы, где один запрос /api/state включает массив doors (см. MONITOR_PATHS_WITH_DOORS). */
+export function isMonitorPathWithDoors(pathname) {
+  return MONITOR_PATHS_WITH_DOORS.includes(normalizePathname(pathname));
+}
+
 /** Нет успешного ответа дольше этого — не показываем «живую» сеть по устаревшему кэшу на экранах с дверями. */
 export const MONITOR_DATA_STALE_MS = 12000;
 

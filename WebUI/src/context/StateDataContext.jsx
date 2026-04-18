@@ -7,13 +7,13 @@ import { createContext, useContext, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import useApi from '../hooks/useApi';
 import { getState } from '../services/api';
-import { MONITOR_PATHS_WITH_DOORS } from '../utils/constants';
+import { isMonitorPathWithDoors } from '../utils/constants';
 
 const StateDataContext = createContext(null);
 
 export function StateDataProvider({ children }) {
   const location = useLocation();
-  const includeDoors = MONITOR_PATHS_WITH_DOORS.includes(location.pathname);
+  const includeDoors = isMonitorPathWithDoors(location.pathname);
 
   const fetcher = useCallback(
     (signal) => getState(signal, includeDoors),

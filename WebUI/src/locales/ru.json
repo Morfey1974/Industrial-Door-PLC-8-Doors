@@ -23,7 +23,9 @@
     "linkDown": "Линк опущен",
     "ipAddress": "IP-адрес",
     "apiTargetHint": "Адрес контроллера в UI",
-    "apiTargetTitle": "Задаётся в .env (VITE_API_BASE_URL), localStorage plc_controller_url или ?controller=http://IP"
+    "apiTargetTitle": "Задаётся в .env (VITE_API_BASE_URL), localStorage plc_controller_url или ?controller=http://IP",
+    "devPendingHint": "Ожидание ответа (до ~55 с для таблицы дверей). Прокси Vite →",
+    "devPendingTitle": "В dev UI ходит на /api; Vite пересылает на VITE_DEV_PROXY_TARGET из WebUI/.env.development. Если HTTP на МК на порту 8080 — укажите :8080."
   },
   "nav": {
     "monitoring": "Мониторинг",
@@ -93,7 +95,7 @@
       "loadingDoors": "Загрузка данных о дверях…",
       "errorLoad": "Ошибка загрузки данных",
       "noData": "Нет данных о дверях",
-      "loadingHint": "Ожидание ответа до 15 с. Проверьте подключение к контроллеру при долгой загрузке.",
+      "loadingHint": "Первый ответ с дверьми может занять до ~55 с. Проверьте кабель, IP платы и в dev — VITE_DEV_PROXY_TARGET в WebUI/.env.development (при webPort 8080 добавьте :8080).",
       "errorCheckController": "Проверьте, что контроллер доступен по адресу: http://192.168.1.50",
       "autoRefreshError": "Ошибка автообновления: {error}. Данные могут быть устаревшими.",
       "statusLabel": "Статус:",

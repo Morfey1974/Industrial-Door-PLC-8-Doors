@@ -6,7 +6,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useStateData } from './StateDataContext';
-import { MONITOR_PATHS_WITH_DOORS } from '../utils/constants';
+import { isMonitorPathWithDoors } from '../utils/constants';
 
 const DoorsDataContext = createContext(null);
 
@@ -24,7 +24,7 @@ const IDLE_VALUE = {
 
 export function DoorsDataProvider({ children }) {
   const location = useLocation();
-  const pathAllowed = MONITOR_PATHS_WITH_DOORS.includes(location.pathname);
+  const pathAllowed = isMonitorPathWithDoors(location.pathname);
   const stateCtx = useStateData();
 
   const value = useMemo(() => {

@@ -15,7 +15,7 @@ import {
   STATE_HEADER_STALE_MS,
   HEADER_STATE_POLL_MS,
   getControllerUrlForDisplay,
-  MONITOR_PATHS_WITH_DOORS,
+  isMonitorPathWithDoors,
   MONITOR_DATA_STALE_MS,
 } from '../../utils/constants';
 
@@ -90,7 +90,7 @@ const Header = () => {
   /* На мониторинге с doors в запросе: если >12 с нет успешного ответа (ECONNRESET/abort и т.д.),
    * кэш ещё с netReady/linkUp, но таблица дверей уже «мертвая» — не показываем зелёный как «всё ок». */
   const monitorStale =
-    MONITOR_PATHS_WITH_DOORS.includes(location.pathname) &&
+    isMonitorPathWithDoors(location.pathname) &&
     !stateLoading &&
     !backgroundBusy &&
     lastSuccessAt != null &&
@@ -179,6 +179,23 @@ const Header = () => {
               {statusPending ? '…' : hardOffline ? '—' : (state?.ip ? formatIpAddress(state.ip) : '—')}
             </span>
           </div>
+          {/* В dev при первом запросе ошибка ещё не выставлена — показываем цель прокси сразу, иначе непонятно, куда стучится UI. */}
+          {statusPending && import.meta.env.DEV && (
+            <div
+              className="header-status-pending-dev"
+              style={{
+                fontSize: '11px',
+                lineHeight: 1.35,
+                opacity: 0.92,
+                maxWidth: 'min(420px, 55vw)',
+                wordBreak: 'break-all',
+              }}
+              title={t('header.devPendingTitle')}
+            >
+              {t('header.devPendingHint')}{' '}
+              <strong>{getControllerUrlForDisplay()}</strong>
+            </div>
+          )}
           {(!!stateError || apiStateStale || monitorStale) && (
             <div className="header-status-error">
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', maxWidth: 'min(420px, 55vw)' }}>
