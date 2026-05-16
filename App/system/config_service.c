@@ -127,6 +127,9 @@ static void apply_cfg_runtime(const project_config_t *cfg)
     } else {
         log_msg("[CFG] apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
     }
+
+    /* Слоты 1..8 без записи в конфиге узла — сброс таймаутов/сигнализации на выходах */
+    Doors_RefreshUnusedLocalSlots();
 }
 
 /* Публичная функция для применения конфигурации в runtime */

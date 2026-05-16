@@ -146,3 +146,15 @@ uint8_t  DoorsCfg_SetNcUnlockWindowMs(uint32_t ms);
 uint32_t DoorsCfg_GetNcUnlockWindowMs(void);
 uint8_t  DoorsCfg_SetNcLockDelayAfterCloseMs(uint32_t ms);
 uint32_t DoorsCfg_GetNcLockDelayAfterCloseMs(void);
+
+/**
+ * Есть ли локальная дверь (1..APP_DOOR_MAX) в активной конфигурации текущего узла.
+ * Слоты без записи в g_project_cfg не обрабатываются DoorTask (нет таймаутов, сигнализации, NC).
+ */
+uint8_t Doors_IsLocalDoorConfigured(uint8_t local_door_id);
+
+/**
+ * Сбросить неиспользуемые локальные слоты после применения конфигурации.
+ * Вызывается из ConfigService_ApplyRuntime().
+ */
+void Doors_RefreshUnusedLocalSlots(void);

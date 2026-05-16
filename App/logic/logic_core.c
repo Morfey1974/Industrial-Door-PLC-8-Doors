@@ -93,6 +93,10 @@ static void apply_to_local_doors(logic_core_t *lc)
 
     for (uint8_t localDoor = 1; localDoor <= APP_DOORS_PER_NODE; localDoor++)
     {
+        /* Слот без записи в конфиге узла не участвует в зависимостях и lock */
+        if (!Doors_IsLocalDoorConfigured(localDoor))
+            continue;
+
         uint8_t gid = GlobalDoorId_Make(System_GetNodeId(), localDoor);
         if (!gid) continue;
 

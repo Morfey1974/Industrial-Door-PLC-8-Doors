@@ -116,7 +116,9 @@ static SemaphoreHandle_t s_doors_mutex = NULL;
    Вспомогательные функции
    ============================================================ */
 
+static uint8_t door_is_in_local_config(uint8_t local_door_id);
 static uint8_t door_is_nc_type(uint8_t local_door_id);
+static void door_deactivate_unused(uint8_t door1based, uint8_t idx);
 
 static uint32_t GetMs(void)
 {
@@ -157,6 +159,9 @@ uint8_t DoorsCfg_SetOpenTimeoutMs(uint32_t timeout_ms)
         uint32_t now = GetMs();
         uint8_t resetCount = 0U;
         for (uint8_t i = 0; i < APP_DOOR_MAX; i++) {
+            /* Только двери, описанные в конфиге узла */
+            if (!door_is_in_local_config((uint8_t)(i + 1U)))
+                continue;
             /* Если дверь открыта (не закрыта) и таймаут ещё не сработал */
             if (s_doors[i].physClosed == 0U && 
                 (s_doors[i].alarmReasons & DOOR_ALARM_OPEN_TIMEOUT) == 0U) {
@@ -251,6 +256,10 @@ void Doors_ReleaseStateArray(void)
 uint8_t Doors_RequestLock(uint8_t door_id, uint8_t lock_on, uint32_t source, uint32_t timeout_ms)
 {
     if (door_id == 0U || door_id > APP_DOOR_MAX) return 0U;
+
+    /* Слот не в конфигурации — не ставим команды и не меняем выходы */
+    if (!door_is_in_local_config(door_id))
+        return 0U;
 
     uint8_t idx = (uint8_t)(door_id - 1U);
 
@@ -634,6 +643,72 @@ static void applySignaling(uint8_t door1based, uint8_t idx)
     s_doors[idx].locked = 0U;
 }
 
+/* Есть ли запись о локальной двери в конфиге текущего узла */
+static uint8_t door_is_in_local_config(uint8_t local_door_id)
+{
+    if (local_door_id < 1U || local_door_id > APP_DOOR_MAX) return 0U;
+    uint8_t nodeId = System_GetNodeId();
+    for (uint16_t i = 0; i < g_project_cfg.doorCount && i < CFG_MAX_DOORS; i++)
+    {
+        const cfg_door_t *d = &g_project_cfg.doors[i];
+        if (d->nodeId == nodeId && d->localDoor == local_door_id)
+            return 1U;
+    }
+    return 0U;
+}
+
+uint8_t Doors_IsLocalDoorConfigured(uint8_t local_door_id)
+{
+    return door_is_in_local_config(local_door_id);
+}
+
+/* Слот не в конфиге: сброс логики и безопасное «покой» на выходах (без сигнализации) */
+static void door_deactivate_unused(uint8_t door1based, uint8_t idx)
+{
+    s_lockReq[idx].pending = 0U;
+    s_doors[idx].openSinceMs = 0U;
+    s_doors[idx].postClosePending = 0U;
+    s_doors[idx].postCloseTimeoutMs = 0U;
+    s_doors[idx].ncUnlockWindowEndMs = 0U;
+    s_doors[idx].ncLockAfterCloseStartMs = 0U;
+    s_doors[idx].ncLockAfterClosePending = 0U;
+    s_ncAlarmLowStartMs[idx] = 0U;
+
+    if (s_doors[idx].alarmReasons != DOOR_ALARM_NONE)
+    {
+        s_doors[idx].alarmReasons = DOOR_ALARM_NONE;
+        alarm_update(door1based, idx);
+    }
+    else
+    {
+        s_doors[idx].alarming = 0U;
+    }
+
+    s_doors[idx].locked = 0U;
+    s_doors[idx].alarmPressed = 0U;
+
+    DoorHAL_ApplySafeState(door1based);
+}
+
+void Doors_RefreshUnusedLocalSlots(void)
+{
+    if (!s_doors_mutex)
+        return;
+
+    for (uint8_t d = 1U; d <= APP_DOOR_MAX; d++)
+    {
+        if (door_is_in_local_config(d))
+            continue;
+
+        uint8_t idx = (uint8_t)(d - 1U);
+        if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        {
+            door_deactivate_unused(d, idx);
+            xSemaphoreGive(s_doors_mutex);
+        }
+    }
+}
+
 /* NC: проверка типа двери по конфигу (локальная дверь 1..8 на текущем узле) */
 static uint8_t door_is_nc_type(uint8_t local_door_id)
 {
@@ -669,6 +744,15 @@ static void updateOneDoor(uint8_t door1based)
         if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
             return; /* Не удалось захватить мьютекс - пропускаем эту итерацию */
         }
+    }
+
+    /* Дверь не описана в конфиге узла — не запускаем таймауты, Alarm, post-close, NC */
+    if (!door_is_in_local_config(door1based))
+    {
+        door_deactivate_unused(door1based, idx);
+        if (s_doors_mutex)
+            xSemaphoreGive(s_doors_mutex);
+        return;
     }
 
     /* --------------------------------------------------------
