@@ -1134,6 +1134,11 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
     cfg.formatVersion = CFG_FORMAT_VERSION;
     cfg.seq = (uint32_t)(g_project_cfg.seq + 1U);
 
+    /* TCP-порт зашит в прошивке: любые значения webPort из JSON игнорируются.
+     * Без этой строки старый UI или ручной JSON могли бы сохранить webPort=8080
+     * в QSPI, и после ресета плата слушала бы не тот порт, что ждёт Vite-прокси. */
+    cfg.net.webPort = (uint16_t)HTTP_FIXED_PORT;
+
     /* projectName */
     char pname[CFG_PROJECT_NAME_LEN];
     if (Json_GetString(body, "projectName", pname, sizeof(pname))) {
@@ -1175,7 +1180,9 @@ static int put_config_merge(const char *body, size_t body_len, char *out_body, s
 
         uint16_t wp;
         if (Json_GetUint16(net_json, "webPort", &wp)) {
-            cfg.net.webPort = wp;
+            /* Поле принимаем для обратной совместимости JSON, но игнорируем:
+             * порт HTTP-сервера зашит в прошивке (HTTP_FIXED_PORT). */
+            (void)wp;
         }
 
         char ip_str[20];
@@ -1269,6 +1276,11 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
     cfg->formatVersion = CFG_FORMAT_VERSION;
     cfg->seq = (uint32_t)(g_project_cfg.seq + 1U);
 
+    /* TCP-порт зашит в прошивке: webPort из JSON всегда игнорируется и
+     * в QSPI всегда пишется HTTP_FIXED_PORT. Гарантирует, что после ресета
+     * плата слушает именно тот порт, на который настроен Vite-прокси. */
+    cfg->net.webPort = (uint16_t)HTTP_FIXED_PORT;
+
     /* Обнуление: заменяем конфиг полностью в рамках лимитов v1. */
     cfg->doorCount = 0U;
     cfg->edgeCount = 0U;
@@ -1316,8 +1328,11 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
         if (Json_GetBool(net_json, "dhcpEnabled", &dh))
             cfg->net.dhcpEnabled = dh ? 1U : 0U;
         uint16_t wp;
-        if (Json_GetUint16(net_json, "webPort", &wp))
-            cfg->net.webPort = wp;
+        if (Json_GetUint16(net_json, "webPort", &wp)) {
+            /* Поле принимаем для совместимости JSON, но игнорируем:
+             * порт HTTP зашит в прошивке (HTTP_FIXED_PORT). */
+            (void)wp;
+        }
         char ip_str[20];
         if (Json_GetString(net_json, "ip", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.ip)) { /* ok */ }
         if (Json_GetString(net_json, "netmask", ip_str, sizeof(ip_str)) && parse_ipv4(ip_str, cfg->net.netmask)) { /* ok */ }

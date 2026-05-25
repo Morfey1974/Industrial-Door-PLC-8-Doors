@@ -15,6 +15,11 @@
 /* Реализация API из net_service.h (раньше был отдельный net_service.c). */
 #include "net_service.h"
 
+/* HTTP_FIXED_PORT — зашитый порт HTTP-сервера; см. подробный комментарий в http_server.h.
+ * Net_GetWebPort() возвращает именно его, чтобы и /api/state, и /api/config
+ * показывали клиенту фактический порт, а не «желаемый» из QSPI. */
+#include "http_server.h"
+
 /* В CubeMX проекте обычно есть глобальный netif с именем gnetif (lwip.c). */
 extern struct netif gnetif;
 
@@ -95,5 +100,7 @@ void Net_GetIp4Str(char *out, uint32_t out_sz)
 
 uint16_t Net_GetWebPort(void)
 {
-    return g_project_cfg.net.webPort;
+    /* Порт HTTP-сервера зашит в прошивке — поле cfg.net.webPort игнорируется.
+     * Это исключает рассинхрон между QSPI-конфигом и Vite-прокси. */
+    return (uint16_t)HTTP_FIXED_PORT;
 }

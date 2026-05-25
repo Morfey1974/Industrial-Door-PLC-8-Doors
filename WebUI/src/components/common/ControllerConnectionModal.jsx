@@ -55,10 +55,10 @@ const ControllerConnectionModal = ({ isOpen, onClose }) => {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="http://192.168.1.50:8080"
+              placeholder="http://192.168.1.50"
               className="form-input controller-url-input"
             />
-            <small>Например: 192.168.1.50:8080 или http://192.168.1.50:8080</small>
+            <small>Например: 192.168.1.50 или http://192.168.1.50 (порт HTTP в прошивке зашит = 80, указывать не нужно)</small>
           </div>
           {saved && (
             <p className="controller-connection-saved" role="status">

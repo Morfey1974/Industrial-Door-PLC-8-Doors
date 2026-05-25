@@ -12,6 +12,7 @@
 #include "system/app_events.h" /* For APP_SRC_SUPERVISOR */
 #include "comms_task.h"        /* For CommsTask_GetLogicCore */
 #include "logic/logic_core.h"  /* For LogicCore_RecomputeAndApply */
+#include "system/http_server.h"/* For HTTP_FIXED_PORT */
 
 /* Примечание по диагностике загрузки конфигурации (этап 7.1/7.2):
  * - В раннем буте LoggerTask может ещё не работать, поэтому AppLog() может быть не виден.
@@ -156,11 +157,25 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
     const cfg_storage_status_t st = ConfigStorage_InitOrDefault(out_cfg, &info);
     (void)st;
 
+    /* Нормализация: порт HTTP-сервера зашит в прошивке (HTTP_FIXED_PORT).
+     * Если в QSPI лежит старая запись с другим webPort (например, 8080),
+     * приводим RAM-копию к фактическому порту — UI получит честное значение,
+     * а HttpServer всё равно слушает HTTP_FIXED_PORT. Запись в QSPI не трогаем
+     * здесь, чтобы не плодить лишние циклы стирания; конфиг сам «починится»
+     * при следующем сохранении из UI (там тоже forсe webPort=HTTP_FIXED_PORT). */
+    if (out_cfg->net.webPort != (uint16_t)HTTP_FIXED_PORT) {
+        log_msg("[CFG] boot: webPort %u in QSPI -> %u (fixed by firmware)\r\n",
+                (unsigned)out_cfg->net.webPort,
+                (unsigned)HTTP_FIXED_PORT);
+        out_cfg->net.webPort = (uint16_t)HTTP_FIXED_PORT;
+    }
+
     /* Optional external sink (if application sets ConfigService_LogWrite) */
-    log_msg("[CFG] boot: status=%u slot=%d seq=%lu\r\n",
+    log_msg("[CFG] boot: status=%u slot=%d seq=%lu webPort=%u\r\n",
             (unsigned)info.status,
             (int)info.used_slot,
-            (unsigned long)info.seq);
+            (unsigned long)info.seq,
+            (unsigned)out_cfg->net.webPort);
 
     apply_cfg_runtime(out_cfg);
 }

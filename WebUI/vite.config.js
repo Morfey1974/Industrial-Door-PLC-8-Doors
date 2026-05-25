@@ -22,10 +22,10 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_DEV_PROXY_TARGET || 'http://192.168.1.50'
 
   if (mode === 'development') {
-    /* Видно в окне, где запущен npm run dev — сверка с IP/webPort на МК. */
+    /* Видно в окне, где запущен npm run dev — сверка с IP МК. */
     console.log(`\n[Vite dev] прокси /api → ${proxyTarget}`)
     console.log('  Задаётся в WebUI/.env.development (VITE_DEV_PROXY_TARGET).')
-    console.log('  Нет связи в UI: проверьте IP; если HTTP на МК на порту 8080 — добавьте :8080 к URL.')
+    console.log('  Порт HTTP на МК зашит в прошивке (HTTP_FIXED_PORT = 80, см. App/system/http_server.h).')
     console.log('  Прокси: maxSockets:1, Connection: close к МК.\n')
   }
 

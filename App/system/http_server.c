@@ -447,7 +447,19 @@ static int http_accumulate_until_headers_complete(int cfd, char *rx, int r, int 
 
 void HttpServer_Init(uint16_t port)
 {
-    s_listen_port = port;
+    /* ВАЖНО: TCP-порт зашит в прошивке (HTTP_FIXED_PORT, см. http_server.h).
+     * Параметр `port` сохраняется только для логирования/совместимости с http_task.
+     * Это специально устраняет рассинхрон между значением в QSPI (cfg.net.webPort)
+     * и Vite-прокси (.env.development).
+     */
+    const uint16_t bind_port = (uint16_t)HTTP_FIXED_PORT;
+    s_listen_port = bind_port;
+
+    if (port != 0U && port != bind_port) {
+        /* Поле в конфиге расходится с прошивкой — печатаем явное предупреждение. */
+        AppLog("HTTP: cfg.webPort=%u ignored, fixed port=%u (firmware)",
+               (unsigned)port, (unsigned)bind_port);
+    }
 
     /* На re-init всегда начинаем с "чистого" состояния сокета. */
     HttpServer_Deinit();
@@ -465,11 +477,11 @@ void HttpServer_Init(uint16_t port)
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port   = htons(port);
+    addr.sin_port   = htons(bind_port);
     addr.sin_addr.s_addr = PP_HTONL(INADDR_ANY);
 
     if (lwip_bind(s_listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        AppLog("HTTP: bind(%u) failed errno=%d", (unsigned)port, errno);
+        AppLog("HTTP: bind(%u) failed errno=%d", (unsigned)bind_port, errno);
         (void)lwip_close(s_listen_fd);
         s_listen_fd = -1;
         return;
@@ -488,7 +500,7 @@ void HttpServer_Init(uint16_t port)
         char ipdbg[16];
         Net_GetIp4Str(ipdbg, sizeof(ipdbg));
         AppLog("HTTP: listen OK port=%u fd=%d netRdy=%u link=%u ip=%s",
-               (unsigned)port, s_listen_fd,
+               (unsigned)bind_port, s_listen_fd,
                (unsigned)Net_IsReady(), (unsigned)Net_IsLinkUp(), ipdbg);
     }
 }

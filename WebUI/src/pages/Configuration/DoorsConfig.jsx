@@ -71,7 +71,11 @@ const DoorsConfig = () => {
     postCloseTimeouts: [],
     net: {
       dhcpEnabled: 1,
-      webPort: 8080,
+      // ВАЖНО: порт HTTP-сервера зашит в прошивке (HTTP_FIXED_PORT = 80).
+      // Поле остаётся в JSON для совместимости, но плата всегда слушает 80.
+      // Менять здесь имеет смысл только параллельно с HTTP_FIXED_PORT в МК
+      // и WebUI/.env.development (VITE_DEV_PROXY_TARGET).
+      webPort: 80,
     },
   });
   
@@ -251,7 +255,9 @@ const DoorsConfig = () => {
         doors: doors,
         edges: edges,
         postCloseTimeouts: postCloseTimeouts,
-        net: serverConfig.net || { dhcpEnabled: 1, webPort: 8080 },
+        // webPort фактически игнорируется прошивкой (зашит HTTP_FIXED_PORT=80),
+        // но оставляем поле в объекте для совместимости со старыми экспортами.
+        net: serverConfig.net || { dhcpEnabled: 1, webPort: 80 },
       };
       
       // Валидация загруженных данных (мягкая - только критические ошибки)
@@ -383,7 +389,8 @@ const DoorsConfig = () => {
       postCloseTimeouts: [],
       net: {
         dhcpEnabled: 1,
-        webPort: 8080,
+        // Порт HTTP в прошивке зашит = 80; см. подробный комментарий выше.
+        webPort: 80,
       },
     });
     setCurrentConfigNameState(null);
@@ -452,7 +459,8 @@ const DoorsConfig = () => {
       doors: [],
       edges: [],
       postCloseTimeouts: [],
-      net: { dhcpEnabled: 1, webPort: 8080 },
+      // Порт HTTP зашит в прошивке (80); поле в JSON оставлено для совместимости.
+      net: { dhcpEnabled: 1, webPort: 80 },
     });
     setHasDraft(false);
     setHasUnsavedChanges(false);
@@ -880,7 +888,8 @@ const DoorsConfig = () => {
         doors,
         edges: config.edges || [],
         postCloseTimeouts: config.postCloseTimeouts || [],
-        net: config.net || { dhcpEnabled: 1, webPort: 8080 },
+        // Порт игнорируется МК (HTTP_FIXED_PORT=80), но поле сохраняем.
+        net: config.net || { dhcpEnabled: 1, webPort: 80 },
       };
 
       const jsonString = JSON.stringify(fullConfig);
