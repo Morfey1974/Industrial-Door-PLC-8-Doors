@@ -291,7 +291,8 @@
         "formLocalDoorRange": "LocalDoor должен быть от 1 до 8",
         "formPairDuplicate": "Дверь на плате {nodeId}, позиция {localDoor} уже существует",
         "formTypeInvalid": "Тип двери должен быть NC или NO",
-        "formCommentTooLong": "Комментарий не может быть длиннее 100 символов"
+        "formCommentTooLong": "Комментарий не может быть длиннее 100 символов",
+        "formDrawingIdTooLong": "Drawing ID не может быть длиннее 31 символа"
       }
     },
     "mapping": {
@@ -368,7 +369,7 @@
       "add": "Добавление двери",
       "seqLabel": "Порядковый номер двери",
       "drawingIdLabel": "Drawing ID",
-      "drawingIdHint": "Идентификатор на плане (опционально)",
+      "drawingIdHint": "Имя или номер на плане (до 31 символа, опционально)",
       "boardLabel": "Выбор платы",
       "doorSlotLabel": "Выбор двери",
       "doorIdLabel": "ID двери",
@@ -379,7 +380,9 @@
       "commentPlaceholder": "Описание двери (опционально)",
       "commentMax": "Максимум 100 символов",
       "cancel": "Отмена",
-      "save": "Сохранить"
+      "save": "Сохранить",
+      "discardTitle": "Закрыть без сохранения?",
+      "discardMessage": "Есть несохранённые изменения в редакторе двери.\n\nЗакрыть окно без сохранения?"
     }
   },
   "pagination": {

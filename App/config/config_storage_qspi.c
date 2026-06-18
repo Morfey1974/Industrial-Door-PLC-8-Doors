@@ -79,19 +79,41 @@ static uint8_t header_is_valid(const cfg_slot_header_t *h)
 {
     if (!h) return 0U;
     if (h->magic != CFG_SLOT_MAGIC) return 0U;
-    if (h->formatVersion != CFG_FORMAT_VERSION) return 0U;
-    if (h->payloadLen != (uint32_t)sizeof(project_config_t)) return 0U;
     if (h->headerCrc32 != header_crc32(h)) return 0U;
-    return 1U;
+    if (h->formatVersion == CFG_FORMAT_VERSION &&
+        h->payloadLen == (uint32_t)sizeof(project_config_t)) {
+        return 1U;
+    }
+    if (h->formatVersion == CFG_FORMAT_VERSION_V1 &&
+        h->payloadLen == (uint32_t)sizeof(project_config_v1_t)) {
+        return 1U;
+    }
+    return 0U;
 }
 
-static uint8_t payload_is_valid(const project_config_t *cfg, const cfg_slot_header_t *h)
+static uint8_t payload_is_valid_v2(const project_config_t *cfg, const cfg_slot_header_t *h)
 {
     if (!cfg || !h) return 0U;
+    if (h->formatVersion != CFG_FORMAT_VERSION) return 0U;
     if (Config_CalcCrc32(cfg, sizeof(*cfg)) != h->payloadCrc32) return 0U;
 
     cfg_validate_error_t verr;
     if (Config_Validate(cfg, &verr) != CFG_VALIDATE_OK)
+        return 0U;
+
+    return 1U;
+}
+
+static uint8_t payload_is_valid_v1(const project_config_v1_t *cfg, const cfg_slot_header_t *h)
+{
+    if (!cfg || !h) return 0U;
+    if (h->formatVersion != CFG_FORMAT_VERSION_V1) return 0U;
+    if (Config_CalcCrc32(cfg, sizeof(*cfg)) != h->payloadCrc32) return 0U;
+
+    project_config_t migrated;
+    Config_MigrateV1ToV2(cfg, &migrated);
+    cfg_validate_error_t verr;
+    if (Config_Validate(&migrated, &verr) != CFG_VALIDATE_OK)
         return 0U;
 
     return 1U;
@@ -132,11 +154,21 @@ cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_sto
     const uint32_t base = slot_base(chosen);
     const uint32_t payload_addr = base + QSPI_CFG_PAYLOAD_OFFSET;
 
-    if (qspi_read(payload_addr, out_cfg, (uint32_t)sizeof(*out_cfg)) != 0)
-        return CFGST_IO_ERROR;
-
-    if (!payload_is_valid(out_cfg, hc))
-        return CFGST_BAD_FORMAT;
+    if (hc->formatVersion == CFG_FORMAT_VERSION) {
+        if (qspi_read(payload_addr, out_cfg, (uint32_t)sizeof(*out_cfg)) != 0)
+            return CFGST_IO_ERROR;
+        if (!payload_is_valid_v2(out_cfg, hc))
+            return CFGST_BAD_FORMAT;
+    } else {
+        project_config_v1_t v1;
+        if (qspi_read(payload_addr, &v1, (uint32_t)sizeof(v1)) != 0)
+            return CFGST_IO_ERROR;
+        if (!payload_is_valid_v1(&v1, hc))
+            return CFGST_BAD_FORMAT;
+        Config_MigrateV1ToV2(&v1, out_cfg);
+        printf("[CFG] LoadActive: migrated v1 slot %u seq=%lu\r\n",
+               (unsigned)(chosen + 1U), (unsigned long)hc->seq);
+    }
 
     out_info->status = CFGST_OK;
     out_info->used_slot = (uint8_t)(chosen + 1U); /* 1=A, 2=B */
@@ -288,7 +320,8 @@ cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_
     if (st == CFGST_OK)
         return st;
 
-    /* Валидного конфига нет: создаём дефолтный и сохраняем */
+    /* Валидного конфига нет: дефолт только в RAM (без долгой записи QSPI на старте).
+     * Сохранение — при первой записи из UI (ConfigService_Persist). */
     Config_Default(out_cfg);
     Config_Finalize(out_cfg);
 
@@ -297,5 +330,5 @@ cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_
     out_info->used_slot = 0U;
     out_info->seq = 0U;
 
-    return ConfigStorage_SaveNew(out_cfg, out_info);
+    return CFGST_NO_VALID;
 }

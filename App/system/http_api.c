@@ -461,7 +461,7 @@ static uint8_t build_config_full(jsonw_t *w)
         if (!jw_appendf(w,
             "{"
               "\"techId\":%u,"
-              "\"drawingId\":%u,"
+              "\"drawingId\":\"%s\","
               "\"nodeId\":%u,"
               "\"localDoor\":%u,"
               "\"globalDoorId\":%u,"
@@ -470,7 +470,7 @@ static uint8_t build_config_full(jsonw_t *w)
               "\"comment\":\"%s\""
             "}",
             (unsigned)door->techId,
-            (unsigned)door->drawingId,
+            door->drawingId,
             (unsigned)door->nodeId,
             (unsigned)door->localDoor,
             (unsigned)globalDoorId,
@@ -1369,7 +1369,13 @@ static int put_config_full(const char *body, size_t body_len, char *out_body, si
             uint32_t v32;
             if (!Json_GetUint32(elem_buf, "techId", &v32)) { AppLog("CFG full: door[%u] no techId", (unsigned)cfg->doorCount); continue; }
             d->techId = (uint16_t)v32;
-            if (Json_GetUint32(elem_buf, "drawingId", &v32)) d->drawingId = (uint16_t)v32;
+            memset(d->drawingId, 0, sizeof(d->drawingId));
+            if (!Json_GetString(elem_buf, "drawingId", d->drawingId, sizeof(d->drawingId))) {
+                /* Совместимость со старыми JSON, где drawingId был числом */
+                if (Json_GetUint32(elem_buf, "drawingId", &v32) && v32 != 0U) {
+                    (void)snprintf(d->drawingId, sizeof(d->drawingId), "%lu", (unsigned long)v32);
+                }
+            }
             if (!Json_GetUint32(elem_buf, "nodeId", &v32)) { AppLog("CFG full: door[%u] no nodeId", (unsigned)cfg->doorCount); continue; }
             d->nodeId = (uint8_t)v32;
             if (!Json_GetUint32(elem_buf, "localDoor", &v32)) { AppLog("CFG full: door[%u] no localDoor", (unsigned)cfg->doorCount); continue; }

@@ -28,7 +28,7 @@ import {
   getCurrentConfigName,
   setCurrentConfigName
 } from '../../utils/configStorage';
-import { validateConfig, isMappingCanvasJson } from '../../utils/configValidator';
+import { validateConfig, isMappingCanvasJson, normalizeDrawingId } from '../../utils/configValidator';
 import { PUT_CONFIG_FULL_MAX_JSON_BYTES } from '../../utils/constants';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -62,7 +62,7 @@ const DoorsConfig = () => {
   
   // Состояние конфигурации
   const [config, setConfig] = useState({
-    formatVersion: 0x00010001,
+    formatVersion: 0x00010002,
     seq: 0,
     projectName: '',
     openTimeoutMs: 30000,
@@ -248,11 +248,14 @@ const DoorsConfig = () => {
         }));
       
       const transformedConfig = {
-        formatVersion: serverConfig.formatVersion || 0x00010001,
+        formatVersion: serverConfig.formatVersion || 0x00010002,
         seq: serverConfig.seq || 0,
         projectName: serverConfig.projectName || '',
         openTimeoutMs: serverConfig.openTimeoutMs || 30000,
-        doors: doors,
+        doors: doors.map((d) => ({
+          ...d,
+          drawingId: normalizeDrawingId(d.drawingId),
+        })),
         edges: edges,
         postCloseTimeouts: postCloseTimeouts,
         // webPort фактически игнорируется прошивкой (зашит HTTP_FIXED_PORT=80),
@@ -380,7 +383,7 @@ const DoorsConfig = () => {
   // Создание новой конфигурации
   const handleCreateConfig = useCallback(() => {
     setConfig({
-      formatVersion: 0x00010001,
+      formatVersion: 0x00010002,
       seq: 0,
       projectName: '',
       openTimeoutMs: 30000,
@@ -452,7 +455,7 @@ const DoorsConfig = () => {
   const doDeleteDraft = useCallback(() => {
     clearDraft();
     setConfig({
-      formatVersion: 0x00010001,
+      formatVersion: 0x00010002,
       seq: 0,
       projectName: '',
       openTimeoutMs: 30000,
@@ -688,6 +691,12 @@ const DoorsConfig = () => {
           setError(t('pages.config.msgImportMappingNotConfig'));
           return;
         }
+        if (Array.isArray(importedConfig.doors)) {
+          importedConfig.doors = importedConfig.doors.map((d) => ({
+            ...d,
+            drawingId: normalizeDrawingId(d.drawingId),
+          }));
+        }
         const validation = validateConfig(importedConfig, { t });
         if (!validation.valid) {
           setError(t('pages.config.validationErrorsPrefix', { errors: validation.errors.join(', ') }));
@@ -872,7 +881,7 @@ const DoorsConfig = () => {
 
       const doors = (config.doors || []).map((d) => ({
         techId: d.techId,
-        drawingId: d.drawingId ?? 0,
+        drawingId: normalizeDrawingId(d.drawingId),
         nodeId: d.nodeId,
         localDoor: d.localDoor,
         globalDoorId: d.globalDoorId ?? ((d.nodeId - 1) * 8 + d.localDoor),

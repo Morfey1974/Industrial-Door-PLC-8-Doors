@@ -227,6 +227,13 @@ export const calculateGlobalDoorId = (nodeId, localDoor) => {
   return (nodeId - 1) * 8 + localDoor;
 };
 
+/** Drawing ID: строка до 31 символа; число 0 и пустое — пустая строка. */
+export const normalizeDrawingId = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return value === 0 ? '' : String(value);
+  return String(value).trim().slice(0, 31);
+};
+
 /**
  * Проверка: объект — экспорт карты со страницы «Маппинг» (см. Mapping.jsx: version, viewport, objects),
  * а не полная конфигурация дверей для контроллера.

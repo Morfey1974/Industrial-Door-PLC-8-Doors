@@ -69,7 +69,7 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
 
     const newDoor = {
       techId: doors.length > 0 ? Math.max(...doors.map((d) => d.techId || 0)) + 1 : 1,
-      drawingId: 0,
+      drawingId: '',
       nodeId: newNodeId,
       localDoor: newLocalDoor,
       globalDoorId: calculateGlobalDoorId(newNodeId, newLocalDoor),
@@ -273,6 +273,7 @@ const DoorsTab = ({ config, updateConfig, loading, showConfirm }) => {
           existingDoors={doors.filter((d) => d.techId !== editingDoor.techId)}
           onSave={handleSaveDoor}
           onCancel={() => setEditingDoor(null)}
+          showConfirm={showConfirm}
         />
       )}
     </div>

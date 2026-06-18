@@ -11,7 +11,7 @@
  * Реализует:
  *  - LoadActive: загрузка активной конфигурации (выбор валидного слота по seq)
  *  - SaveNew: атомарная запись нового конфига в неактивный слот (write payload, write header last)
- *  - InitOrDefault: при старте загрузка конфига или default и запись
+ *  - InitOrDefault: при старте загрузка конфига или default в RAM
  * ========================================================= */
 
 #ifdef __cplusplus
@@ -39,7 +39,7 @@ cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_sto
 
 cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_storage_info_t *inout_info);
 
-/* Загрузить конфиг; если валидного нет — default и атомарная запись. */
+/* Загрузить конфиг; если валидного нет — default в RAM (без записи во flash). */
 cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_storage_info_t *out_info);
 
 #ifdef __cplusplus

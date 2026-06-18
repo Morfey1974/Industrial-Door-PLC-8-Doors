@@ -2,13 +2,14 @@
  * DoorEditModal - модальное окно редактирования двери
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Button from '../../../components/common/Button';
 import { useLanguage } from '../../../context/LanguageContext';
-import { calculateGlobalDoorId } from '../../../utils/configValidator';
+import { calculateGlobalDoorId, normalizeDrawingId } from '../../../utils/configValidator';
 
-const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
+const DoorEditModal = ({ door, existingDoors, onSave, onCancel, showConfirm }) => {
   const { t } = useLanguage();
+  const initialFormRef = useRef(null);
   const [formData, setFormData] = useState({
     techId: '',
     drawingId: '',
@@ -22,14 +23,16 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
 
   useEffect(() => {
     if (door) {
-      setFormData({
-        techId: door.techId || '',
-        drawingId: door.drawingId || '',
+      const initial = {
+        techId: door.techId != null && door.techId !== '' ? String(door.techId) : '',
+        drawingId: normalizeDrawingId(door.drawingId),
         nodeId: door.nodeId || 1,
         localDoor: door.localDoor || 1,
         type: door.type || 'NO',
         comment: door.comment || '',
-      });
+      };
+      initialFormRef.current = initial;
+      setFormData(initial);
     }
   }, [door]);
 
@@ -89,6 +92,10 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
       newErrors.comment = t('pages.config.validation.formCommentTooLong');
     }
 
+    if (formData.drawingId && formData.drawingId.length > 31) {
+      newErrors.drawingId = t('pages.config.validation.formDrawingIdTooLong');
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -97,6 +104,36 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
     const n = parseInt(v, 10);
     return Number.isNaN(n) ? 0 : n;
   }
+
+  /** Есть ли несохранённые правки относительно состояния при открытии окна */
+  const isFormDirty = () => {
+    const init = initialFormRef.current;
+    if (!init) return false;
+    return (
+      String(formData.techId) !== String(init.techId) ||
+      normalizeDrawingId(formData.drawingId) !== init.drawingId ||
+      intPos(formData.nodeId) !== intPos(init.nodeId) ||
+      intPos(formData.localDoor) !== intPos(init.localDoor) ||
+      formData.type !== init.type ||
+      (formData.comment || '') !== (init.comment || '')
+    );
+  };
+
+  /** Закрытие по крестику или «Отмена»: подтверждение, если форма изменена */
+  const handleRequestClose = async () => {
+    if (!isFormDirty()) {
+      onCancel();
+      return;
+    }
+    const msg = t('pages.doorEdit.discardMessage');
+    const title = t('pages.doorEdit.discardTitle');
+    if (showConfirm) {
+      const confirmed = await showConfirm(msg, title);
+      if (confirmed) onCancel();
+    } else if (window.confirm(msg)) {
+      onCancel();
+    }
+  };
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -117,7 +154,7 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
     const doorData = {
       ...formData,
       techId: parseInt(formData.techId, 10),
-      drawingId: parseInt(formData.drawingId || 0, 10),
+      drawingId: normalizeDrawingId(formData.drawingId),
       nodeId: parseInt(formData.nodeId, 10),
       localDoor: parseInt(formData.localDoor, 10),
       globalDoorId,
@@ -129,11 +166,11 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
   };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content door-edit-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal-content door-edit-modal">
         <div className="modal-header">
           <h3>{door.techId ? t('pages.doorEdit.edit') : t('pages.doorEdit.add')}</h3>
-          <button type="button" className="modal-close" onClick={onCancel}>✕</button>
+          <button type="button" className="modal-close" onClick={handleRequestClose}>✕</button>
         </div>
 
         <div className="modal-body door-edit-modal-body">
@@ -156,13 +193,14 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
               <label htmlFor="drawingId">{t('pages.doorEdit.drawingIdLabel')}</label>
               <input
                 id="drawingId"
-                type="number"
+                type="text"
                 value={formData.drawingId}
                 onChange={(e) => handleChange('drawingId', e.target.value)}
-                min={0}
-                className="form-input form-input--compact"
+                maxLength={31}
+                className={`form-input form-input--compact ${errors.drawingId ? 'error' : ''}`}
               />
               <small>{t('pages.doorEdit.drawingIdHint')}</small>
+              {errors.drawingId && <span className="error-message">{errors.drawingId}</span>}
             </div>
           </div>
 
@@ -245,7 +283,7 @@ const DoorEditModal = ({ door, existingDoors, onSave, onCancel }) => {
         </div>
 
         <div className="modal-footer door-edit-modal-footer">
-          <Button onClick={onCancel} variant="secondary">
+          <Button onClick={handleRequestClose} variant="secondary">
             {t('pages.doorEdit.cancel')}
           </Button>
           <Button onClick={handleSave} variant="primary">

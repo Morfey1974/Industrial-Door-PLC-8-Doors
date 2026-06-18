@@ -62,7 +62,8 @@ void Config_Default(project_config_t *cfg)
         d->localDoor = (uint8_t)(i + 1U);
         d->type = (uint8_t)DOOR_TYPE_NC;
         d->techId = (uint16_t)(i + 1U);
-        d->drawingId = (uint16_t)(i + 1U);
+        memset(d->drawingId, 0, sizeof(d->drawingId));
+        (void)snprintf(d->drawingId, sizeof(d->drawingId), "%u", (unsigned)(i + 1U));
         memset(d->comment, 0, sizeof(d->comment));
     }
 
@@ -221,4 +222,42 @@ void Config_Finalize(project_config_t *cfg)
      * под будущие расширения (нормализация строк, пересчет derived-полей, и т.п.)
      */
     (void)cfg;
+}
+
+void Config_MigrateV1ToV2(const project_config_v1_t *src, project_config_t *dst)
+{
+    if (!src || !dst)
+        return;
+
+    memset(dst, 0, sizeof(*dst));
+    dst->formatVersion = CFG_FORMAT_VERSION;
+    dst->seq = src->seq;
+    (void)snprintf(dst->projectName, sizeof(dst->projectName), "%s", src->projectName);
+    dst->openTimeoutMs = src->openTimeoutMs;
+    memcpy(dst->postCloseTimeoutMs, src->postCloseTimeoutMs, sizeof(dst->postCloseTimeoutMs));
+    dst->ncUnlockWindowMs = src->ncUnlockWindowMs;
+    dst->ncLockDelayAfterCloseMs = src->ncLockDelayAfterCloseMs;
+    dst->doorCount = src->doorCount;
+
+    for (uint8_t i = 0U; i < CFG_MAX_DOORS; i++)
+    {
+        const cfg_door_v1_t *dv1 = &src->doors[i];
+        cfg_door_t *dv2 = &dst->doors[i];
+
+        dv2->techId = dv1->techId;
+        dv2->nodeId = dv1->nodeId;
+        dv2->localDoor = dv1->localDoor;
+        dv2->type = dv1->type;
+        dv2->reserved0 = dv1->reserved0;
+        memset(dv2->drawingId, 0, sizeof(dv2->drawingId));
+        if (dv1->drawingId != 0U) {
+            (void)snprintf(dv2->drawingId, sizeof(dv2->drawingId), "%u", (unsigned)dv1->drawingId);
+        }
+        (void)snprintf(dv2->comment, sizeof(dv2->comment), "%s", dv1->comment);
+    }
+
+    dst->edgeCount = src->edgeCount;
+    memcpy(dst->edges, src->edges, sizeof(dst->edges));
+    dst->net = src->net;
+    memcpy(dst->reserved_u32, src->reserved_u32, sizeof(dst->reserved_u32));
 }
