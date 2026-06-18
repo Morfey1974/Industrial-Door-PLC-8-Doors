@@ -34,6 +34,9 @@ extern uint8_t DoorsCfg_SetPostCloseTimeoutMs(uint8_t localDoor, uint32_t ms) __
 /* Global active configuration (referenced by LogicCore and other modules) */
 project_config_t g_project_cfg;
 
+/* После миграции v1→v2 в RAM — записать v2 во flash из doorsTask (RTOS уже запущен). */
+static uint8_t s_persist_migrated_v2 = 0U;
+
 cfg_storage_status_t ConfigService_BootLoad(project_config_t *out_cfg, cfg_storage_info_t *out_info)
 {
     if (!out_cfg || !out_info) return CFGST_ARG;
@@ -108,16 +111,12 @@ static void apply_cfg_runtime(const project_config_t *cfg)
                     (unsigned)d->localDoor, (unsigned)gid, (unsigned long)timeout);
             DoorsCfg_SetPostCloseTimeoutMs(d->localDoor, timeout);
             
-            /* 3) Apply door type: NC doors should be locked by default when closed
-             * According to plan section 3.9.2: NC doors should be locked in safe state
-             * This applies only to local doors on this node
-             */
-            if (d->type == DOOR_TYPE_NC) {
-                /* For NC doors, check if door is closed and apply lock */
+            /* 3) NC: блокировка при закрытии — только когда doorsTask поднял мьютекс и HAL.
+             * В main() до RTOS Doors_GetState/RequestLock не работают — иначе гонка и ложные lock. */
+            if (d->type == DOOR_TYPE_NC && Doors_IsRuntimeReady()) {
                 AppDoorState_t state;
                 if (Doors_GetState(d->localDoor, &state)) {
-                        if (state.physClosed && !state.alarming) {
-                        /* Door is closed and not in alarm - apply lock for NC type */
+                    if (state.physClosed && !state.alarming) {
                         Doors_RequestLock(d->localDoor, 1U, (uint32_t)APP_SRC_SUPERVISOR, 0U);
                     }
                 }
@@ -129,8 +128,9 @@ static void apply_cfg_runtime(const project_config_t *cfg)
         log_msg("[CFG] apply: DoorsCfg_SetPostCloseTimeoutMs not available\r\n");
     }
 
-    /* Слоты 1..8 без записи в конфиге узла — сброс таймаутов/сигнализации на выходах */
-    Doors_RefreshUnusedLocalSlots();
+    /* Слоты без записи в конфиге — сброс только когда doorsTask готова */
+    if (Doors_IsRuntimeReady())
+        Doors_RefreshUnusedLocalSlots();
 }
 
 /* Публичная функция для применения конфигурации в runtime */
@@ -154,8 +154,22 @@ void ConfigService_InitOnBoot(project_config_t *out_cfg)
     if (!out_cfg) out_cfg = &g_project_cfg;
 
     cfg_storage_info_t info;
+    memset(&info, 0, sizeof(info));
     const cfg_storage_status_t st = ConfigStorage_InitOrDefault(out_cfg, &info);
-    (void)st;
+
+    if (st == CFGST_OK && info.migrated_from_v1 != 0U)
+        s_persist_migrated_v2 = 1U;
+
+    if (st != CFGST_OK) {
+        printf("[CFG] boot: flash load failed st=%u, RAM default (8 NC doors)\r\n",
+               (unsigned)st);
+    } else {
+        printf("[CFG] boot: slot=%u seq=%lu doors=%u%s\r\n",
+               (unsigned)info.used_slot,
+               (unsigned long)info.seq,
+               (unsigned)out_cfg->doorCount,
+               info.migrated_from_v1 ? " migrated_v1" : "");
+    }
 
     /* Нормализация: порт HTTP-сервера зашит в прошивке (HTTP_FIXED_PORT).
      * Если в QSPI лежит старая запись с другим webPort (например, 8080),
@@ -201,4 +215,14 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg,
             (unsigned long)info.seq);
 
     return st;
+}
+
+void ConfigService_PostBootPersistIfNeeded(void)
+{
+    if (s_persist_migrated_v2 == 0U)
+        return;
+    s_persist_migrated_v2 = 0U;
+
+    const cfg_storage_status_t st = ConfigService_Persist(&g_project_cfg, NULL, 0U);
+    printf("[CFG] auto-persist v2 after v1 migrate: status=%u\r\n", (unsigned)st);
 }

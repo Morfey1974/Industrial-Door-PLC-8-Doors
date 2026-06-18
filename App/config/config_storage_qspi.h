@@ -32,6 +32,8 @@ typedef struct
 {
     cfg_storage_status_t status;
     uint8_t used_slot;       /* 0 = none, 1 = A, 2 = B */
+    uint8_t migrated_from_v1; /* 1 = payload был v1, мигрирован в RAM (нужен persist v2) */
+    uint8_t reserved0;
     uint32_t seq;            /* sequence number */
 } cfg_storage_info_t;
 

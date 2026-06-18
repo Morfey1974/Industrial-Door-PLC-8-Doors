@@ -158,3 +158,6 @@ uint8_t Doors_IsLocalDoorConfigured(uint8_t local_door_id);
  * Вызывается из ConfigService_ApplyRuntime().
  */
 void Doors_RefreshUnusedLocalSlots(void);
+
+/** 1 — doorsTask создала мьютекс (после Doors_TaskInit), можно трогать замки/HAL. */
+uint8_t Doors_IsRuntimeReady(void);

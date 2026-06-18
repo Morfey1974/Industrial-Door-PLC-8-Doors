@@ -687,6 +687,9 @@ static void door_deactivate_unused(uint8_t door1based, uint8_t idx)
     s_doors[idx].locked = 0U;
     s_doors[idx].alarmPressed = 0U;
 
+    /* Синхронизируем кэш с датчиком — иначе UI показывает «Открыта» при закрытой двери */
+    s_doors[idx].physClosed = (uint8_t)DoorHAL_IsClosed(door1based);
+
     DoorHAL_ApplySafeState(door1based);
 }
 
@@ -707,6 +710,11 @@ void Doors_RefreshUnusedLocalSlots(void)
             xSemaphoreGive(s_doors_mutex);
         }
     }
+}
+
+uint8_t Doors_IsRuntimeReady(void)
+{
+    return (s_doors_mutex != NULL) ? 1U : 0U;
 }
 
 /* NC: проверка типа двери по конфигу (локальная дверь 1..8 на текущем узле) */
@@ -741,7 +749,7 @@ static void updateOneDoor(uint8_t door1based)
      * Если не удалось захватить - пропускаем обновление этой итерации.
      */
     if (s_doors_mutex) {
-        if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
+        if (xSemaphoreTake(s_doors_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
             return; /* Не удалось захватить мьютекс - пропускаем эту итерацию */
         }
     }
@@ -1140,12 +1148,20 @@ void DoorsTask_Run(void const *argument)
     extern project_config_t g_project_cfg;
     ConfigService_ApplyRuntime(&g_project_cfg);
 
+    uint8_t post_boot_persist_done = 0U;
+
     for (;;)
     {
         AppHealth_Heartbeat(TASK_DOOR);
 
         for (uint8_t d = 1; d <= APP_DOOR_MAX; d++)
             updateOneDoor(d);
+
+        /* После первого цикла опроса датчиков — фоновая запись v2, если был v1 в flash */
+        if (!post_boot_persist_done) {
+            post_boot_persist_done = 1U;
+            ConfigService_PostBootPersistIfNeeded();
+        }
 
         osDelay(20);
     }

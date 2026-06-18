@@ -36,8 +36,21 @@ __attribute__((weak)) void CfgTestHook_Print(const char *s)
  *  - Два слота A/B.
  *  - Новая конфигурация пишется в НЕактивный слот: erase -> payload -> commit.
  *  - Commit выполняется записью валидного заголовка ПОСЛЕДНИМ (атомарная активация).
- *  - На старте выбирается самый новый валидный слот по seq.
+ *  - На старте выбирается валидный слот с максимальным seq; при сбое payload
+ *    пробуется второй слот. Чтение QSPI повторяется при холодном старте.
  */
+
+#define CFG_LOAD_RETRY_COUNT  3U
+#define CFG_LOAD_RETRY_MS     5U
+/* Короткая пауза после MX_OCTOSPI1_Init — flash выходит из power-on. */
+#define CFG_LOAD_BOOT_DELAY_MS 10U
+
+typedef enum
+{
+    SLOT_LOAD_OK = 0,
+    SLOT_LOAD_IO_ERROR = 1,
+    SLOT_LOAD_BAD_PAYLOAD = 2,
+} slot_load_result_t;
 
 static uint32_t slot_base(uint8_t slot)
 {
@@ -119,6 +132,70 @@ static uint8_t payload_is_valid_v1(const project_config_v1_t *cfg, const cfg_slo
     return 1U;
 }
 
+static int qspi_read_retry(uint32_t addr, void *dst, uint32_t len)
+{
+    for (uint8_t attempt = 0U; attempt < CFG_LOAD_RETRY_COUNT; attempt++)
+    {
+        if (attempt > 0U)
+            HAL_Delay(CFG_LOAD_RETRY_MS);
+        if (qspi_read(addr, dst, len) == 0)
+            return 0;
+    }
+    return -1;
+}
+
+static slot_load_result_t load_slot_payload(uint8_t slot_idx,
+                                            const cfg_slot_header_t *hc,
+                                            project_config_t *out_cfg,
+                                            uint8_t *out_migrated_v1)
+{
+    const uint32_t base = slot_base(slot_idx);
+    const uint32_t payload_addr = base + QSPI_CFG_PAYLOAD_OFFSET;
+
+    if (out_migrated_v1)
+        *out_migrated_v1 = 0U;
+
+    if (hc->formatVersion == CFG_FORMAT_VERSION) {
+        if (qspi_read_retry(payload_addr, out_cfg, (uint32_t)sizeof(*out_cfg)) != 0)
+            return SLOT_LOAD_IO_ERROR;
+        if (!payload_is_valid_v2(out_cfg, hc))
+            return SLOT_LOAD_BAD_PAYLOAD;
+        return SLOT_LOAD_OK;
+    }
+
+    project_config_v1_t v1;
+    if (qspi_read_retry(payload_addr, &v1, (uint32_t)sizeof(v1)) != 0)
+        return SLOT_LOAD_IO_ERROR;
+    if (!payload_is_valid_v1(&v1, hc))
+        return SLOT_LOAD_BAD_PAYLOAD;
+
+    Config_MigrateV1ToV2(&v1, out_cfg);
+    if (out_migrated_v1)
+        *out_migrated_v1 = 1U;
+    printf("[CFG] LoadActive: migrated v1 slot %u seq=%lu\r\n",
+           (unsigned)(slot_idx + 1U), (unsigned long)hc->seq);
+    return SLOT_LOAD_OK;
+}
+
+static cfg_storage_status_t finish_load_ok(project_config_t *out_cfg,
+                                         cfg_storage_info_t *out_info,
+                                         uint8_t slot_idx,
+                                         const cfg_slot_header_t *hc,
+                                         uint8_t migrated_v1,
+                                         uint8_t used_fallback)
+{
+    out_info->status = CFGST_OK;
+    out_info->used_slot = (uint8_t)(slot_idx + 1U);
+    out_info->migrated_from_v1 = migrated_v1;
+    out_info->seq = hc->seq;
+    if (used_fallback) {
+        printf("[CFG] LoadActive: fallback slot %u seq=%lu (primary payload invalid)\r\n",
+               (unsigned)(slot_idx + 1U), (unsigned long)hc->seq);
+    }
+    (void)out_cfg;
+    return CFGST_OK;
+}
+
 cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_storage_info_t *out_info)
 {
     if (!out_cfg || !out_info)
@@ -127,10 +204,25 @@ cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_sto
     memset(out_info, 0, sizeof(*out_info));
     out_info->status = CFGST_NO_VALID;
     out_info->used_slot = 0U;
+    out_info->migrated_from_v1 = 0U;
+
+    HAL_Delay(CFG_LOAD_BOOT_DELAY_MS);
 
     cfg_slot_header_t ha, hb;
-    if (qspi_read(slot_base(0U) + QSPI_CFG_HEADER_OFFSET, &ha, (uint32_t)sizeof(ha)) != 0) return CFGST_IO_ERROR;
-    if (qspi_read(slot_base(1U) + QSPI_CFG_HEADER_OFFSET, &hb, (uint32_t)sizeof(hb)) != 0) return CFGST_IO_ERROR;
+    uint8_t headers_ok = 0U;
+    for (uint8_t attempt = 0U; attempt < CFG_LOAD_RETRY_COUNT; attempt++)
+    {
+        if (attempt > 0U)
+            HAL_Delay(CFG_LOAD_RETRY_MS);
+        if (qspi_read(slot_base(0U) + QSPI_CFG_HEADER_OFFSET, &ha, (uint32_t)sizeof(ha)) != 0)
+            continue;
+        if (qspi_read(slot_base(1U) + QSPI_CFG_HEADER_OFFSET, &hb, (uint32_t)sizeof(hb)) != 0)
+            continue;
+        headers_ok = 1U;
+        break;
+    }
+    if (!headers_ok)
+        return CFGST_IO_ERROR;
 
     const uint8_t va = header_is_valid(&ha);
     const uint8_t vb = header_is_valid(&hb);
@@ -138,42 +230,37 @@ cfg_storage_status_t ConfigStorage_LoadActive(project_config_t *out_cfg, cfg_sto
     if (!va && !vb)
         return CFGST_NO_VALID;
 
-    uint8_t chosen = 0U;
-    const cfg_slot_header_t *hc = &ha;
     if (va && vb)
     {
-        chosen = (ha.seq >= hb.seq) ? 0U : 1U;
-        hc = (chosen == 0U) ? &ha : &hb;
-    }
-    else if (!va && vb)
-    {
-        chosen = 1U;
-        hc = &hb;
-    }
+        const uint8_t primary = (ha.seq >= hb.seq) ? 0U : 1U;
+        const uint8_t secondary = (primary == 0U) ? 1U : 0U;
+        const cfg_slot_header_t *hdrs[2] = { &ha, &hb };
+        const uint8_t order[2] = { primary, secondary };
 
-    const uint32_t base = slot_base(chosen);
-    const uint32_t payload_addr = base + QSPI_CFG_PAYLOAD_OFFSET;
-
-    if (hc->formatVersion == CFG_FORMAT_VERSION) {
-        if (qspi_read(payload_addr, out_cfg, (uint32_t)sizeof(*out_cfg)) != 0)
-            return CFGST_IO_ERROR;
-        if (!payload_is_valid_v2(out_cfg, hc))
-            return CFGST_BAD_FORMAT;
-    } else {
-        project_config_v1_t v1;
-        if (qspi_read(payload_addr, &v1, (uint32_t)sizeof(v1)) != 0)
-            return CFGST_IO_ERROR;
-        if (!payload_is_valid_v1(&v1, hc))
-            return CFGST_BAD_FORMAT;
-        Config_MigrateV1ToV2(&v1, out_cfg);
-        printf("[CFG] LoadActive: migrated v1 slot %u seq=%lu\r\n",
-               (unsigned)(chosen + 1U), (unsigned long)hc->seq);
+        slot_load_result_t last_fail = SLOT_LOAD_BAD_PAYLOAD;
+        for (uint8_t ti = 0U; ti < 2U; ti++)
+        {
+            const uint8_t slot_idx = order[ti];
+            uint8_t migrated = 0U;
+            slot_load_result_t lr = load_slot_payload(slot_idx, hdrs[slot_idx], out_cfg, &migrated);
+            if (lr == SLOT_LOAD_OK) {
+                return finish_load_ok(out_cfg, out_info, slot_idx, hdrs[slot_idx], migrated,
+                                      (uint8_t)(ti != 0U));
+            }
+            last_fail = lr;
+        }
+        return (last_fail == SLOT_LOAD_IO_ERROR) ? CFGST_IO_ERROR : CFGST_BAD_FORMAT;
     }
 
-    out_info->status = CFGST_OK;
-    out_info->used_slot = (uint8_t)(chosen + 1U); /* 1=A, 2=B */
-    out_info->seq = hc->seq;
-    return CFGST_OK;
+    const uint8_t only_slot = va ? 0U : 1U;
+    const cfg_slot_header_t *hc = va ? &ha : &hb;
+    uint8_t migrated = 0U;
+    slot_load_result_t lr = load_slot_payload(only_slot, hc, out_cfg, &migrated);
+    if (lr == SLOT_LOAD_OK)
+        return finish_load_ok(out_cfg, out_info, only_slot, hc, migrated, 0U);
+    if (lr == SLOT_LOAD_IO_ERROR)
+        return CFGST_IO_ERROR;
+    return CFGST_BAD_FORMAT;
 }
 
 cfg_storage_status_t ConfigStorage_SaveNew(const project_config_t *cfg, cfg_storage_info_t *inout_info)
@@ -317,6 +404,11 @@ cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_
         return CFGST_ARG;
 
     cfg_storage_status_t st = ConfigStorage_LoadActive(out_cfg, out_info);
+    if (st == CFGST_IO_ERROR) {
+        /* Повторная попытка: иногда первое чтение после power-on неуспешно */
+        HAL_Delay(20U);
+        st = ConfigStorage_LoadActive(out_cfg, out_info);
+    }
     if (st == CFGST_OK)
         return st;
 
@@ -328,6 +420,7 @@ cfg_storage_status_t ConfigStorage_InitOrDefault(project_config_t *out_cfg, cfg_
     memset(out_info, 0, sizeof(*out_info));
     out_info->status = CFGST_NO_VALID;
     out_info->used_slot = 0U;
+    out_info->migrated_from_v1 = 0U;
     out_info->seq = 0U;
 
     return CFGST_NO_VALID;

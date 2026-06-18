@@ -24,6 +24,9 @@ static void qspi_delay_ms(uint32_t ms)
         return;
     }
 #endif
+    /* До старта планировщика (загрузка конфига в main): иначе busy-spin без паузы. */
+    if (ms != 0U)
+        HAL_Delay(ms);
 }
 
 

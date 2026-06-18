@@ -35,6 +35,9 @@ cfg_storage_status_t ConfigService_Persist(const project_config_t *cfg,
  */
 void ConfigService_ApplyRuntime(const project_config_t *cfg);
 
+/* Запись v2 во flash после миграции v1 (вызывать из doorsTask после старта RTOS). */
+void ConfigService_PostBootPersistIfNeeded(void);
+
 #ifdef __cplusplus
 }
 #endif
